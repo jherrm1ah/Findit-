@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getConversation, listMessages, sendMessage } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+const MAX_MESSAGES = 60;
+const WINDOW_MS = 10 * 60 * 1000;
 
 function isParticipant(
   userId: string,
@@ -37,6 +42,14 @@ export async function POST(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const { allowed, retryAfterSeconds } = checkRateLimit(`msg:${user.id}`, MAX_MESSAGES, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many messages sent recently. Try again in a bit." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   let body: { body?: string };
   try {
     body = await req.json();
@@ -48,7 +61,6 @@ export async function POST(
     const message = await sendMessage(params.conversationId, user.id, body.body || "");
     return NextResponse.json({ message });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't send that message.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse(err, "Couldn't send that message.");
   }
 }

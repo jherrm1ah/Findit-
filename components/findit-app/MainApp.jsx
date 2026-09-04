@@ -59,6 +59,7 @@ export default function MainApp({ user, onLogout, showToast }) {
   const [threadLoading, setThreadLoading] = useState(false);
   const [savedIds, setSavedIds] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
+  const [adminActions, setAdminActions] = useState([]);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -119,6 +120,7 @@ export default function MainApp({ user, onLogout, showToast }) {
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
+      api.getAdminActions().then(setAdminActions).catch(() => {});
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
@@ -175,12 +177,9 @@ export default function MainApp({ user, onLogout, showToast }) {
 
   const buyNow = async (prod, qty, condition) => {
     try {
-      const order = await api.createOrder({
-        item: prod.name,
-        seller: prod.seller,
-        price: prod.price * qty,
-        status: "Awaiting payment",
-      });
+      // Only productId/qty go to the server — it looks up the real product
+      // and computes price/seller itself, so nothing here is trusted as-is.
+      const order = await api.createOrder({ productId: prod.id, qty });
       setOrders((os) => [order, ...os]);
       setCheckoutOrder({ product: prod, qty, condition });
       setProduct(null);
@@ -285,6 +284,7 @@ export default function MainApp({ user, onLogout, showToast }) {
     try {
       await api.setSellerStatus(id, status);
       showToast(`${seller?.name || "Seller"} ${status}.`);
+      api.getAdminActions().then(setAdminActions).catch(() => {});
     } catch (err) {
       setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status: seller.status } : s)));
       showToast(err.message || "Couldn't update that seller — try again.", "error");
@@ -458,7 +458,7 @@ export default function MainApp({ user, onLogout, showToast }) {
         )}
         {screen === "admin" && (
           isAdmin ? (
-            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} />
+            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} adminActions={adminActions} />
           ) : (
             <RoleGate
               title="Admin access needed"

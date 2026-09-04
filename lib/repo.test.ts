@@ -4,7 +4,9 @@ import {
   validateOfferInput,
   validateStatusTransition,
   computeSellerStatsMap,
+  isValidProductImageUrl,
   ORDER_STATUSES,
+  ValidationError,
 } from "./repo";
 
 // NOTE ON SCOPE: lib/repo.ts now talks to a real Supabase Postgres database
@@ -25,6 +27,10 @@ describe("validateProductInput", () => {
     expect(() => validateProductInput({ name: "   " })).toThrow();
     expect(() => validateProductInput({ price: 0 })).toThrow();
     expect(() => validateProductInput({ price: -5 })).toThrow();
+  });
+
+  it("throws ValidationError specifically, so routes can tell a user-facing message apart from an internal error", () => {
+    expect(() => validateProductInput({ price: -5 })).toThrow(ValidationError);
   });
 
   it("accepts a valid full input and a valid partial patch", () => {
@@ -122,5 +128,22 @@ describe("computeSellerStatsMap", () => {
     const stats = map.get("Ghost Seller");
     expect(stats?.verified).toBe(false);
     expect(stats?.rating).toBe(4);
+  });
+});
+
+describe("isValidProductImageUrl", () => {
+  const prefix = "https://abcxyz.supabase.co/storage/v1/object/public/product-images/";
+
+  it("accepts a URL under our own storage bucket", () => {
+    expect(isValidProductImageUrl(`${prefix}123-photo.jpg`, prefix)).toBe(true);
+  });
+
+  it("rejects an arbitrary external URL — a listing can't point at a tracking pixel or content we don't control", () => {
+    expect(isValidProductImageUrl("https://evil.example/tracker.png", prefix)).toBe(false);
+  });
+
+  it("rejects a different Supabase project's bucket, not just non-Supabase hosts", () => {
+    const otherPrefix = "https://different-project.supabase.co/storage/v1/object/public/product-images/";
+    expect(isValidProductImageUrl(`${otherPrefix}x.jpg`, prefix)).toBe(false);
   });
 });

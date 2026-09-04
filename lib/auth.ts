@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
+import { ValidationError } from "./repo";
 
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
@@ -55,7 +56,7 @@ export async function createUser(input: {
   const existingResult = await db.from("users").select("id").eq("phone", phone).maybeSingle();
   const existing = assertNoError(existingResult, "checking for an existing account") as Row | null;
   if (existing) {
-    throw new Error("An account with this phone number already exists.");
+    throw new ValidationError("An account with this phone number already exists.");
   }
 
   const id = "u_" + crypto.randomBytes(12).toString("hex");

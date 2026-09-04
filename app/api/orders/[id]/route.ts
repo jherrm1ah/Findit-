@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { submitOrderReview, updateOrderStatus, getOrder } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
 
 export async function PATCH(
   req: NextRequest,
@@ -34,8 +35,7 @@ export async function PATCH(
       const order = await updateOrderStatus(params.id, body.status);
       return NextResponse.json({ order });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't update that order.";
-      return NextResponse.json({ error: message }, { status: 400 });
+      return errorResponse(err, "Couldn't update that order.");
     }
   }
 
@@ -46,12 +46,16 @@ export async function PATCH(
     );
   }
 
-  const order = await submitOrderReview(params.id, user.id, {
-    rating: body.rating,
-    comment: body.comment ?? null,
-  });
-  if (!order) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const order = await submitOrderReview(params.id, user.id, {
+      rating: body.rating,
+      comment: body.comment ?? null,
+    });
+    if (!order) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ order });
+  } catch (err) {
+    return errorResponse(err, "Couldn't submit that review.");
   }
-  return NextResponse.json({ order });
 }

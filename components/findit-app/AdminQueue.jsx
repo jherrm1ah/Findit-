@@ -1,9 +1,15 @@
 "use client";
 
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck } from "lucide-react";
 import { Pill } from "./shared";
 
-export default function AdminQueue({ sellers, requests, onSellerStatusChange }) {
+function describeAction(a) {
+  if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
+  if (a.action === "seller.rejected") return `Rejected seller "${a.detail?.sellerName ?? a.targetId}"`;
+  return `${a.action} (${a.targetType} ${a.targetId})`;
+}
+
+export default function AdminQueue({ sellers, requests, onSellerStatusChange, adminActions = [] }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
 
   return (
@@ -46,6 +52,26 @@ export default function AdminQueue({ sellers, requests, onSellerStatusChange }) 
               <p className="text-[13px] font-semibold text-[#1E1B4B]">{r.title}</p>
               <p className="text-[11px] text-[#6B6483]">{r.posted}, no match yet</p>
             </div>
+          </div>
+        ))}
+      </div>
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+        <ShieldCheck size={13} className="text-[#7C3AED]" /> Admin activity log
+      </p>
+      <div className="space-y-2">
+        {adminActions.length === 0 && (
+          <p className="text-[12px] text-[#6B6483]">No admin actions recorded yet.</p>
+        )}
+        {adminActions.map((a) => (
+          <div key={a.id} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-[12px] text-[#1E1B4B] truncate">{describeAction(a)}</p>
+              <p className="text-[10.5px] text-[#8A8372]">by {a.adminName || "an admin"}</p>
+            </div>
+            <span className="text-[10px] text-[#8A8372] whitespace-nowrap shrink-0">
+              {new Date(a.createdAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+            </span>
           </div>
         ))}
       </div>

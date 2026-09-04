@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setSellerStatus } from "@/lib/repo";
+import { setSellerStatus, logAdminAction } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
 
 export async function PATCH(
   req: NextRequest,
@@ -25,9 +26,22 @@ export async function PATCH(
     );
   }
 
-  const seller = await setSellerStatus(params.id, body.status);
-  if (!seller) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const seller = await setSellerStatus(params.id, body.status);
+    if (!seller) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    // Best-effort audit trail — who approved/rejected which seller, and
+    // when. Never blocks the action itself if logging fails.
+    await logAdminAction({
+      adminId: user.id,
+      action: `seller.${body.status}`,
+      targetType: "seller",
+      targetId: params.id,
+      detail: { sellerName: seller.name },
+    });
+    return NextResponse.json({ seller });
+  } catch (err) {
+    return errorResponse(err, "Couldn't update that seller.");
   }
-  return NextResponse.json({ seller });
 }

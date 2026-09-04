@@ -3,6 +3,21 @@ import { CATEGORY_LABELS } from "./categories";
 
 export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
+// Thrown for real, user-facing validation problems (bad input, business-rule
+// violations) — safe to show verbatim to the client. Anything else that
+// escapes a repo function (a Postgres/network error via assertNoError, etc.)
+// is NOT a ValidationError and must never be shown to the client as-is; see
+// lib/errors.ts#toClientError, used by every API route's catch block.
+export class ValidationError extends Error {}
+
+function randomId(prefix: string): string {
+  return (
+    prefix +
+    Date.now().toString(36).toUpperCase() +
+    Math.random().toString(36).slice(2, 8).toUpperCase()
+  );
+}
+
 type Row = Record<string, unknown>;
 
 export type Product = {
@@ -221,14 +236,22 @@ export function validateProductInput(input: {
   price?: number;
 }): void {
   if (input.category !== undefined && !CATEGORY_KEYS.includes(input.category)) {
-    throw new Error("Unknown category.");
+    throw new ValidationError("Unknown category.");
   }
   if (input.name !== undefined && !input.name.trim()) {
-    throw new Error("Name is required.");
+    throw new ValidationError("Name is required.");
   }
   if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
-    throw new Error("Price must be a positive number.");
+    throw new ValidationError("Price must be a positive number.");
   }
+}
+
+// Restricts a product's imageUrl to our own Supabase Storage bucket — a
+// listing must not be able to point at an arbitrary external URL (used as a
+// tracking pixel against every viewer, or content we don't control at all).
+// Pure given the prefix, so it's unit-testable without env vars.
+export function isValidProductImageUrl(url: string, storagePrefix: string): boolean {
+  return url.startsWith(storagePrefix);
 }
 
 export async function createProduct(input: {
@@ -348,7 +371,11 @@ export async function listOrders(userId: string, sellerName?: string | null): Pr
   return rows.map(rowToOrder);
 }
 
-export async function createOrder(input: {
+// Internal — every field here must already be trusted (derived from a real
+// product/offer row on the server), never taken directly from client input.
+// createOrderFromProduct and acceptOffer are the only two ways an order gets
+// created; both compute item/seller/price themselves before calling this.
+async function insertOrder(input: {
   item: string;
   seller: string;
   price: number;
@@ -357,7 +384,7 @@ export async function createOrder(input: {
   userId: string;
 }): Promise<Order> {
   const db = getDb();
-  const id = "ORD-" + Math.floor(1000 + Math.random() * 9000);
+  const id = randomId("ORD-");
   const result = await db
     .from("orders")
     .insert({
@@ -375,11 +402,45 @@ export async function createOrder(input: {
   return rowToOrder(row);
 }
 
+const MAX_ORDER_QTY = 999;
+
+// The "Buy now" path. price/seller/item are NEVER taken from the client —
+// only productId and qty are, and the real price/seller come from the
+// product row itself, exactly as validateProductInput already guarantees
+// (positive price, real seller). This closes what used to be a direct
+// price/seller tampering hole (the client previously supplied all three).
+export async function createOrderFromProduct(
+  productId: string,
+  qty: number,
+  userId: string
+): Promise<Order> {
+  if (!Number.isFinite(qty) || qty < 1 || qty > MAX_ORDER_QTY) {
+    throw new ValidationError(`Quantity must be between 1 and ${MAX_ORDER_QTY}.`);
+  }
+  const product = await getProduct(productId);
+  if (!product) {
+    throw new ValidationError("That product is no longer available.");
+  }
+  return insertOrder({
+    item: product.name,
+    seller: product.seller,
+    price: product.price * qty,
+    status: "Awaiting payment",
+    userId,
+  });
+}
+
 export async function submitOrderReview(
   id: string,
   userId: string,
   review: { rating: number; comment: string | null }
 ): Promise<Order | null> {
+  const existing = await getOrder(id);
+  if (!existing || existing.userId !== userId) return null;
+  if (!existing.canReview) {
+    throw new ValidationError("This order can't be reviewed until it's delivered.");
+  }
+
   const db = getDb();
   const result = await db
     .from("orders")
@@ -407,12 +468,12 @@ export async function getOrder(id: string): Promise<Order | null> {
 // the forward-only rule is unit-testable on its own.
 export function validateStatusTransition(currentStatus: string, nextStatus: string): void {
   if (!ORDER_STATUSES.includes(nextStatus as (typeof ORDER_STATUSES)[number])) {
-    throw new Error("Invalid order status.");
+    throw new ValidationError("Invalid order status.");
   }
   const currentIdx = ORDER_STATUSES.indexOf(currentStatus as (typeof ORDER_STATUSES)[number]);
   const nextIdx = ORDER_STATUSES.indexOf(nextStatus as (typeof ORDER_STATUSES)[number]);
   if (currentIdx !== -1 && nextIdx < currentIdx) {
-    throw new Error("Can't move an order backwards.");
+    throw new ValidationError("Can't move an order backwards.");
   }
 }
 
@@ -521,6 +582,18 @@ export async function listSellers(): Promise<Seller[]> {
   return rows.map(rowToSeller);
 }
 
+// Used to block a rejected seller from taking further marketplace actions
+// (new listings, uploads, offers) — otherwise an admin's "reject" click has
+// no real effect, since role alone (checked everywhere else) doesn't change
+// when a seller is rejected. Returns null for a non-seller (e.g. an admin),
+// which correctly never matches the 'rejected' check callers do.
+export async function getSellerStatusForUser(userId: string): Promise<Seller["status"] | null> {
+  const db = getDb();
+  const result = await db.from("sellers").select("status").eq("user_id", userId).maybeSingle();
+  const row = assertNoError(result, "checking seller status") as Row | null;
+  return (row?.status as Seller["status"] | undefined) ?? null;
+}
+
 export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {
   const db = getDb();
   const result = await db
@@ -531,6 +604,71 @@ export async function setSellerStatus(id: string, status: Seller["status"]): Pro
     .maybeSingle();
   const row = assertNoError(result, "updating seller status") as Row | null;
   return row ? rowToSeller(row) : null;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Admin action audit log — who did what, to what, and when. Covers    */
+/*  destructive/high-impact admin actions specifically (seller approve/ */
+/*  reject today). Best-effort: a logging failure never blocks the      */
+/*  actual admin action, since it's a record of the action, not a gate. */
+/* ------------------------------------------------------------------ */
+
+export async function logAdminAction(input: {
+  adminId: string;
+  action: string;
+  targetType: string;
+  targetId: string;
+  detail?: Record<string, unknown> | null;
+}): Promise<void> {
+  const db = getDb();
+  const id = randomId("aa_");
+  const result = await db.from("admin_actions").insert({
+    id,
+    admin_id: input.adminId,
+    action: input.action,
+    target_type: input.targetType,
+    target_id: input.targetId,
+    detail: input.detail ?? null,
+  });
+  if (result.error) {
+    // Don't let a logging failure block or fail the admin action itself —
+    // just make sure it's visible server-side instead of silently lost.
+    console.error("[admin-action-log] failed to record:", result.error.message);
+  }
+}
+
+export type AdminActionLog = {
+  id: string;
+  adminId: string;
+  adminName: string | null;
+  action: string;
+  targetType: string;
+  targetId: string;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+};
+
+export async function listAdminActions(limit = 100): Promise<AdminActionLog[]> {
+  const db = getDb();
+  const result = await db
+    .from("admin_actions")
+    .select("*, users(name)")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const rows = assertNoError(result, "listing admin actions") as Row[];
+  return rows.map((row) => {
+    const adminRow = row.users as Row | null;
+    return {
+      id: row.id as string,
+      adminId: row.admin_id as string,
+      adminName: (adminRow?.name as string | undefined) ?? null,
+      action: row.action as string,
+      targetType: row.target_type as string,
+      targetId: row.target_id as string,
+      detail: (row.detail as Record<string, unknown> | null) ?? null,
+      createdAt: row.created_at as string,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -660,10 +798,10 @@ export async function createRequest(input: {
   userId: string;
 }): Promise<RequestRow> {
   if (input.category && !CATEGORY_KEYS.includes(input.category)) {
-    throw new Error("Unknown category.");
+    throw new ValidationError("Unknown category.");
   }
   const db = getDb();
-  const id = "REQ-" + Math.floor(1000 + Math.random() * 9000);
+  const id = randomId("REQ-");
   const result = await db
     .from("requests")
     .insert({
@@ -707,10 +845,10 @@ export async function updateUserLocation(userId: string, lat: number, lng: numbe
 // Pure — the offer-validity rules a seller's submitted form has to satisfy.
 export function validateOfferInput(input: { price: number; delivery: string; eta: string; warranty: string }): void {
   if (!Number.isFinite(input.price) || input.price <= 0) {
-    throw new Error("Price must be a positive number.");
+    throw new ValidationError("Price must be a positive number.");
   }
   if (!input.delivery.trim() || !input.eta.trim() || !input.warranty.trim()) {
-    throw new Error("Delivery, ETA, and warranty are required.");
+    throw new ValidationError("Delivery, ETA, and warranty are required.");
   }
 }
 
@@ -726,7 +864,7 @@ export async function addSellerOfferToRequest(
 
   validateOfferInput(input);
 
-  const id = "OFR-" + Math.floor(1000 + Math.random() * 9000);
+  const id = randomId("OFR-");
   const insertResult = await db
     .from("offers")
     .insert({
@@ -774,6 +912,13 @@ export async function acceptOffer(
   const request = assertNoError(requestResult, "loading request") as Row | null;
   if (!offer || !request) return null;
 
+  // Ownership check — without this, ANY logged-in user could accept an
+  // offer on a request that isn't theirs: mark someone else's request
+  // "matched" and create a real order in their own name against another
+  // buyer's request. Return the same "not found" shape as a bad id so a
+  // caller can't distinguish "doesn't exist" from "not yours".
+  if (request.user_id !== userId) return null;
+
   await assertNoError(
     await db.from("offers").update({ accepted: true }).eq("id", offerId),
     "accepting offer"
@@ -783,7 +928,7 @@ export async function acceptOffer(
     "updating request status"
   );
 
-  const order = await createOrder({
+  const order = await insertOrder({
     item: request.title as string,
     seller: offer.seller as string,
     price: offer.price as number,
@@ -883,7 +1028,7 @@ async function getPublicUser(id: string): Promise<PublicUser | null> {
 
 export async function getOrCreateConversation(buyerId: string, sellerId: string): Promise<string> {
   if (buyerId === sellerId) {
-    throw new Error("Can't start a conversation with yourself.");
+    throw new ValidationError("Can't start a conversation with yourself.");
   }
   const db = getDb();
   const existingResult = await db
@@ -990,7 +1135,7 @@ export async function sendMessage(
   body: string
 ): Promise<Message> {
   if (!body.trim()) {
-    throw new Error("Message can't be empty.");
+    throw new ValidationError("Message can't be empty.");
   }
   const db = getDb();
   const id = "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

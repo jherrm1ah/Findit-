@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOrders, createOrder } from "@/lib/repo";
+import { listOrders, createOrderFromProduct } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser(req);
@@ -21,26 +22,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to place an order." }, { status: 401 });
   }
 
-  let body: { item?: string; seller?: string; price?: number; status?: string };
+  let body: { productId?: string; qty?: number };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.item || !body.seller || typeof body.price !== "number") {
-    return NextResponse.json(
-      { error: "item, seller, and price are required" },
-      { status: 400 }
-    );
+  if (!body.productId) {
+    return NextResponse.json({ error: "productId is required" }, { status: 400 });
   }
 
-  const order = await createOrder({
-    item: body.item,
-    seller: body.seller,
-    price: body.price,
-    status: body.status || "Awaiting payment",
-    userId: user.id,
-  });
-  return NextResponse.json({ order });
+  // item/seller/price are NEVER taken from the client here — only which
+  // product and how many. The real price and seller come from the product
+  // row itself (see lib/repo.ts#createOrderFromProduct), so a buyer can't
+  // tamper with what they're charged or who they appear to be ordering from.
+  try {
+    const qty = Number(body.qty) > 0 ? Number(body.qty) : 1;
+    const order = await createOrderFromProduct(body.productId, qty, user.id);
+    return NextResponse.json({ order });
+  } catch (err) {
+    return errorResponse(err, "Couldn't place that order.");
+  }
 }

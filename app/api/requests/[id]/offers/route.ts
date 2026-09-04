@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addSellerOfferToRequest } from "@/lib/repo";
+import { addSellerOfferToRequest, getSellerStatusForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+const MAX_OFFERS = 60;
+const WINDOW_MS = 60 * 60 * 1000;
 
 export async function POST(
   req: NextRequest,
@@ -9,6 +14,22 @@ export async function POST(
   const user = await getSessionUser(req);
   if (user?.role !== "seller") {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
+  }
+
+  const status = await getSellerStatusForUser(user.id);
+  if (status === "rejected") {
+    return NextResponse.json(
+      { error: "Your seller account isn't approved to send offers." },
+      { status: 403 }
+    );
+  }
+
+  const { allowed, retryAfterSeconds } = checkRateLimit(`offer:${user.id}`, MAX_OFFERS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many offers sent recently. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
   }
 
   let body: { price?: number; delivery?: string; eta?: string; warranty?: string; note?: string };
@@ -43,7 +64,6 @@ export async function POST(
     }
     return NextResponse.json({ offer });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't send that offer.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse(err, "Couldn't send that offer.");
   }
 }

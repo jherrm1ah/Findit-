@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, updateProduct, deleteProduct, Product } from "@/lib/repo";
+import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, Product } from "@/lib/repo";
 import { getSessionUser, User } from "@/lib/auth";
+import { errorResponse } from "@/lib/errors";
+
+function storagePrefix(): string {
+  return `${process.env.SUPABASE_URL ?? ""}/storage/v1/object/public/product-images/`;
+}
 
 function canManage(user: User | null, product: Product) {
   return user?.role === "admin" || (user?.role === "seller" && user.businessName === product.seller);
@@ -35,13 +40,18 @@ export async function PATCH(
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
+  if (body.imageUrl && !isValidProductImageUrl(body.imageUrl, storagePrefix())) {
+    return NextResponse.json(
+      { error: "imageUrl must be an image uploaded through FindIt." },
+      { status: 400 }
+    );
+  }
 
   try {
     const updated = await updateProduct(params.id, body);
     return NextResponse.json({ product: updated });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't update that listing.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse(err, "Couldn't update that listing.");
   }
 }
 

@@ -64,6 +64,7 @@ export const api = {
     request("/api/notifications/read-all", { method: "POST" }).then((d) => d.notifications),
 
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
+  getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   setSellerStatus: (id, status) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",

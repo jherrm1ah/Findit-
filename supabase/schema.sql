@@ -165,7 +165,7 @@ create table if not exists orders (
   user_id text not null references users(id) on delete cascade,
   item text not null,
   seller text not null,
-  price integer not null,
+  price integer not null check (price > 0),
   status text not null default 'Awaiting payment',
   can_review boolean not null default false,
   reviewed boolean not null default false,
@@ -230,6 +230,24 @@ create table if not exists saved_items (
 create index if not exists saved_items_user_id_idx on saved_items(user_id);
 
 -- ---------------------------------------------------------------------------
+-- admin_actions — audit trail for destructive/high-impact admin actions
+-- (seller approve/reject today). Written best-effort by the API layer
+-- (lib/repo.ts#logAdminAction); a logging failure never blocks the action
+-- itself. Nothing here is ever shown to non-admins.
+-- ---------------------------------------------------------------------------
+
+create table if not exists admin_actions (
+  id text primary key,
+  admin_id text not null references users(id) on delete cascade,
+  action text not null,
+  target_type text not null,
+  target_id text not null,
+  detail jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists admin_actions_created_at_idx on admin_actions(created_at desc);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
 -- the note at the top of this file). All real access control lives in the
 -- Next.js API layer.
@@ -246,3 +264,4 @@ alter table notifications enable row level security;
 alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table saved_items enable row level security;
+alter table admin_actions enable row level security;

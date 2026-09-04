@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, createSession, setSessionCookie } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { errorResponse } from "@/lib/errors";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -61,7 +62,6 @@ export async function POST(req: NextRequest) {
     setSessionCookie(res, token);
     return res;
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't create that account.";
-    return NextResponse.json({ error: message }, { status: 400 });
+    return errorResponse(err, "Couldn't create that account.");
   }
 }

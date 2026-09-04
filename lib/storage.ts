@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { ValidationError } from "./repo";
 
 const BUCKET = "product-images";
 
@@ -37,20 +38,59 @@ async function ensureBucket(supabase: SupabaseClient) {
   bucketEnsured = true;
 }
 
+// Real file-signature ("magic bytes") checks — the multipart Content-Type a
+// client sends is just a string it typed; nothing stops a request claiming
+// "image/png" while the bytes are actually an HTML/script payload. This
+// checks what the file's first bytes actually are, independent of whatever
+// the client declared, so a spoofed Content-Type can't get past validation.
+const SIGNATURES: Record<string, (b: Buffer) => boolean> = {
+  "image/jpeg": (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
+  "image/png": (b) =>
+    b.length >= 8 &&
+    b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 &&
+    b[4] === 0x0d && b[5] === 0x0a && b[6] === 0x1a && b[7] === 0x0a,
+  "image/gif": (b) =>
+    b.length >= 6 &&
+    b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x38 &&
+    (b[4] === 0x37 || b[4] === 0x39) && b[5] === 0x61,
+  "image/webp": (b) =>
+    b.length >= 12 &&
+    b.subarray(0, 4).toString("ascii") === "RIFF" &&
+    b.subarray(8, 12).toString("ascii") === "WEBP",
+};
+
+const EXTENSIONS: Record<string, string> = {
+  "image/jpeg": "jpg",
+  "image/png": "png",
+  "image/gif": "gif",
+  "image/webp": "webp",
+};
+
+export function matchesDeclaredImageType(buffer: Buffer, declaredType: string): boolean {
+  const check = SIGNATURES[declaredType];
+  return check ? check(buffer) : false;
+}
+
 export async function uploadProductImage(
   buffer: Buffer,
-  filename: string,
-  contentType: string
+  declaredType: string
 ): Promise<string> {
+  if (!matchesDeclaredImageType(buffer, declaredType)) {
+    throw new ValidationError("That file doesn't look like a valid image.");
+  }
+
   const supabase = getSupabase();
   await ensureBucket(supabase);
 
-  const safeName = filename.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+  // The stored path never uses the client-supplied filename at all — only a
+  // random id plus an extension WE choose from the verified type. This
+  // rules out path traversal, dangerous filenames (e.g. a double extension
+  // like "photo.jpg.html"), and any filename-based trickery entirely.
+  const path = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${EXTENSIONS[declaredType]}`;
 
   const { error: uploadError } = await supabase.storage
     .from(BUCKET)
-    .upload(path, buffer, { contentType, upsert: false });
+    .upload(path, buffer, { contentType: declaredType, upsert: false });
   if (uploadError) throw new Error(uploadError.message);
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
