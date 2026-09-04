@@ -134,10 +134,11 @@ database. To enable it:
 1. Create a free Supabase project.
 2. Copy `.env.example` to `.env.local` and fill in:
    - `SUPABASE_URL` — your project's URL (Settings → API).
-   - `SUPABASE_SERVICE_ROLE_KEY` — the **`service_role`** secret key from the same page. Use the
-     classic JWT-style key (starts with `eyJ`, found under "Legacy API keys" if your project shows
-     the newer `sb_secret_...` key format by default) — the newer key format doesn't currently
-     have Storage admin permissions with this SDK version.
+   - `SUPABASE_SERVICE_ROLE_KEY` — the `service_role` secret key from the same page (either the
+     newer `sb_secret_...` format or the classic JWT-style key starting with `eyJ` should work —
+     this hasn't been verified end-to-end from every environment, so if uploads fail with a
+     Supabase-side error after following this guide, double-check the key is the `service_role`
+     one and not `anon`/`publishable`).
 3. That's it — the `product-images` bucket is created automatically the first time a seller
    uploads a photo. No manual bucket setup needed.
 
