@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star, CheckCircle2,
+  ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
   Minus, Plus, Sparkles,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
@@ -10,11 +10,11 @@ import { IconButton, ArtBlock, Pill } from "./shared";
 
 const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow }) {
+export default function ProductDetail({ product, onClose, go, onBuyNow, onContact }) {
   const [saved, setSaved] = useState(false);
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
-  const [contacted, setContacted] = useState(false);
+  const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
   if (!product) return null;
   const Icon = GROUPS[product.category].icon;
@@ -61,12 +61,19 @@ export default function ProductDetail({ product, onClose, go, onBuyNow }) {
             </div>
           </div>
           <button
-            onClick={() => setContacted(true)}
-            disabled={contacted}
-            className={`text-[12px] font-semibold px-4 py-2 rounded-full text-white flex items-center gap-1.5 shrink-0 ${contacted ? "bg-[#10B981]" : ""}`}
-            style={!contacted ? { background: "#1E1B4B" } : {}}
+            onClick={async () => {
+              setContacting(true);
+              try {
+                await onContact(product);
+              } finally {
+                setContacting(false);
+              }
+            }}
+            disabled={contacting}
+            className={`text-[12px] font-semibold px-4 py-2 rounded-full text-white flex items-center gap-1.5 shrink-0 ${contacting ? "opacity-60" : ""}`}
+            style={{ background: "#1E1B4B" }}
           >
-            {contacted ? <><CheckCircle2 size={13} /> Message sent</> : "Contact"}
+            {contacting ? "Opening…" : "Contact"}
           </button>
         </div>
 

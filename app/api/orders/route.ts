@@ -4,7 +4,8 @@ import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
   const user = getSessionUser(req);
-  return NextResponse.json({ orders: listOrders(user?.id) });
+  const sellerName = user?.role === "seller" ? user.businessName : null;
+  return NextResponse.json({ orders: listOrders(user?.id, sellerName) });
 }
 
 export async function POST(req: NextRequest) {

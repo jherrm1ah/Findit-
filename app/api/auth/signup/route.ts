@@ -1,7 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, createSession, setSessionCookie } from "@/lib/auth";
+import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+
+const MAX_ATTEMPTS = 5;
+const WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
+  const rateKey = `signup:${getClientIp(req)}`;
+  const { allowed, retryAfterSeconds } = checkRateLimit(rateKey, MAX_ATTEMPTS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many signup attempts. Try again in a few minutes." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   let body: {
     phone?: string;
     password?: string;

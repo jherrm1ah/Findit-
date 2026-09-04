@@ -9,6 +9,19 @@ async function request(url, options) {
 
 export const api = {
   getProducts: () => request("/api/products").then((d) => d.products),
+  createProduct: (payload) =>
+    request("/api/products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.product),
+  updateProduct: (id, payload) =>
+    request(`/api/products/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.product),
+  deleteProduct: (id) => request(`/api/products/${id}`, { method: "DELETE" }),
 
   getOrders: () => request("/api/orders").then((d) => d.orders),
   createOrder: (payload) =>
@@ -22,6 +35,12 @@ export const api = {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+    }).then((d) => d.order),
+  updateOrderStatus: (orderId, status) =>
+    request(`/api/orders/${orderId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
     }).then((d) => d.order),
 
   getNotifications: () => request("/api/notifications").then((d) => d.notifications),
@@ -68,4 +87,20 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.user),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+
+  getConversations: () => request("/api/messages").then((d) => d.conversations),
+  startConversation: (sellerBusinessName) =>
+    request("/api/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sellerBusinessName }),
+    }).then((d) => d.conversationId),
+  getMessages: (conversationId) =>
+    request(`/api/messages/${conversationId}`).then((d) => d.messages),
+  sendMessage: (conversationId, body) =>
+    request(`/api/messages/${conversationId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }).then((d) => d.message),
 };

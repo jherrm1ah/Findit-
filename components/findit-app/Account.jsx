@@ -26,7 +26,7 @@ export default function Account({ openProduct, orders, products, onReview }) {
     }
   };
 
-  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Out for delivery" ? "gold" : "stone");
+  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" ? "stone" : "gold");
 
   return (
     <div className="px-5 pt-6 pb-10">

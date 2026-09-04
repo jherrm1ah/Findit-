@@ -1,5 +1,7 @@
 import { getDb } from "./db";
-import { SELLERS } from "./catalogue";
+import { SELLERS, CATALOGUE } from "./catalogue";
+
+export const CATEGORY_KEYS = Object.keys(CATALOGUE);
 
 type Row = Record<string, unknown>;
 
@@ -113,6 +115,83 @@ export function listProducts(): Product[] {
   return rows.map(rowToProduct);
 }
 
+export function getProduct(id: string): Product | null {
+  const row = getDb().prepare("SELECT * FROM products WHERE id = ?").get(id) as Row | undefined;
+  return row ? rowToProduct(row) : null;
+}
+
+let productSeq = 0;
+
+export function createProduct(input: {
+  category: string;
+  name: string;
+  price: number;
+  seller: string;
+}): Product {
+  if (!CATEGORY_KEYS.includes(input.category)) {
+    throw new Error("Unknown category.");
+  }
+  if (!input.name.trim()) {
+    throw new Error("Name is required.");
+  }
+  if (!Number.isFinite(input.price) || input.price <= 0) {
+    throw new Error("Price must be a positive number.");
+  }
+
+  const db = getDb();
+  const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
+  db.prepare(
+    `INSERT INTO products (id, category, name, price, seller, rating, verified, test_batch, marketing_cat, loc, art)
+     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Jos', @art)`
+  ).run({
+    id,
+    category: input.category,
+    name: input.name.trim(),
+    price: Math.round(input.price),
+    seller: input.seller,
+    art: Math.floor(Math.random() * 5),
+  });
+  return getProduct(id)!;
+}
+
+export function updateProduct(
+  id: string,
+  patch: Partial<{ name: string; category: string; price: number }>
+): Product | null {
+  const existing = getProduct(id);
+  if (!existing) return null;
+
+  if (patch.category !== undefined && !CATEGORY_KEYS.includes(patch.category)) {
+    throw new Error("Unknown category.");
+  }
+  if (patch.name !== undefined && !patch.name.trim()) {
+    throw new Error("Name is required.");
+  }
+  if (patch.price !== undefined && (!Number.isFinite(patch.price) || patch.price <= 0)) {
+    throw new Error("Price must be a positive number.");
+  }
+
+  const db = getDb();
+  db.prepare(
+    `UPDATE products SET
+       name = @name,
+       category = @category,
+       price = @price
+     WHERE id = @id`
+  ).run({
+    id,
+    name: (patch.name ?? existing.name).trim(),
+    category: patch.category ?? existing.category,
+    price: Math.round(patch.price ?? existing.price),
+  });
+  return getProduct(id);
+}
+
+export function deleteProduct(id: string): boolean {
+  const result = getDb().prepare("DELETE FROM products WHERE id = ?").run(id);
+  return result.changes > 0;
+}
+
 function rowToOrder(row: Row): Order {
   return {
     id: row.id as string,
@@ -129,19 +208,41 @@ function rowToOrder(row: Row): Order {
   };
 }
 
+export const ORDER_STATUSES = [
+  "Awaiting payment",
+  "Seller preparing",
+  "Dispatched",
+  "Out for delivery",
+  "Delivered",
+] as const;
+
 // Orders with no user_id are seed/demo content, visible to everyone
 // (including guests) alongside whatever the current session actually owns.
-export function listOrders(userId?: string | null): Order[] {
+// A seller additionally sees orders where they're the seller (by business
+// name, the same string-matching pattern products use) so they have
+// something to fulfill.
+export function listOrders(userId?: string | null, sellerName?: string | null): Order[] {
   const db = getDb();
-  const rows = (
-    userId
-      ? db
-          .prepare(
-            "SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
-          )
-          .all(userId)
-      : db.prepare("SELECT * FROM orders WHERE user_id IS NULL ORDER BY created_at DESC").all()
-  ) as Row[];
+  let rows: Row[];
+  if (userId && sellerName) {
+    rows = db
+      .prepare(
+        "SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL OR seller = ? ORDER BY created_at DESC"
+      )
+      .all(userId, sellerName) as Row[];
+  } else if (userId) {
+    rows = db
+      .prepare("SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC")
+      .all(userId) as Row[];
+  } else if (sellerName) {
+    rows = db
+      .prepare("SELECT * FROM orders WHERE user_id IS NULL OR seller = ? ORDER BY created_at DESC")
+      .all(sellerName) as Row[];
+  } else {
+    rows = db
+      .prepare("SELECT * FROM orders WHERE user_id IS NULL ORDER BY created_at DESC")
+      .all() as Row[];
+  }
   return rows.map(rowToOrder);
 }
 
@@ -183,6 +284,38 @@ export function submitOrderReview(
   db.prepare(
     "UPDATE orders SET reviewed = 1, my_rating = @rating, review_comment = @comment WHERE id = @id"
   ).run({ id, rating: review.rating, comment: review.comment });
+  return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
+}
+
+export function getOrder(id: string): Order | null {
+  const row = getDb().prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row | undefined;
+  return row ? rowToOrder(row) : null;
+}
+
+// Advances an order to the next fulfillment status. Callers pass the target
+// status explicitly (rather than always "next") so a seller can also jump
+// straight to "Delivered" for a pickup-style order; going backwards isn't
+// allowed. Reaching "Delivered" makes the order reviewable.
+export function updateOrderStatus(id: string, status: string): Order | null {
+  if (!ORDER_STATUSES.includes(status as (typeof ORDER_STATUSES)[number])) {
+    throw new Error("Invalid order status.");
+  }
+  const db = getDb();
+  const existing = db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row | undefined;
+  if (!existing) return null;
+
+  const currentIdx = ORDER_STATUSES.indexOf(existing.status as (typeof ORDER_STATUSES)[number]);
+  const nextIdx = ORDER_STATUSES.indexOf(status as (typeof ORDER_STATUSES)[number]);
+  if (nextIdx < currentIdx) {
+    throw new Error("Can't move an order backwards.");
+  }
+
+  const canReview = status === "Delivered" ? 1 : (existing.can_review as number);
+  db.prepare("UPDATE orders SET status = @status, can_review = @canReview WHERE id = @id").run({
+    id,
+    status,
+    canReview,
+  });
   return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
 }
 
@@ -425,4 +558,146 @@ export function acceptOffer(
   });
 
   return { order };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Messaging                                                          */
+/* ------------------------------------------------------------------ */
+
+export type PublicUser = {
+  id: string;
+  name: string;
+  role: string;
+  businessName: string | null;
+};
+
+export type Conversation = {
+  id: string;
+  otherParty: PublicUser;
+  lastMessage: string | null;
+  lastMessageAt: string | null;
+  unreadCount: number;
+};
+
+export type Message = {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  body: string;
+  createdAt: string;
+  mine: boolean;
+};
+
+function rowToPublicUser(row: Row): PublicUser {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    role: row.role as string,
+    businessName: (row.business_name as string | null) ?? null,
+  };
+}
+
+export function findUserByBusinessName(name: string): PublicUser | null {
+  const row = getDb()
+    .prepare("SELECT * FROM users WHERE role = 'seller' AND business_name = ?")
+    .get(name) as Row | undefined;
+  return row ? rowToPublicUser(row) : null;
+}
+
+function getPublicUser(id: string): PublicUser | null {
+  const row = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as Row | undefined;
+  return row ? rowToPublicUser(row) : null;
+}
+
+export function getOrCreateConversation(buyerId: string, sellerId: string): string {
+  if (buyerId === sellerId) {
+    throw new Error("Can't start a conversation with yourself.");
+  }
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT id FROM conversations WHERE buyer_id = ? AND seller_id = ?")
+    .get(buyerId, sellerId) as Row | undefined;
+  if (existing) return existing.id as string;
+
+  const id = "conv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  db.prepare(
+    "INSERT INTO conversations (id, buyer_id, seller_id, created_at) VALUES (?, ?, ?, ?)"
+  ).run(id, buyerId, sellerId, new Date().toISOString());
+  return id;
+}
+
+export function getConversation(id: string): { buyerId: string; sellerId: string } | null {
+  const row = getDb().prepare("SELECT * FROM conversations WHERE id = ?").get(id) as
+    | Row
+    | undefined;
+  if (!row) return null;
+  return { buyerId: row.buyer_id as string, sellerId: row.seller_id as string };
+}
+
+export function listConversations(userId: string): Conversation[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      "SELECT * FROM conversations WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC"
+    )
+    .all(userId, userId) as Row[];
+
+  return rows.map((row) => {
+    const otherId = row.buyer_id === userId ? (row.seller_id as string) : (row.buyer_id as string);
+    const other = getPublicUser(otherId)!;
+    const lastMessage = db
+      .prepare(
+        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1"
+      )
+      .get(row.id) as Row | undefined;
+    const unreadCount = (
+      db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ? AND sender_id != ? AND read = 0"
+        )
+        .get(row.id, userId) as { count: number }
+    ).count;
+    return {
+      id: row.id as string,
+      otherParty: other,
+      lastMessage: (lastMessage?.body as string) ?? null,
+      lastMessageAt: (lastMessage?.created_at as string) ?? (row.created_at as string),
+      unreadCount,
+    };
+  });
+}
+
+export function listMessages(conversationId: string, viewerId: string): Message[] {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC")
+    .all(conversationId) as Row[];
+  db.prepare(
+    "UPDATE messages SET read = 1 WHERE conversation_id = ? AND sender_id != ? AND read = 0"
+  ).run(conversationId, viewerId);
+  return rows.map((row) => ({
+    id: row.id as string,
+    conversationId: row.conversation_id as string,
+    senderId: row.sender_id as string,
+    body: row.body as string,
+    createdAt: row.created_at as string,
+    mine: row.sender_id === viewerId,
+  }));
+}
+
+export function sendMessage(
+  conversationId: string,
+  senderId: string,
+  body: string
+): Message {
+  if (!body.trim()) {
+    throw new Error("Message can't be empty.");
+  }
+  const db = getDb();
+  const id = "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const createdAt = new Date().toISOString();
+  db.prepare(
+    "INSERT INTO messages (id, conversation_id, sender_id, body, created_at, read) VALUES (?, ?, ?, ?, ?, 0)"
+  ).run(id, conversationId, senderId, body.trim(), createdAt);
+  return { id, conversationId, senderId, body: body.trim(), createdAt, mine: true };
 }

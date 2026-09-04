@@ -16,6 +16,8 @@ import Account from "./Account";
 import Notifications from "./Notifications";
 import Checkout from "./Checkout";
 import ProductDetail from "./ProductDetail";
+import Messages from "./Messages";
+import Thread from "./Thread";
 
 function tabsFor(role) {
   const middle =
@@ -47,6 +49,10 @@ export default function MainApp({ user, onLogout, showToast }) {
   const [notifications, setNotifications] = useState([]);
   const [sellers, setSellers] = useState([]);
   const [requests, setRequests] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [activeThread, setActiveThread] = useState(null);
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [threadLoading, setThreadLoading] = useState(false);
 
   useEffect(() => {
     const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
@@ -76,6 +82,9 @@ export default function MainApp({ user, onLogout, showToast }) {
     window.scrollTo?.(0, 0);
     if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
+    }
+    if (s === "messages" && user) {
+      api.getConversations().then(setConversations).catch(() => {});
     }
   };
 
@@ -112,6 +121,48 @@ export default function MainApp({ user, onLogout, showToast }) {
     } catch (err) {
       showToast(err.message || "Couldn't submit that review — try again.", "error");
       throw err; // let Account.jsx know the submit failed so it keeps the form open
+    }
+  };
+
+  const handleAdvanceOrderStatus = async (orderId, status) => {
+    try {
+      const order = await api.updateOrderStatus(orderId, status);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast(`Order marked "${status}".`);
+    } catch (err) {
+      showToast(err.message || "Couldn't update that order — try again.", "error");
+    }
+  };
+
+  const handleCreateProduct = async (input) => {
+    try {
+      const product = await api.createProduct(input);
+      setProducts((ps) => [product, ...ps]);
+      showToast("Listing added.");
+    } catch (err) {
+      showToast(err.message || "Couldn't add that listing — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleUpdateProduct = async (id, patch) => {
+    try {
+      const product = await api.updateProduct(id, patch);
+      setProducts((ps) => ps.map((p) => (p.id === id ? product : p)));
+      showToast("Listing updated.");
+    } catch (err) {
+      showToast(err.message || "Couldn't update that listing — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleDeleteProduct = async (id) => {
+    try {
+      await api.deleteProduct(id);
+      setProducts((ps) => ps.filter((p) => p.id !== id));
+      showToast("Listing removed.");
+    } catch (err) {
+      showToast(err.message || "Couldn't remove that listing — try again.", "error");
     }
   };
 
@@ -155,6 +206,48 @@ export default function MainApp({ user, onLogout, showToast }) {
     }
   };
 
+  const handleOpenThread = async (id, otherParty) => {
+    setActiveThread({ id, otherParty });
+    setThreadLoading(true);
+    try {
+      const messages = await api.getMessages(id);
+      setThreadMessages(messages);
+      setConversations((cs) => cs.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
+    } catch (err) {
+      showToast(err.message || "Couldn't load that conversation — try again.", "error");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (conversationId, body) => {
+    try {
+      const message = await api.sendMessage(conversationId, body);
+      setThreadMessages((ms) => [...ms, message]);
+    } catch (err) {
+      showToast(err.message || "Couldn't send that message — try again.", "error");
+    }
+  };
+
+  const handleContactSeller = async (product) => {
+    if (!user) {
+      showToast("Log in to message a seller.", "error");
+      return;
+    }
+    try {
+      const conversationId = await api.startConversation(product.seller);
+      setActiveThread({ id: conversationId, otherParty: { businessName: product.seller, name: product.seller } });
+      setThreadLoading(true);
+      setProduct(null);
+      const messages = await api.getMessages(conversationId);
+      setThreadMessages(messages);
+    } catch (err) {
+      showToast(err.message || "Couldn't start that conversation — try again.", "error");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
   if (!loaded) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#FAFAFF]">
@@ -186,7 +279,17 @@ export default function MainApp({ user, onLogout, showToast }) {
         {screen === "request" && <RequestForm go={go} onOrderCreated={handleOrderCreated} />}
         {screen === "seller" && (
           isSeller ? (
-            <SellerDashboard requests={requests} onSendOffer={handleSendOffer} user={user} />
+            <SellerDashboard
+              requests={requests}
+              onSendOffer={handleSendOffer}
+              user={user}
+              orders={orders}
+              onAdvanceOrderStatus={handleAdvanceOrderStatus}
+              products={products}
+              onCreateProduct={handleCreateProduct}
+              onUpdateProduct={handleUpdateProduct}
+              onDeleteProduct={handleDeleteProduct}
+            />
           ) : (
             <RoleGate
               title="Seller access needed"
@@ -211,6 +314,18 @@ export default function MainApp({ user, onLogout, showToast }) {
         {screen === "profile" && (
           <Profile go={go} user={user} onLogout={onLogout} unreadCount={notifications.filter((n) => n.unread).length} />
         )}
+        {screen === "messages" && (
+          user ? (
+            <Messages conversations={conversations} onOpenThread={handleOpenThread} />
+          ) : (
+            <RoleGate
+              title="Log in to message sellers"
+              message="Create an account or log in to start a conversation with a seller."
+              onLogout={onLogout}
+              logoutLabel="Log in"
+            />
+          )
+        )}
         {screen === "account" && (
           <Account openProduct={setProduct} orders={orders} products={products} onReview={handleReview} />
         )}
@@ -226,7 +341,20 @@ export default function MainApp({ user, onLogout, showToast }) {
         )}
       </main>
 
-      {product && <ProductDetail product={product} onClose={() => setProduct(null)} go={go} onBuyNow={buyNow} />}
+      {product && (
+        <ProductDetail product={product} onClose={() => setProduct(null)} go={go} onBuyNow={buyNow} onContact={handleContactSeller} />
+      )}
+
+      {activeThread && (
+        <Thread
+          conversationId={activeThread.id}
+          otherParty={activeThread.otherParty}
+          messages={threadMessages}
+          loading={threadLoading}
+          onBack={() => setActiveThread(null)}
+          onSend={handleSendMessage}
+        />
+      )}
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 px-6 pb-6 pt-2 flex justify-center">
         <div

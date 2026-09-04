@@ -3,7 +3,7 @@ import crypto from "crypto";
 import path from "path";
 import { buildProductRows } from "./catalogue";
 
-const DB_PATH = path.join(process.cwd(), "data", "findit.db");
+const DB_PATH = process.env.FINDIT_DB_PATH || path.join(process.cwd(), "data", "findit.db");
 
 let db: Database.Database | null = null;
 
@@ -147,6 +147,23 @@ export function getDb(): Database.Database {
       user_id TEXT NOT NULL REFERENCES users(id),
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS conversations (
+      id TEXT PRIMARY KEY,
+      buyer_id TEXT NOT NULL REFERENCES users(id),
+      seller_id TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      UNIQUE(buyer_id, seller_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS messages (
+      id TEXT PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES conversations(id),
+      sender_id TEXT NOT NULL REFERENCES users(id),
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      read INTEGER NOT NULL DEFAULT 0
     );
   `);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn, MessageCircle } from "lucide-react";
 
 export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
   const CARDS = [
@@ -12,6 +12,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       primary: user?.role === "admin",
     },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
+    { key: "messages", icon: MessageCircle, label: "Messages", subtitle: user ? "Chat with sellers" : "Log in to message sellers" },
     { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
     {
       key: "seller",

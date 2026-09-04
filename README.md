@@ -23,16 +23,20 @@ simulated state) — see "Next steps" below.
 - **Request an item** — submits a real request; the server auto-generates offers from three
   sellers (simulating instant matching), compare and accept one to pay and track delivery.
 - **Seller dashboard** — seller accounts only; everyone else sees a locked screen explaining why
-  and a way to log in as one. Respond to open customer requests with a real offer, attributed to
-  your real business name.
+  and a way to log in as one. Manage your own listings (add/edit/delete), advance your orders
+  through the fulfillment lifecycle, and respond to open customer requests with a real offer,
+  attributed to your real business name.
 - **Admin queue** — staff-only (there's no self-serve "I'm an admin" signup); log in with the seed
   admin account below. Approve/reject pending sellers (including real seller signups); requests
   with zero offers show as unmatched.
-- **Account** — real order history, delivery tracking, reviews, saved items. Orders you place are
-  tied to your account; guests and every account also see the shared seed/demo orders.
+- **Account** — real order history with a live delivery-status tracker (Awaiting payment → Seller
+  preparing → Dispatched → Out for delivery → Delivered), reviews, saved items. Orders you place
+  are tied to your account; guests and every account also see the shared seed/demo orders.
+- **Messages** — real buyer-seller chat. Tap "Contact" on a product to start a conversation with
+  its seller; both sides see the thread, unread counts, and can reply from their own account.
 - **Notifications** — mark one or all as read, persisted, scoped per account the same way.
 - **Profile** — shows your real name/phone/role with a working log out (or a log-in prompt as a
-  guest).
+  guest), plus entry points into your orders, messages, and notifications.
 
 ## Stack
 
@@ -66,11 +70,16 @@ for — change or remove it before this goes anywhere near production.
 - `lib/catalogue.js` — the category → product-name lists and deterministic listing generator
   (price/seller/rating/etc), used only for seeding.
 - `lib/db.ts` — schema + seeding (products, sellers, requests, offers, orders, notifications,
-  users, sessions), with a tiny startup migration for columns added after the first release.
+  users, sessions, conversations, messages), with a tiny startup migration for columns added
+  after the first release. `DB_PATH` can be overridden with the `FINDIT_DB_PATH` env var (used by
+  the test suite to keep test data out of the dev database).
 - `lib/repo.ts` — typed query/mutation functions used by the API routes.
 - `lib/auth.ts` — password hashing (scrypt) and cookie-based sessions (no external auth service).
+- `lib/rateLimit.ts` — a small in-memory sliding-window limiter guarding login/signup (see
+  "Access control" below). Single-process only — fine for this app, not for a multi-instance
+  deployment.
 - `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
-  sellers, and auth (signup/login/logout/me).
+  sellers, messages, and auth (signup/login/logout/me).
 - `components/findit-app/data.js` — client-only presentation data: category labels/icons,
   notification-type icons, gradient swatches, static copy.
 - `components/findit-app/api.js` — small fetch wrapper used by the client components.
@@ -101,9 +110,30 @@ for — change or remove it before this goes anywhere near production.
 Three roles: `buyer`, `seller`, `admin`. The Seller Dashboard requires `seller`; the Admin Queue
 requires `admin` — both gated server-side (`GET`/`PATCH /api/sellers`, `GET /api/requests`, and
 `POST /api/requests/:id/offers` all check the session's role and return 403 otherwise), not just
-hidden in the UI. `admin` has no public signup path — see the seed credentials above.
+hidden in the UI. `admin` has no public signup path — see the seed credentials above. Product
+listing management (`POST`/`PATCH`/`DELETE /api/products*`) and order status advances are
+restricted to the listing's/order's own seller (matched by business name) or an admin. Messaging
+routes require a session and check the caller is a participant in the conversation.
+
+`POST /api/auth/login` and `POST /api/auth/signup` are rate-limited (5 attempts per 15 minutes,
+keyed by IP + phone for login and by IP for signup) — a 429 with a friendly error is returned once
+the limit is hit. This doesn't cover phone verification (OTP), since that needs a real SMS
+provider — same "needs external setup" category as payments below.
+
+## Testing
+
+```bash
+npm test
+```
+
+Runs the Vitest suite (`lib/**/*.test.ts`) covering password hashing/login, order creation and
+scoping, the request → offer → accept flow, order status progression (including the
+forward-only rule), product listing validation, buyer-seller messaging, and the rate limiter.
+Tests run against an isolated SQLite file (`data/findit.test.db`, also gitignored) so they never
+touch your dev database.
 
 ## Next steps toward a real product
 
-A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, and a real
-way to provision admin accounts beyond the single seeded one.
+A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
+deployment, phone number verification (OTP) at signup, and a real way to provision admin accounts
+beyond the single seeded one.
