@@ -43,7 +43,7 @@ export default function Account({ openProduct, orders, products, onReview, saved
               <div>
                 <p className="text-[12px] text-[#8A8372] font-mono">{o.id}</p>
                 <p className="text-[13px] font-semibold text-[#1E1B4B]">{o.item}</p>
-                <p className="text-[11px] text-[#6B6483]">{o.seller} · {o.date}</p>
+                <p className="text-[11px] text-[#6B6483]">{o.seller} · {new Date(o.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</p>
               </div>
               <Pill tone={statusTone(o.status)}>{o.status}</Pill>
             </div>
