@@ -1,0 +1,17 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --score-bg: #fefce8;
+}
+
+body {
+  background: #f8fafc;
+}
+
+input[type="number"].score-input::-webkit-outer-spin-button,
+input[type="number"].score-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}

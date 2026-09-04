@@ -141,3 +141,7 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# SQLite database (generated from data/products.json on first run)
+data/*.db
+data/*.db-journal
