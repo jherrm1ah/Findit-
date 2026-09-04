@@ -9,16 +9,20 @@ export default function Account({ openProduct, orders, products, onReview }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const saved = products.filter((p) => MY_SAVED_IDS.includes(p.id));
 
   const submitReview = async (orderId) => {
+    setSubmitting(true);
     try {
       await onReview(orderId, rating, comment);
       setReviewing(null);
       setComment("");
       setRating(5);
-    } catch (err) {
-      alert(err.message || "Couldn't submit that review — try again.");
+    } catch {
+      // MainApp already surfaced a toast; keep the form open so they can retry
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -75,10 +79,15 @@ export default function Account({ openProduct, orders, products, onReview }) {
                   className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
                 />
                 <div className="flex gap-2">
-                  <button onClick={() => submitReview(o.id)} className="flex-1 text-white text-[12px] font-semibold py-2.5 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-                    Submit review
+                  <button
+                    onClick={() => submitReview(o.id)}
+                    disabled={submitting}
+                    className={`flex-1 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting ? "opacity-60" : ""}`}
+                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                  >
+                    {submitting ? "Submitting…" : "Submit review"}
                   </button>
-                  <button onClick={() => setReviewing(null)} className="px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl">Cancel</button>
+                  <button onClick={() => setReviewing(null)} disabled={submitting} className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}>Cancel</button>
                 </div>
               </div>
             )}

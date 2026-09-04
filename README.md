@@ -80,6 +80,22 @@ for — change or remove it before this goes anywhere near production.
   Login), plus `MainApp.jsx` (tab bar + screen router + data fetching) and `App.jsx`
   (splash/onboarding/login/main phase machine).
 
+## UI polish
+
+- **Toasts, not `alert()`** — every background action (send offer, approve/reject a seller,
+  submit a review, a failed purchase) surfaces an in-app toast (`components/findit-app/Toast.jsx`,
+  hosted once in `App.jsx` so it works on the Login screen too) instead of a native browser
+  dialog.
+- **Busy states** on every button that fires an async request it can't otherwise tell happened
+  (Buy now, Accept offer, Send offer, Submit review) — disabled + a "…" label while in flight, so
+  there's no silent double-submit window.
+- **Role-aware bottom nav** — the middle tab used to always say "Messages" and point at the
+  seller dashboard regardless of who was logged in; it now shows "Dashboard" for a seller, "Admin"
+  for an admin, and "Sell" for anyone else, with a matching icon and destination.
+- Removed the leftover "PROTOTYPE" header badge and the dead "Forgot password?" button (now
+  surfaces a toast instead of doing nothing); the loading screen got a branded spinner instead of
+  bare text; the splash screen is snappier and tappable-to-skip instead of a fixed 5s wait.
+
 ## Access control
 
 Three roles: `buyer`, `seller`, `admin`. The Seller Dashboard requires `seller`; the Admin Queue

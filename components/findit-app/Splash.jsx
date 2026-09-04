@@ -7,12 +7,15 @@ export default function Splash({ onDone }) {
 
   useEffect(() => {
     const showTimer = setTimeout(() => setVisible(true), 30);
-    const doneTimer = setTimeout(onDone, 5000);
+    const doneTimer = setTimeout(onDone, 2200);
     return () => { clearTimeout(showTimer); clearTimeout(doneTimer); };
   }, [onDone]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white">
+    <div
+      onClick={onDone}
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white cursor-pointer"
+    >
       <div
         className="flex flex-col items-center"
         style={{ opacity: visible ? 1 : 0, transform: visible ? "scale(1)" : "scale(0.92)", transition: "opacity 0.6s ease, transform 0.6s ease" }}

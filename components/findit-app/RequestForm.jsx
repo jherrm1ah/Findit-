@@ -15,6 +15,7 @@ export default function RequestForm({ go, onOrderCreated }) {
   const [offers, setOffers] = useState([]);
   const [selectedOffer, setSelectedOffer] = useState(null);
   const [error, setError] = useState(null);
+  const [acceptingId, setAcceptingId] = useState(null);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -45,6 +46,8 @@ export default function RequestForm({ go, onOrderCreated }) {
   };
 
   const acceptOffer = async (offer) => {
+    setAcceptingId(offer.id);
+    setError(null);
     try {
       const order = await api.acceptOffer(request.id, offer.id);
       onOrderCreated?.(order);
@@ -52,6 +55,7 @@ export default function RequestForm({ go, onOrderCreated }) {
       setStage("accepted");
     } catch (err) {
       setError(err.message || "Couldn't accept that offer — try again.");
+      setAcceptingId(null);
     }
   };
 
@@ -117,10 +121,11 @@ export default function RequestForm({ go, onOrderCreated }) {
               <p className="text-[11px] text-[#6B6483] italic mb-3">"{o.note}"</p>
               <button
                 onClick={() => acceptOffer(o)}
-                className="w-full text-white text-[12px] font-semibold py-2.5 rounded-xl"
+                disabled={acceptingId !== null}
+                className={`w-full text-white text-[12px] font-semibold py-2.5 rounded-xl ${acceptingId !== null ? "opacity-60" : ""}`}
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
-                Accept offer & pay
+                {acceptingId === o.id ? "Placing order…" : "Accept offer & pay"}
               </button>
             </div>
           ))}

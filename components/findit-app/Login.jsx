@@ -5,7 +5,7 @@ import { ArrowRight, User, Store } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { api } from "./api";
 
-export default function Login({ onDone }) {
+export default function Login({ onDone, showToast }) {
   const [mode, setMode] = useState("login"); // login | signup
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -109,7 +109,13 @@ export default function Login({ onDone }) {
       {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
 
       {mode === "login" && (
-        <button className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end">Forgot password?</button>
+        <button
+          type="button"
+          onClick={() => showToast?.("Password reset isn't available in this demo yet.", "error")}
+          className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end"
+        >
+          Forgot password?
+        </button>
       )}
       {mode === "signup" && <div className="mb-6" />}
 

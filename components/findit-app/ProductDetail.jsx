@@ -15,6 +15,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow }) {
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
   const [contacted, setContacted] = useState(false);
+  const [buying, setBuying] = useState(false);
   if (!product) return null;
   const Icon = GROUPS[product.category].icon;
   const total = product.price * qty;
@@ -116,8 +117,20 @@ export default function ProductDetail({ product, onClose, go, onBuyNow }) {
           <p className="text-[11px] text-[#8A8372]">Total price</p>
           <p className="text-[19px] font-bold text-[#1E1B4B]">{naira(total)}</p>
         </div>
-        <button onClick={() => onBuyNow(product, qty, CONDITIONS[condition])} className="flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-          <ShoppingBag size={15} /> Buy now
+        <button
+          onClick={async () => {
+            setBuying(true);
+            try {
+              await onBuyNow(product, qty, CONDITIONS[condition]);
+            } finally {
+              setBuying(false);
+            }
+          }}
+          disabled={buying}
+          className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying ? "opacity-60" : ""}`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <ShoppingBag size={15} /> {buying ? "Placing order…" : "Buy now"}
         </button>
       </div>
     </div>

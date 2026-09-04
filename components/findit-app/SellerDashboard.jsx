@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CheckCircle2, Send, LayoutDashboard } from "lucide-react";
 import { naira } from "./data";
 import { Pill } from "./shared";
@@ -13,6 +14,17 @@ function budgetLabel(r) {
 }
 
 export default function SellerDashboard({ requests, onSendOffer, user }) {
+  const [sendingId, setSendingId] = useState(null);
+
+  const send = async (id) => {
+    setSendingId(id);
+    try {
+      await onSendOffer(id);
+    } finally {
+      setSendingId(null);
+    }
+  };
+
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
@@ -47,8 +59,13 @@ export default function SellerDashboard({ requests, onSendOffer, user }) {
             {r.offerCount > 0 ? (
               <Pill tone="green"><CheckCircle2 size={11} /> Offer sent</Pill>
             ) : (
-              <button onClick={() => onSendOffer(r.id)} className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-                <Send size={12} /> Send offer
+              <button
+                onClick={() => send(r.id)}
+                disabled={sendingId !== null}
+                className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${sendingId !== null ? "opacity-60" : ""}`}
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                <Send size={12} /> {sendingId === r.id ? "Sending…" : "Send offer"}
               </button>
             )}
           </div>

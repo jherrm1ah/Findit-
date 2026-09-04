@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  Home as HomeIcon, Search, ShoppingCart, MessageCircle, User,
+  Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User,
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { api } from "./api";
@@ -17,17 +17,24 @@ import Notifications from "./Notifications";
 import Checkout from "./Checkout";
 import ProductDetail from "./ProductDetail";
 
-const TABS = [
-  { key: "home", label: "Home", icon: HomeIcon },
-  { key: "browse", label: "Search", icon: Search },
-  { key: "request", label: "Request", icon: ShoppingCart },
-  { key: "seller", label: "Messages", icon: MessageCircle },
-  { key: "profile", label: "Profile", icon: User },
-];
+function tabsFor(role) {
+  const middle =
+    role === "admin"
+      ? { key: "admin", label: "Admin", icon: ShieldCheck }
+      : { key: "seller", label: role === "seller" ? "Dashboard" : "Sell", icon: LayoutDashboard };
+  return [
+    { key: "home", label: "Home", icon: HomeIcon },
+    { key: "browse", label: "Search", icon: Search },
+    { key: "request", label: "Request", icon: ShoppingCart },
+    middle,
+    { key: "profile", label: "Profile", icon: User },
+  ];
+}
 
-export default function MainApp({ user, onLogout }) {
+export default function MainApp({ user, onLogout, showToast }) {
   const isSeller = user?.role === "seller";
   const isAdmin = user?.role === "admin";
+  const TABS = tabsFor(user?.role);
 
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
@@ -93,13 +100,19 @@ export default function MainApp({ user, onLogout }) {
       setScreen("checkout");
       window.scrollTo?.(0, 0);
     } catch (err) {
-      alert(err.message || "Couldn't place that order — try again.");
+      showToast(err.message || "Couldn't place that order — try again.", "error");
     }
   };
 
   const handleReview = async (orderId, rating, comment) => {
-    const order = await api.submitOrderReview(orderId, { rating, comment: comment || null });
-    setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+    try {
+      const order = await api.submitOrderReview(orderId, { rating, comment: comment || null });
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Review submitted — thanks for the feedback.");
+    } catch (err) {
+      showToast(err.message || "Couldn't submit that review — try again.", "error");
+      throw err; // let Account.jsx know the submit failed so it keeps the form open
+    }
   };
 
   const handleMarkNotificationRead = async (id) => {
@@ -121,11 +134,14 @@ export default function MainApp({ user, onLogout }) {
   };
 
   const handleSellerStatusChange = async (id, status) => {
+    const seller = sellers.find((s) => s.id === id);
     setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status } : s)));
     try {
       await api.setSellerStatus(id, status);
-    } catch {
-      // best-effort
+      showToast(`${seller?.name || "Seller"} ${status}.`);
+    } catch (err) {
+      setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status: seller.status } : s)));
+      showToast(err.message || "Couldn't update that seller — try again.", "error");
     }
   };
 
@@ -133,14 +149,19 @@ export default function MainApp({ user, onLogout }) {
     try {
       await api.sendSellerOffer(requestId);
       setRequests(await api.getOpenRequests());
+      showToast("Offer sent to the customer.");
     } catch (err) {
-      alert(err.message || "Couldn't send that offer — try again.");
+      showToast(err.message || "Couldn't send that offer — try again.", "error");
     }
   };
 
   if (!loaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFF]">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#FAFAFF]">
+        <div className="relative w-12 h-12">
+          <div className="absolute inset-0 rounded-full border-4 border-[#ECE9F7]" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#7C3AED] border-t-transparent animate-spin" />
+        </div>
         <p className="text-[13px] text-[#6B6483]">Loading FindIt…</p>
       </div>
     );
@@ -154,7 +175,6 @@ export default function MainApp({ user, onLogout }) {
             <Logo size={26} />
             <Wordmark />
           </button>
-          <span className="text-[10px] text-[#8A8372] font-mono">PROTOTYPE</span>
         </header>
       )}
 
@@ -214,7 +234,7 @@ export default function MainApp({ user, onLogout }) {
           style={{ background: "linear-gradient(135deg,#1E1B4B,#3B1874)" }}
         >
           {TABS.map((t) => {
-            const activeKey = ["admin", "account", "notifications"].includes(screen) ? "profile" : screen;
+            const activeKey = ["account", "notifications"].includes(screen) ? "profile" : screen;
             const active = activeKey === t.key;
             return (
               <button
