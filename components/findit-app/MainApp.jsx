@@ -18,6 +18,7 @@ import Checkout from "./Checkout";
 import ProductDetail from "./ProductDetail";
 import Messages from "./Messages";
 import Thread from "./Thread";
+import SellerProfile from "./SellerProfile";
 
 function tabsFor(role) {
   const middle =
@@ -41,6 +42,7 @@ export default function MainApp({ user, onLogout, showToast }) {
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
+  const [viewedSeller, setViewedSeller] = useState(null);
   const [checkoutOrder, setCheckoutOrder] = useState(null);
 
   const [loaded, setLoaded] = useState(false);
@@ -79,6 +81,7 @@ export default function MainApp({ user, onLogout, showToast }) {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
+    setViewedSeller(null);
     window.scrollTo?.(0, 0);
     if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
@@ -86,6 +89,16 @@ export default function MainApp({ user, onLogout, showToast }) {
     if (s === "messages" && user) {
       api.getConversations().then(setConversations).catch(() => {});
     }
+  };
+
+  const handleViewSeller = (sellerName) => {
+    setProduct(null);
+    setViewedSeller(sellerName);
+  };
+
+  const handleOpenProductFromSeller = (p) => {
+    setViewedSeller(null);
+    setProduct(p);
   };
 
   const handleOrderCreated = (order) => {
@@ -352,7 +365,24 @@ export default function MainApp({ user, onLogout, showToast }) {
       </main>
 
       {product && (
-        <ProductDetail product={product} onClose={() => setProduct(null)} go={go} onBuyNow={buyNow} onContact={handleContactSeller} />
+        <ProductDetail
+          product={product}
+          onClose={() => setProduct(null)}
+          go={go}
+          onBuyNow={buyNow}
+          onContact={handleContactSeller}
+          onViewSeller={handleViewSeller}
+        />
+      )}
+
+      {viewedSeller && (
+        <SellerProfile
+          sellerName={viewedSeller}
+          products={products}
+          onBack={() => setViewedSeller(null)}
+          onOpenProduct={handleOpenProductFromSeller}
+          onContact={handleContactSeller}
+        />
       )}
 
       {activeThread && (

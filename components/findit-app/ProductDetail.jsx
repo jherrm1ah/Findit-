@@ -10,7 +10,7 @@ import { IconButton, ArtBlock, Pill } from "./shared";
 
 const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow, onContact }) {
+export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller }) {
   const [saved, setSaved] = useState(false);
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
@@ -47,8 +47,8 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</h1>
 
         <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+          <button onClick={() => onViewSeller(product.seller)} className="flex items-center gap-2.5 text-left">
+            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
               <User size={17} className="text-white" />
             </div>
             <div>
@@ -59,7 +59,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
                 <Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {product.rating} · {product.loc}
               </p>
             </div>
-          </div>
+          </button>
           <button
             onClick={async () => {
               setContacting(true);

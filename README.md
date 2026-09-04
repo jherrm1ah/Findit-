@@ -35,6 +35,11 @@ simulated state) — see "Next steps" below.
   are tied to your account; guests and every account also see the shared seed/demo orders.
 - **Messages** — real buyer-seller chat. Tap "Contact" on a product to start a conversation with
   its seller; both sides see the thread, unread counts, and can reply from their own account.
+- **Seller profile (storefront)** — tap a seller's name from a product to see their public page:
+  aggregate rating, listing count, verified status, a "Contact seller" button, and a grid of
+  every product they currently have listed. Works for any seller name that appears on a product,
+  not just ones with real accounts — contacting one who hasn't signed up surfaces a clear message
+  instead of erroring.
 - **Notifications** — mark one or all as read, persisted, scoped per account the same way.
 - **Profile** — shows your real name/phone/role with a working log out (or a log-in prompt as a
   guest), plus entry points into your orders, messages, and notifications.
