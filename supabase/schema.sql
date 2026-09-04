@@ -32,6 +32,13 @@ create table if not exists users (
   name text not null,
   role text not null check (role in ('buyer', 'seller', 'admin')),
   business_name text,
+  -- The account's last-known location, set only when the user explicitly
+  -- grants browser geolocation permission (never auto-collected, never
+  -- inferred from a hardcoded city). Used to derive "near you" listings and
+  -- requests via real distance math — see lib/geo.ts. Null until granted.
+  lat double precision,
+  lng double precision,
+  location_updated_at timestamptz,
   created_at timestamptz not null default now()
 );
 
@@ -84,6 +91,12 @@ create table if not exists products (
   seller text not null,
   image_url text,
   art integer not null default 0,
+  -- Captured from the selling account's location at the time the listing was
+  -- created (see lat/lng on users above) so buyers can be shown real nearby
+  -- listings without any hardcoded city. Null if the seller had no location
+  -- on file yet — such listings just don't get distance-sorted.
+  lat double precision,
+  lng double precision,
   created_at timestamptz not null default now()
 );
 create index if not exists products_seller_idx on products(seller);
@@ -114,7 +127,9 @@ create table if not exists requests (
   budget_min integer,
   budget_max integer,
   qty integer not null default 1,
-  location text,
+  location text, -- optional free-text note from the buyer (e.g. a delivery landmark), never geocoded
+  lat double precision, -- real coordinates captured from the buyer at submission time, for sellers' "near you" queue
+  lng double precision,
   condition text not null default 'New',
   deadline text,
   status text not null default 'open' check (status in ('open', 'matched', 'cancelled')),

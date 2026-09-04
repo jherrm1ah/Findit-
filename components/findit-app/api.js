@@ -99,6 +99,13 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.offer),
 
+  updateMyLocation: (lat, lng) =>
+    request("/api/me/location", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ lat, lng }),
+    }),
+
   me: () => request("/api/auth/me").then((d) => d.user),
   signup: (payload) =>
     request("/api/auth/signup", {

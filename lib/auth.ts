@@ -13,6 +13,11 @@ export type User = {
   name: string;
   role: Role;
   businessName: string | null;
+  // Set only once the user has explicitly granted browser geolocation
+  // permission on some device (see lib/repo.ts#updateUserLocation). Lets the
+  // client skip re-prompting a returning user who already granted it.
+  lat: number | null;
+  lng: number | null;
 };
 
 type Row = Record<string, unknown>;
@@ -24,6 +29,8 @@ function rowToUser(row: Row): User {
     name: row.name as string,
     role: row.role as Role,
     businessName: (row.business_name as string | null) ?? null,
+    lat: (row.lat as number | null) ?? null,
+    lng: (row.lng as number | null) ?? null,
   };
 }
 

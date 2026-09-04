@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, ArrowRight, ListOrdered, Sparkles } from "lucide-react";
+import { CheckCircle2, ArrowRight, ListOrdered, Sparkles, MapPin } from "lucide-react";
 import { Field } from "./shared";
 import { GROUPS } from "./data";
 import { api } from "./api";
 
-export default function RequestForm({ go, showToast }) {
+export default function RequestForm({ go, showToast, myLocation }) {
   const [stage, setStage] = useState("form");
   const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New", deadline: "" });
   const [error, setError] = useState(null);
@@ -50,6 +50,8 @@ export default function RequestForm({ go, showToast }) {
         budgetMax: form.budgetMax,
         qty: form.qty,
         location: form.location,
+        lat: myLocation?.lat ?? null,
+        lng: myLocation?.lng ?? null,
         condition: form.condition,
       });
       setStage("submitted");
@@ -122,7 +124,10 @@ export default function RequestForm({ go, showToast }) {
             </select>
           </Field>
         </div>
-        <Field label="Your city (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Lagos, Abuja, Jos…" className="input" /></Field>
+        <Field label="Delivery note (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. nearest landmark or drop-off point" className="input" /></Field>
+        {myLocation && (
+          <p className="text-[11px] text-[#6B6483] -mt-2 flex items-center gap-1"><MapPin size={11} /> Using your current location so nearby sellers see this first.</p>
+        )}
         <Field label="Deadline (optional)"><input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className="input" /></Field>
         <button
           type="submit"

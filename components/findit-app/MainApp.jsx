@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { api } from "./api";
+import { getStoredLocation, requestBrowserLocation } from "./location";
 import Home from "./Home";
 import Browse from "./Browse";
 import RequestForm from "./RequestForm";
@@ -58,6 +59,47 @@ export default function MainApp({ user, onLogout, showToast }) {
   const [threadLoading, setThreadLoading] = useState(false);
   const [savedIds, setSavedIds] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
+
+  // Real device/account location — set only once the user explicitly grants
+  // browser geolocation permission (see ./location.js). Never defaulted to
+  // any city. Used to sort listings/requests by real distance; the app
+  // falls back to today's recency order whenever this is null.
+  const [myLocation, setMyLocation] = useState(null); // { lat, lng } | null
+  const [locationStatus, setLocationStatus] = useState("idle"); // idle | requesting | granted | denied | unavailable | unsupported
+
+  useEffect(() => {
+    if (user?.lat != null && user?.lng != null) {
+      setMyLocation({ lat: user.lat, lng: user.lng });
+      setLocationStatus("granted");
+      return;
+    }
+    const stored = getStoredLocation();
+    if (stored) {
+      setMyLocation({ lat: stored.lat, lng: stored.lng });
+      setLocationStatus("granted");
+    }
+  }, [user?.id]);
+
+  const handleEnableLocation = async () => {
+    setLocationStatus("requesting");
+    try {
+      const loc = await requestBrowserLocation();
+      setMyLocation(loc);
+      setLocationStatus("granted");
+      if (user) {
+        api.updateMyLocation(loc.lat, loc.lng).catch(() => {});
+      }
+    } catch (err) {
+      const reason = ["denied", "unsupported"].includes(err.message) ? err.message : "unavailable";
+      setLocationStatus(reason);
+      showToast(
+        reason === "denied"
+          ? "Location access was denied — you can still browse everything, just not sorted by distance."
+          : "Couldn't get your location right now — try again later.",
+        "error"
+      );
+    }
+  };
 
   useEffect(() => {
     const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
@@ -181,7 +223,11 @@ export default function MainApp({ user, onLogout, showToast }) {
 
   const handleCreateProduct = async (input) => {
     try {
-      const product = await api.createProduct(input);
+      const product = await api.createProduct({
+        ...input,
+        lat: myLocation?.lat ?? null,
+        lng: myLocation?.lng ?? null,
+      });
       setProducts((ps) => [product, ...ps]);
       showToast("Listing added.");
     } catch (err) {
@@ -192,7 +238,11 @@ export default function MainApp({ user, onLogout, showToast }) {
 
   const handleUpdateProduct = async (id, patch) => {
     try {
-      const product = await api.updateProduct(id, patch);
+      const product = await api.updateProduct(id, {
+        ...patch,
+        lat: myLocation?.lat ?? null,
+        lng: myLocation?.lng ?? null,
+      });
       setProducts((ps) => ps.map((p) => (p.id === id ? product : p)));
       showToast("Listing updated.");
     } catch (err) {
@@ -343,6 +393,9 @@ export default function MainApp({ user, onLogout, showToast }) {
             unreadCount={notifications.filter((n) => n.unread).length}
             savedIds={savedIds}
             onToggleSaved={handleToggleSaved}
+            myLocation={myLocation}
+            locationStatus={locationStatus}
+            onEnableLocation={handleEnableLocation}
           />
         )}
         {screen === "browse" && (
@@ -352,11 +405,12 @@ export default function MainApp({ user, onLogout, showToast }) {
             products={products}
             savedIds={savedIds}
             onToggleSaved={handleToggleSaved}
+            myLocation={myLocation}
           />
         )}
         {screen === "request" && (
           user ? (
-            <RequestForm go={go} showToast={showToast} />
+            <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
           ) : (
             <RoleGate
               title="Log in to request an item"
@@ -391,6 +445,7 @@ export default function MainApp({ user, onLogout, showToast }) {
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
               onUploadImage={handleUploadImage}
+              myLocation={myLocation}
             />
           ) : (
             <RoleGate
@@ -459,6 +514,7 @@ export default function MainApp({ user, onLogout, showToast }) {
           onViewSeller={handleViewSeller}
           savedIds={savedIds}
           onToggleSaved={handleToggleSaved}
+          myLocation={myLocation}
         />
       )}
 
@@ -469,6 +525,7 @@ export default function MainApp({ user, onLogout, showToast }) {
           onBack={() => setViewedSeller(null)}
           onOpenProduct={handleOpenProductFromSeller}
           onContact={handleContactSeller}
+          myLocation={myLocation}
         />
       )}
 

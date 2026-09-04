@@ -12,7 +12,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }
 
-  let body: { category?: string; name?: string; price?: number; imageUrl?: string | null };
+  let body: {
+    category?: string;
+    name?: string;
+    price?: number;
+    imageUrl?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  };
   try {
     body = await req.json();
   } catch {
@@ -36,6 +43,10 @@ export async function POST(req: NextRequest) {
       price: body.price,
       seller: user.businessName!,
       imageUrl: body.imageUrl ?? null,
+      // Sent by the client from the seller's current known location (see
+      // components/findit-app/location.js); null if they haven't granted it.
+      lat: typeof body.lat === "number" ? body.lat : null,
+      lng: typeof body.lng === "number" ? body.lng : null,
     });
     return NextResponse.json({ product });
   } catch (err) {

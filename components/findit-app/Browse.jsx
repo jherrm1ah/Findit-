@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star } from "lucide-react";
+import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star, MapPin } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { ArtBlock } from "./shared";
+import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
-export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved }) {
+export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation }) {
   const [group, setGroup] = useState(initialGroup || "all");
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -15,13 +16,17 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return products.filter((p) => {
+    const filtered = products.filter((p) => {
       if (group !== "all" && p.category !== group) return false;
       if (verifiedOnly && !p.verified) return false;
       if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [products, group, query, verifiedOnly]);
+    if (!myLocation) return filtered;
+    return filtered
+      .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
+      .sort((a, b) => a._km - b._km);
+  }, [products, group, query, verifiedOnly, myLocation]);
 
   return (
     <div className="px-5 pt-6 pb-10">
@@ -102,6 +107,9 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
                 <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
               )}
             </div>
+            {Number.isFinite(p._km) && (
+              <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372] mt-0.5"><MapPin size={9} /> {formatDistanceKm(p._km)}</span>
+            )}
           </button>
         ))}
         {list.length === 0 && (

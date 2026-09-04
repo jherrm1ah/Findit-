@@ -5,23 +5,34 @@ import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon, Sparkles,
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
-  LayoutDashboard,
+  LayoutDashboard, MapPin,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
+import { haversineKm } from "@/lib/geo";
 
 const BANNERS = [
   { tag: "Request-first", title: "Can't find it?\nAsk FindIt.", cta: "Request now", action: "request" },
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
-export default function Home({ go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved }) {
+export default function Home({
+  go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
+  myLocation, locationStatus, onEnableLocation,
+}) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
-  // Products are already ordered newest-first by the API, so "trending" here
-  // means "recently listed" — there's no real signal yet (like view/order
-  // counts) to rank by anything fancier.
-  const trending = products.slice(0, 8);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // With a real location, show the newest listings sorted nearest-first;
+  // without one, fall back to plain recency (the API's default order) —
+  // there's no hardcoded city to fall back to.
+  const trending = myLocation
+    ? [...products]
+        .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
+        .sort((a, b) => a._km - b._km)
+        .slice(0, 8)
+    : products.slice(0, 8);
 
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },
@@ -42,7 +53,9 @@ export default function Home({ go, openProduct, products, unreadCount = 0, saved
         </IconButton>
         <div className="flex items-center gap-1.5">
           <Logo size={22} />
-          <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">Nearest sellers</span>
+          <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">
+            {myLocation ? "Near you" : "FindIt"}
+          </span>
         </div>
         <div className="flex items-center gap-2">
           <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined}><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
@@ -75,6 +88,29 @@ export default function Home({ go, openProduct, products, unreadCount = 0, saved
           <SlidersHorizontal size={14} className="text-white" />
         </button>
       </div>
+
+      {!myLocation && !bannerDismissed && locationStatus !== "denied" && locationStatus !== "unsupported" && (
+        <div className="flex items-center gap-3 bg-[#F5F2FC] border border-[#ECE9F7] rounded-[16px] px-4 py-3 mb-5">
+          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0">
+            <MapPin size={15} className="text-[#7C3AED]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold text-[#1E1B4B]">See what's near you</p>
+            <p className="text-[10.5px] text-[#6B6483]">Turn on location to sort listings and sellers by distance.</p>
+          </div>
+          <button
+            onClick={onEnableLocation}
+            disabled={locationStatus === "requesting"}
+            className={`text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-full shrink-0 ${locationStatus === "requesting" ? "opacity-60" : ""}`}
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            {locationStatus === "requesting" ? "…" : "Allow"}
+          </button>
+          <button onClick={() => setBannerDismissed(true)} className="shrink-0">
+            <X size={14} className="text-[#8A8372]" />
+          </button>
+        </div>
+      )}
 
       {/* promo carousel */}
       <div
@@ -119,7 +155,7 @@ export default function Home({ go, openProduct, products, unreadCount = 0, saved
 
       {/* product grid */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[15px] font-bold text-[#1E1B4B]">New Listings</h2>
+        <h2 className="text-[15px] font-bold text-[#1E1B4B]">{myLocation ? "Near you" : "New Listings"}</h2>
         <button onClick={() => go("browse")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7">

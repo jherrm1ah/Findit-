@@ -22,7 +22,14 @@ export async function PATCH(
     );
   }
 
-  let body: { name?: string; category?: string; price?: number; imageUrl?: string | null };
+  let body: {
+    name?: string;
+    category?: string;
+    price?: number;
+    imageUrl?: string | null;
+    lat?: number | null;
+    lng?: number | null;
+  };
   try {
     body = await req.json();
   } catch {

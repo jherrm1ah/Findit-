@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, Star, BadgeCheck, MessageCircle, Package } from "lucide-react";
+import { ChevronLeft, Star, BadgeCheck, MessageCircle, Package, MapPin } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
+import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
-export default function SellerProfile({ sellerName, products, onBack, onOpenProduct, onContact }) {
+export default function SellerProfile({ sellerName, products, onBack, onOpenProduct, onContact, myLocation }) {
   const [contacting, setContacting] = useState(false);
   const listings = useMemo(
     () => products.filter((p) => p.seller === sellerName),
@@ -17,6 +18,9 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
   // to re-aggregate them here.
   const avgRating = listings[0]?.rating ?? null;
   const verified = listings[0]?.verified ?? false;
+  const km = myLocation && listings[0]?.lat != null && listings[0]?.lng != null
+    ? haversineKm(myLocation.lat, myLocation.lng, listings[0].lat, listings[0].lng)
+    : null;
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10">
@@ -44,6 +48,9 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
                 </span>
               )}
               <span className="text-[11px] text-[#8A8372]">· {listings.length} listing{listings.length === 1 ? "" : "s"}</span>
+              {km != null && (
+                <span className="flex items-center gap-0.5 text-[11px] text-[#7C3AED] font-medium"><MapPin size={10} /> {formatDistanceKm(km)}</span>
+              )}
               {verified ? (
                 <Pill tone="green"><BadgeCheck size={10} /> Verified</Pill>
               ) : (

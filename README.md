@@ -51,6 +51,10 @@ funds UI as a simulated state) — see "Next steps" below.
   your orders, requests, messages, and notifications.
 - **Product photos** — sellers can attach a real photo to a listing (add or edit), stored in
   Supabase Storage; falls back to a generated gradient icon for listings without one.
+- **Location** — FindIt is not tied to any one city. With permission, the app uses your device's
+  real coordinates to sort listings, sellers, and (for sellers) open requests by actual distance —
+  "near you" works the same whether you're in Lagos, Nairobi, or anywhere else. See "Location
+  awareness" below.
 
 ## Stack
 
@@ -68,6 +72,11 @@ props, with handlers that call the API and update local state.
 Create a free [Supabase](https://supabase.com) project, then run `supabase/schema.sql` against it
 (Supabase dashboard → SQL Editor → paste the file → Run). This creates every table the app needs.
 It does **not** seed any data — a fresh database is genuinely empty on purpose.
+
+**If you already had this app running before location support was added:** your existing project
+needs one more script — `supabase/migrations/002_add_location.sql` (SQL Editor → paste → Run). It
+only adds new columns (`lat`/`lng` on `users`, `products`, `requests`); it doesn't touch existing
+data. A brand-new project doesn't need this — `schema.sql` already includes those columns.
 
 ### 2. Configure environment variables
 
@@ -104,6 +113,9 @@ node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --passwo
 
 - `supabase/schema.sql` — the full Postgres schema (every table, no seed data). Run this once
   against a fresh Supabase project before starting the app.
+- `supabase/migrations/002_add_location.sql` — adds `lat`/`lng` columns for location awareness;
+  only needed if you set up your Supabase project before that feature existed (`schema.sql` already
+  includes them for a fresh install).
 - `scripts/create-admin.mjs` — one-time script to create an admin account directly in Supabase.
 - `lib/categories.js` — the fixed category id → label taxonomy (15 categories). Shared by
   `lib/repo.ts` (server-side validation) and `components/findit-app/data.js` (client labels/icons).
@@ -120,6 +132,10 @@ node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --passwo
 - `lib/storage.ts` — uploads product photos to Supabase Storage (server-side only), auto-creating
   the `product-images` bucket on first use.
 - `lib/ai.ts` — Gemini request classification (server-side only, `GEMINI_API_KEY`).
+- `lib/geo.ts` — pure real-world distance math (`haversineKm`) behind "near you" sorting; no DB or
+  browser APIs, so it's shared by server routes and client components alike and unit-tested.
+- `components/findit-app/location.js` — the client-side browser geolocation flow (explicit
+  permission prompt, localStorage caching); see "Location awareness" below.
 - `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
   sellers, messages, saved items, uploads, AI classification, and auth (signup/login/logout/me).
 - `components/findit-app/data.js` — client-only presentation data: category icons (paired with
@@ -176,6 +192,31 @@ request form sends the buyer's description to Gemini and gets back a structured 
 anything before submitting. Without the key set, clicking the button shows a clear error instead of
 a fake response.
 
+## Location awareness
+
+FindIt doesn't hardcode a city — every "near you" result is computed from real coordinates, and
+the same logic works anywhere in the world.
+
+- **Nothing is collected until you tap Allow.** The app never auto-requests location on load; a
+  small dismissible prompt (on Home) is the only way to grant it, and denying it is a fully
+  supported, permanent state — the app just falls back to today's recency-based ordering instead
+  of distance, exactly like before this feature existed.
+- **What's stored:** just a lat/lng pair, on `users` (your account, synced across devices once
+  granted), `products` (captured from the seller's location when a listing is created/edited), and
+  `requests` (captured from the buyer's location when a request is submitted). See
+  `supabase/schema.sql`/`supabase/migrations/002_add_location.sql`.
+- **How "near you" is computed:** real great-circle distance (`lib/geo.ts#haversineKm`, unit
+  tested) between your coordinates and a listing's/request's coordinates — sorted nearest-first on
+  Browse, Home, and the seller dashboard's open-requests queue. No city/area name is ever derived
+  or shown — the UI only ever says "near you," which is also why raw coordinates are never
+  displayed anywhere in the interface.
+- **Deliberately not built (yet):** reverse geocoding (turning coordinates into a city name like
+  "Lagos" or "Jos"), and a manual "type your city" fallback for buyers who deny location. Both
+  would need a new external geocoding API — a real infrastructure decision I didn't want to make
+  silently. The existing free-text "Delivery note" field on a request is the current manual
+  fallback (context for a seller, not something the app geocodes or sorts by). If you want a real
+  manual-location fallback later, that's the one place a geocoding service would plug in.
+
 ## Testing
 
 ```bash
@@ -186,9 +227,10 @@ Runs the Vitest suite (`lib/**/*.test.ts`). Since the database is now a real Sup
 project rather than a local SQLite file, and this environment may not have network access to
 Supabase, the automated tests cover the real business logic that doesn't require a live database —
 input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
-math, password hashing, and phone normalization — extracted into pure, directly-testable functions
-in `lib/repo.ts`/`lib/auth.ts`. The database-touching paths (signup/login, creating orders,
-accepting offers, messaging, etc.) need to be verified by actually running the app against a real
+math, password hashing, phone normalization, and the real-world distance math behind "near you" —
+extracted into pure, directly-testable functions in `lib/repo.ts`/`lib/auth.ts`/`lib/geo.ts`. The
+database-touching paths (signup/login, creating orders, accepting offers, messaging, saving a
+product's/request's location, etc.) need to be verified by actually running the app against a real
 Supabase project, the same way you'd test any app whose database lives outside your own machine.
 
 ## Next steps toward a real product

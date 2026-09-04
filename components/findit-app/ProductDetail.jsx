@@ -3,14 +3,15 @@
 import { useState } from "react";
 import {
   ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
-  Minus, Plus,
+  Minus, Plus, MapPin,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
+import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
 const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved }) {
+export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation }) {
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
   const [contacting, setContacting] = useState(false);
@@ -18,6 +19,9 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
   if (!product) return null;
   const Icon = GROUPS[product.category].icon;
   const total = product.price * qty;
+  const km = myLocation && product.lat != null && product.lng != null
+    ? haversineKm(myLocation.lat, myLocation.lng, product.lat, product.lng)
+    : null;
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28">
@@ -54,11 +58,16 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
               <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1">
                 {product.seller} {product.verified && <BadgeCheck size={13} className="text-[#7C3AED]" />}
               </p>
-              <p className="text-[11px] text-[#8A8372] flex items-center gap-1">
-                {product.rating != null ? (
-                  <><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {product.rating}</>
-                ) : (
-                  "No ratings yet"
+              <p className="text-[11px] text-[#8A8372] flex items-center gap-2 flex-wrap">
+                <span className="flex items-center gap-1">
+                  {product.rating != null ? (
+                    <><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {product.rating}</>
+                  ) : (
+                    "No ratings yet"
+                  )}
+                </span>
+                {km != null && (
+                  <span className="flex items-center gap-1 text-[#7C3AED] font-medium"><MapPin size={10} /> {formatDistanceKm(km)}</span>
                 )}
               </p>
             </div>

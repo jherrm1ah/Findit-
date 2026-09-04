@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin } from "lucide-react";
 import { naira, STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
+import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open";
@@ -172,6 +173,7 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
 export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
+  myLocation,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -252,6 +254,16 @@ export default function SellerDashboard({
       setDeletingId(null);
     }
   };
+
+  // Real distance from the seller's own location to each open request —
+  // sorted nearest-first when we have it, otherwise left in the API's
+  // default (most-recent-first) order.
+  const sortedRequests = useMemo(() => {
+    if (!myLocation) return requests;
+    return [...requests]
+      .map((r) => ({ ...r, _km: r.lat != null && r.lng != null ? haversineKm(myLocation.lat, myLocation.lng, r.lat, r.lng) : Infinity }))
+      .sort((a, b) => a._km - b._km);
+  }, [requests, myLocation]);
 
   return (
     <div className="px-5 pt-6 pb-10">
@@ -360,14 +372,17 @@ export default function SellerDashboard({
         {requests.length === 0 && (
           <p className="text-[12px] text-[#6B6483]">No open requests right now.</p>
         )}
-        {requests.map((r) => (
+        {sortedRequests.map((r) => (
           <div key={r.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
             <div className="flex items-start justify-between mb-1">
               <p className="text-[13px] font-semibold text-[#1E1B4B] pr-2">{r.title}</p>
               <span className="text-[10px] text-[#8A8372] whitespace-nowrap">{r.posted}</span>
             </div>
-            <p className="text-[11px] text-[#6B6483] mb-3">
-              {r.customerName || "A buyer"} · Budget {budgetLabel(r)}
+            <p className="text-[11px] text-[#6B6483] mb-3 flex items-center gap-2 flex-wrap">
+              <span>{r.customerName || "A buyer"} · Budget {budgetLabel(r)}</span>
+              {Number.isFinite(r._km) && (
+                <span className="flex items-center gap-0.5 text-[#7C3AED] font-medium"><MapPin size={10} /> {formatDistanceKm(r._km)}</span>
+              )}
             </p>
             {r.offerCount > 0 ? (
               <Pill tone="green"><CheckCircle2 size={11} /> Offer sent</Pill>

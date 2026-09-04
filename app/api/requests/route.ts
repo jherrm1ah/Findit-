@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     budgetMax?: number | string;
     qty?: number | string;
     location?: string;
+    lat?: number | null;
+    lng?: number | null;
     condition?: string;
   };
   try {
@@ -56,6 +58,10 @@ export async function POST(req: NextRequest) {
     budgetMax: toNumberOrNull(body.budgetMax),
     qty: Number(body.qty) > 0 ? Number(body.qty) : 1,
     location: body.location?.trim() || null,
+    // From the buyer's current known location (see
+    // components/findit-app/location.js); null if not granted.
+    lat: typeof body.lat === "number" ? body.lat : null,
+    lng: typeof body.lng === "number" ? body.lng : null,
     condition: body.condition || "New",
     userId: user.id,
   });

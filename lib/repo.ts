@@ -14,6 +14,11 @@ export type Product = {
   imageUrl: string | null;
   art: number;
   createdAt: string;
+  // Real coordinates captured from the seller's location when the listing
+  // was created (see lib/geo.ts for how these get used) — null if the
+  // seller had no location on file yet.
+  lat: number | null;
+  lng: number | null;
   // Computed at read time from the seller's real account/order history —
   // not stored on the product row. See getSellerStatsMap().
   verified: boolean;
@@ -80,6 +85,8 @@ export type RequestRow = {
   budgetMax: number | null;
   qty: number;
   location: string | null;
+  lat: number | null;
+  lng: number | null;
   condition: string;
   status: string;
   createdAt: string;
@@ -179,6 +186,8 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     imageUrl: (row.image_url as string | null) ?? null,
     art: row.art as number,
     createdAt: row.created_at as string,
+    lat: (row.lat as number | null) ?? null,
+    lng: (row.lng as number | null) ?? null,
     verified: stats.verified,
     rating: stats.rating,
   };
@@ -228,6 +237,8 @@ export async function createProduct(input: {
   price: number;
   seller: string;
   imageUrl?: string | null;
+  lat?: number | null;
+  lng?: number | null;
 }): Promise<Product> {
   validateProductInput(input);
 
@@ -242,6 +253,8 @@ export async function createProduct(input: {
       price: Math.round(input.price),
       seller: input.seller,
       image_url: input.imageUrl ?? null,
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
       art: Math.floor(Math.random() * 5),
     })
     .select()
@@ -252,7 +265,14 @@ export async function createProduct(input: {
 
 export async function updateProduct(
   id: string,
-  patch: Partial<{ name: string; category: string; price: number; imageUrl: string | null }>
+  patch: Partial<{
+    name: string;
+    category: string;
+    price: number;
+    imageUrl: string | null;
+    lat: number | null;
+    lng: number | null;
+  }>
 ): Promise<Product | null> {
   const existing = await getProduct(id);
   if (!existing) return null;
@@ -267,6 +287,8 @@ export async function updateProduct(
       category: patch.category ?? existing.category,
       price: Math.round(patch.price ?? existing.price),
       image_url: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
+      lat: patch.lat !== undefined ? patch.lat : existing.lat,
+      lng: patch.lng !== undefined ? patch.lng : existing.lng,
     })
     .eq("id", id);
   assertNoError(result, "updating product");
@@ -556,6 +578,8 @@ function rowToRequest(row: Row, offerCount: number, customerName?: string | null
     budgetMax: (row.budget_max as number | null) ?? null,
     qty: row.qty as number,
     location: (row.location as string | null) ?? null,
+    lat: (row.lat as number | null) ?? null,
+    lng: (row.lng as number | null) ?? null,
     condition: row.condition as string,
     status: row.status as string,
     createdAt: row.created_at as string,
@@ -630,6 +654,8 @@ export async function createRequest(input: {
   budgetMax: number | null;
   qty: number;
   location: string | null;
+  lat?: number | null;
+  lng?: number | null;
   condition: string;
   userId: string;
 }): Promise<RequestRow> {
@@ -650,6 +676,8 @@ export async function createRequest(input: {
       budget_max: input.budgetMax,
       qty: input.qty,
       location: input.location,
+      lat: input.lat ?? null,
+      lng: input.lng ?? null,
       condition: input.condition,
       status: "open",
     })
@@ -657,6 +685,21 @@ export async function createRequest(input: {
     .single();
   const row = assertNoError(result, "creating request") as Row;
   return rowToRequest(row, 0);
+}
+
+/* ------------------------------------------------------------------ */
+/*  User location — set only when a user explicitly grants browser      */
+/*  geolocation permission (see components/findit-app/location.js).     */
+/*  Never inferred, never defaulted to a hardcoded city.                 */
+/* ------------------------------------------------------------------ */
+
+export async function updateUserLocation(userId: string, lat: number, lng: number): Promise<void> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ lat, lng, location_updated_at: new Date().toISOString() })
+    .eq("id", userId);
+  assertNoError(result, "updating your location");
 }
 
 // A real seller-submitted offer — every field is what the seller entered in
