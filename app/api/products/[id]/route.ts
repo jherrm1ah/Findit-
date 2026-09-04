@@ -25,7 +25,7 @@ export async function PATCH(
     );
   }
 
-  let body: { name?: string; category?: string; price?: number };
+  let body: { name?: string; category?: string; price?: number; imageUrl?: string | null };
   try {
     body = await req.json();
   } catch {

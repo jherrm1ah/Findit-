@@ -38,6 +38,8 @@ simulated state) — see "Next steps" below.
 - **Notifications** — mark one or all as read, persisted, scoped per account the same way.
 - **Profile** — shows your real name/phone/role with a working log out (or a log-in prompt as a
   guest), plus entry points into your orders, messages, and notifications.
+- **Product photos** — sellers can attach a real photo to a listing (add or edit), stored in
+  Supabase Storage; falls back to a generated gradient icon for listings without one.
 
 ## Stack
 
@@ -79,8 +81,11 @@ for — change or remove it before this goes anywhere near production.
 - `lib/rateLimit.ts` — a small in-memory sliding-window limiter guarding login/signup (see
   "Access control" below). Single-process only — fine for this app, not for a multi-instance
   deployment.
+- `lib/storage.ts` — uploads product photos to Supabase Storage (server-side only, using
+  `SUPABASE_SERVICE_ROLE_KEY`), auto-creating the `product-images` bucket on first use. See
+  "Image uploads" below for setup.
 - `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
-  sellers, messages, and auth (signup/login/logout/me).
+  sellers, messages, uploads, and auth (signup/login/logout/me).
 - `components/findit-app/data.js` — client-only presentation data: category labels/icons,
   notification-type icons, gradient swatches, static copy.
 - `components/findit-app/api.js` — small fetch wrapper used by the client components.
@@ -120,6 +125,24 @@ routes require a session and check the caller is a participant in the conversati
 keyed by IP + phone for login and by IP for signup) — a 429 with a friendly error is returned once
 the limit is hit. This doesn't cover phone verification (OTP), since that needs a real SMS
 provider — same "needs external setup" category as payments below.
+
+## Image uploads
+
+Product photos are stored in [Supabase](https://supabase.com) Storage, not in the app's own
+database. To enable it:
+
+1. Create a free Supabase project.
+2. Copy `.env.example` to `.env.local` and fill in:
+   - `SUPABASE_URL` — your project's URL (Settings → API).
+   - `SUPABASE_SERVICE_ROLE_KEY` — the **`service_role`** secret key from the same page. Use the
+     classic JWT-style key (starts with `eyJ`, found under "Legacy API keys" if your project shows
+     the newer `sb_secret_...` key format by default) — the newer key format doesn't currently
+     have Storage admin permissions with this SDK version.
+3. That's it — the `product-images` bucket is created automatically the first time a seller
+   uploads a photo. No manual bucket setup needed.
+
+Without these env vars set, everything else in the app still works; only the photo-upload button
+in "Add listing" will fail with a clear error until they're configured.
 
 ## Testing
 

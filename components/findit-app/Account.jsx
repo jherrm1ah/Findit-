@@ -100,7 +100,7 @@ export default function Account({ openProduct, orders, products, onReview }) {
         {saved.map((p) => (
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} className="h-28 w-full" />
+              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-28 w-full" />
               <span className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
                 <Heart size={14} className="fill-[#E64980] text-[#E64980]" />
               </span>

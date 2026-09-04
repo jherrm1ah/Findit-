@@ -125,7 +125,7 @@ export default function Home({ go, openProduct, products, unreadCount = 0 }) {
         {trending.map((p) => (
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} className="h-32 w-full" />
+              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               <span onClick={(e) => toggleWishlist(p.id, e)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
                 <Heart size={14} className={wishlist[p.id] ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
               </span>

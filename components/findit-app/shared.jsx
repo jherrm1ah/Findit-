@@ -12,7 +12,14 @@ export function Pill({ children, tone = "stone" }) {
   return <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full ${tones[tone]}`}>{children}</span>;
 }
 
-export function ArtBlock({ icon: Icon, art = 0, className = "" }) {
+export function ArtBlock({ icon: Icon, art = 0, imageUrl, className = "" }) {
+  if (imageUrl) {
+    return (
+      <div className={`relative overflow-hidden ${className}`}>
+        <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+      </div>
+    );
+  }
   return (
     <div className={`bg-gradient-to-br ${ART[art]} flex items-center justify-center relative overflow-hidden ${className}`}>
       <div className="absolute -right-4 -top-4 w-16 h-16 rounded-full bg-white/10" />

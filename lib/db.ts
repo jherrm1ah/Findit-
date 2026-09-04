@@ -208,6 +208,7 @@ function migrate(database: Database.Database) {
 
   addColumnIfMissing("orders", "user_id", "TEXT");
   addColumnIfMissing("notifications", "user_id", "TEXT");
+  addColumnIfMissing("products", "image_url", "TEXT");
 }
 
 function seedIfEmpty(database: Database.Database) {

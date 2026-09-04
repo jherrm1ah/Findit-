@@ -30,7 +30,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
       <div className="px-5">
         <div className="relative rounded-[20px] overflow-hidden mb-3">
-          <ArtBlock icon={Icon} art={product.art} className="h-64 w-full" />
+          <ArtBlock icon={Icon} art={product.art} imageUrl={product.imageUrl} className="h-64 w-full" />
         </div>
         <div className="flex justify-center gap-1.5 mb-5">
           <span className="w-1.5 h-1.5 rounded-full bg-[#D9D2EF]" />

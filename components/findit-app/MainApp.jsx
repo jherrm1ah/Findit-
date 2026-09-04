@@ -134,6 +134,15 @@ export default function MainApp({ user, onLogout, showToast }) {
     }
   };
 
+  const handleUploadImage = async (file) => {
+    try {
+      return await api.uploadImage(file);
+    } catch (err) {
+      showToast(err.message || "Couldn't upload that image — try again.", "error");
+      throw err;
+    }
+  };
+
   const handleCreateProduct = async (input) => {
     try {
       const product = await api.createProduct(input);
@@ -289,6 +298,7 @@ export default function MainApp({ user, onLogout, showToast }) {
               onCreateProduct={handleCreateProduct}
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
+              onUploadImage={handleUploadImage}
             />
           ) : (
             <RoleGate

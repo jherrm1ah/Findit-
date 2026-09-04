@@ -17,6 +17,7 @@ export type Product = {
   marketingCat: string | null;
   loc: string;
   art: number;
+  imageUrl: string | null;
 };
 
 export type Order = {
@@ -107,6 +108,7 @@ function rowToProduct(row: Row): Product {
     marketingCat: (row.marketing_cat as string | null) ?? null,
     loc: row.loc as string,
     art: row.art as number,
+    imageUrl: (row.image_url as string | null) ?? null,
   };
 }
 
@@ -127,6 +129,7 @@ export function createProduct(input: {
   name: string;
   price: number;
   seller: string;
+  imageUrl?: string | null;
 }): Product {
   if (!CATEGORY_KEYS.includes(input.category)) {
     throw new Error("Unknown category.");
@@ -141,8 +144,8 @@ export function createProduct(input: {
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
   db.prepare(
-    `INSERT INTO products (id, category, name, price, seller, rating, verified, test_batch, marketing_cat, loc, art)
-     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Nigeria', @art)`
+    `INSERT INTO products (id, category, name, price, seller, rating, verified, test_batch, marketing_cat, loc, art, image_url)
+     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Nigeria', @art, @imageUrl)`
   ).run({
     id,
     category: input.category,
@@ -150,13 +153,14 @@ export function createProduct(input: {
     price: Math.round(input.price),
     seller: input.seller,
     art: Math.floor(Math.random() * 5),
+    imageUrl: input.imageUrl ?? null,
   });
   return getProduct(id)!;
 }
 
 export function updateProduct(
   id: string,
-  patch: Partial<{ name: string; category: string; price: number }>
+  patch: Partial<{ name: string; category: string; price: number; imageUrl: string | null }>
 ): Product | null {
   const existing = getProduct(id);
   if (!existing) return null;
@@ -176,13 +180,15 @@ export function updateProduct(
     `UPDATE products SET
        name = @name,
        category = @category,
-       price = @price
+       price = @price,
+       image_url = @imageUrl
      WHERE id = @id`
   ).run({
     id,
     name: (patch.name ?? existing.name).trim(),
     category: patch.category ?? existing.category,
     price: Math.round(patch.price ?? existing.price),
+    imageUrl: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
   });
   return getProduct(id);
 }

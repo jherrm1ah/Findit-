@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2 } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon } from "lucide-react";
 import { naira, STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 
@@ -19,12 +19,44 @@ function statusTone(status) {
   return "gold";
 }
 
-const EMPTY_FORM = { name: "", category: Object.keys(GROUPS)[0], price: "" };
+const EMPTY_FORM = { name: "", category: Object.keys(GROUPS)[0], price: "", imageUrl: null };
 
-function ListingForm({ initial, onSave, onCancel, saving }) {
+function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
   const [form, setForm] = useState(initial);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await onUploadImage(file);
+      setForm((f) => ({ ...f, imageUrl: url }));
+    } catch {
+      // onUploadImage already surfaces a toast on failure
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
+      <Field label="Photo">
+        <div className="flex items-center gap-3">
+          <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#ECE9F7] flex items-center justify-center shrink-0">
+            {form.imageUrl ? (
+              <img src={form.imageUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <ImageIcon size={18} className="text-[#B7AFD6]" />
+            )}
+          </div>
+          <label className={`text-[11.5px] font-semibold text-[#7C3AED] px-3 py-2 rounded-lg border border-[#7C3AED]/30 bg-white cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+            {uploading ? "Uploading…" : form.imageUrl ? "Change photo" : "Add photo"}
+            <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
+          </label>
+        </div>
+      </Field>
       <Field label="Product name">
         <input
           value={form.name}
@@ -55,8 +87,8 @@ function ListingForm({ initial, onSave, onCancel, saving }) {
       <div className="flex gap-2 pt-1">
         <button
           onClick={() => onSave(form)}
-          disabled={saving || !form.name.trim() || !Number(form.price)}
-          className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-lg ${saving || !form.name.trim() || !Number(form.price) ? "opacity-50" : ""}`}
+          disabled={saving || uploading || !form.name.trim() || !Number(form.price)}
+          className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-lg ${saving || uploading || !form.name.trim() || !Number(form.price) ? "opacity-50" : ""}`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           {saving ? "Saving…" : "Save"}
@@ -71,7 +103,7 @@ function ListingForm({ initial, onSave, onCancel, saving }) {
 
 export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
-  products, onCreateProduct, onUpdateProduct, onDeleteProduct,
+  products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
 }) {
   const [sendingId, setSendingId] = useState(null);
   const [advancingId, setAdvancingId] = useState(null);
@@ -107,7 +139,7 @@ export default function SellerDashboard({
   const saveNew = async (form) => {
     setSavingListing(true);
     try {
-      await onCreateProduct({ name: form.name, category: form.category, price: Number(form.price) });
+      await onCreateProduct({ name: form.name, category: form.category, price: Number(form.price), imageUrl: form.imageUrl });
       setAdding(false);
     } finally {
       setSavingListing(false);
@@ -117,7 +149,7 @@ export default function SellerDashboard({
   const saveEdit = async (id, form) => {
     setSavingListing(true);
     try {
-      await onUpdateProduct(id, { name: form.name, category: form.category, price: Number(form.price) });
+      await onUpdateProduct(id, { name: form.name, category: form.category, price: Number(form.price), imageUrl: form.imageUrl });
       setEditingId(null);
     } finally {
       setSavingListing(false);
@@ -161,7 +193,7 @@ export default function SellerDashboard({
       <div className="space-y-3 mb-7">
         {adding && (
           <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
-            <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} />
+            <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} onUploadImage={onUploadImage} />
           </div>
         )}
         {myListings.length === 0 && !adding && (
@@ -171,10 +203,11 @@ export default function SellerDashboard({
           <div key={p.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
             {editingId === p.id ? (
               <ListingForm
-                initial={{ name: p.name, category: p.category, price: String(p.price) }}
+                initial={{ name: p.name, category: p.category, price: String(p.price), imageUrl: p.imageUrl || null }}
                 onSave={(form) => saveEdit(p.id, form)}
                 onCancel={() => setEditingId(null)}
                 saving={savingListing}
+                onUploadImage={onUploadImage}
               />
             ) : (
               <div className="flex items-center justify-between gap-2 p-1">

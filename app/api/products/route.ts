@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }
 
-  let body: { category?: string; name?: string; price?: number };
+  let body: { category?: string; name?: string; price?: number; imageUrl?: string | null };
   try {
     body = await req.json();
   } catch {
@@ -25,6 +25,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+  if (body.imageUrl !== undefined && body.imageUrl !== null && typeof body.imageUrl !== "string") {
+    return NextResponse.json({ error: "imageUrl must be a string or null" }, { status: 400 });
+  }
 
   try {
     const product = createProduct({
@@ -32,6 +35,7 @@ export async function POST(req: NextRequest) {
       name: body.name,
       price: body.price,
       seller: user.businessName!,
+      imageUrl: body.imageUrl ?? null,
     });
     return NextResponse.json({ product });
   } catch (err) {

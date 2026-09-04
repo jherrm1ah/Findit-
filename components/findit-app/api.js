@@ -22,6 +22,11 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.product),
   deleteProduct: (id) => request(`/api/products/${id}`, { method: "DELETE" }),
+  uploadImage: (file) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return request("/api/uploads", { method: "POST", body: fd }).then((d) => d.url);
+  },
 
   getOrders: () => request("/api/orders").then((d) => d.orders),
   createOrder: (payload) =>
