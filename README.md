@@ -1,23 +1,32 @@
-# FindIt Naija — Product Idea Bank
+# FindIt Naija
 
-A web app for scoring and tracking the 300-product idea bank from the FindIt Naija sourcing
-business brief. Originally a spreadsheet; this replaces it with a live, shared catalogue.
+A request-first marketplace prototype connecting buyers in Jos, Nigeria to verified sellers:
+tell FindIt what you need (or browse the catalogue directly), sellers send offers, you pay into
+escrow and confirm on delivery.
 
-## Features
+This is a faithful Next.js port of a mobile-first React prototype. It runs entirely on in-memory
+mock data — no real backend, auth, or payments yet — so every flow below is fully clickable but
+nothing persists across a page reload.
 
-- **Catalogue** — all 300 products across 15 categories. Score each one on the ten criteria
-  from the brief's scoring model (Local Difficulty, Problem Strength, Visual Demo Potential,
-  Shipping Simplicity, Durability, Profit Margin, Repeat Demand, QC Ease, Return Safety,
-  Legal/Safety) on a 1–5 scale. Priority Score is the live average. Filter by category, status,
-  search, or "test batch only", and sort by Priority Score.
-- **Dashboard** — category rollups (product counts, test-batch counts, average priority score)
-  and pipeline status counts (Idea / Testing / Ordered / Launched / Killed).
-- Basic ops tracking per product: status, a supplier link, and free-text notes.
+## Flows
+
+- **Splash → Onboarding → Login** (or "Continue as guest") on first load.
+- **Home** — promo banner, category shortcuts, trending discoveries.
+- **Browse** — all 300 products across 15 categories from the FindIt idea bank; search, filter
+  by category/verified/first-20 test batch.
+- **Product detail → Buy now → Checkout** — simulated escrow hold with a delivery-status tracker.
+- **Request an item** — describe what you need, "sellers" respond with mock offers, accept one to
+  pay and track delivery.
+- **Seller dashboard** — respond to matching customer requests.
+- **Admin queue** — approve/reject pending sellers, view unmatched requests.
+- **Account** — order history, delivery tracking, reviews, saved items.
+- **Notifications**.
 
 ## Stack
 
-Next.js (App Router) + TypeScript + Tailwind CSS, with a SQLite database (via `better-sqlite3`)
-for storage. No separate backend — API routes live under `app/api/`.
+Next.js (App Router) + Tailwind CSS + lucide-react icons. The whole app is one client component
+tree mounted at `app/page.tsx`; screen navigation is in-memory state (`components/findit-app/App.jsx`
+→ `MainApp.jsx`), not URL routing, matching the original prototype's design.
 
 ## Running locally
 
@@ -26,11 +35,20 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:3000. The SQLite database (`data/findit.db`, gitignored) is created
-and seeded automatically from `data/products.json` on first run.
+Then open http://localhost:3000.
 
-## Data model
+## Code layout
 
-Each product row has: category, name, a "first test batch" flag, ten nullable 1–5 score fields,
-a status, an optional supplier URL, and notes. Priority Score is computed (not stored) as the
-average of whichever score fields are filled in.
+- `components/findit-app/data.js` — the product catalogue (300 items / 15 categories) and all
+  other mock data (offers, orders, notifications, sellers).
+- `components/findit-app/shared.jsx` — small shared UI primitives (Pill, ArtBlock, Logo, etc).
+- `components/findit-app/*.jsx` — one file per screen (Home, Browse, ProductDetail, Checkout,
+  RequestForm, SellerDashboard, AdminQueue, Account, Notifications, Profile, Splash, Onboarding,
+  Login), plus `MainApp.jsx` (tab bar + screen router) and `App.jsx` (splash/onboarding/login/main
+  phase machine).
+
+## Next steps toward a real product
+
+Real auth (phone/password accounts), a persisted database for products/requests/orders/sellers,
+a real seller-offer/notification pipeline, and a real Nigerian payment processor (e.g. Paystack
+or Flutterwave) for the escrow flow.

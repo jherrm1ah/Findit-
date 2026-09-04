@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Nav from "@/components/Nav";
 
 export const metadata: Metadata = {
-  title: "FindIt Naija — Product Idea Bank",
+  title: "FindIt Naija",
   description:
-    "Score and track the 300-product idea bank for the FindIt Naija sourcing business.",
+    "Request-first marketplace connecting buyers in Jos, Nigeria to verified sellers.",
 };
 
 export default function RootLayout({
@@ -15,10 +14,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen text-slate-900">
-        <Nav />
-        <main className="mx-auto max-w-7xl px-6 py-8">{children}</main>
-      </body>
+      <body className="min-h-screen text-slate-900">{children}</body>
     </html>
   );
 }
