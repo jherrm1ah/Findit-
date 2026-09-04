@@ -4,14 +4,20 @@ import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, Lo
 
 export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
   const CARDS = [
-    { key: "admin", icon: ShieldCheck, label: "Admin queue", subtitle: "Seller verification & unmatched requests", primary: true },
+    {
+      key: "admin",
+      icon: ShieldCheck,
+      label: "Admin queue",
+      subtitle: user?.role === "admin" ? "Seller verification & unmatched requests" : "Staff only",
+      primary: user?.role === "admin",
+    },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
     { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
     {
       key: "seller",
       icon: LayoutDashboard,
       label: "Seller dashboard",
-      subtitle: user?.role === "seller" ? `${user.businessName} · Jos` : "Demo view · Jos",
+      subtitle: user?.role === "seller" ? `${user.businessName} · Jos` : "Requires a seller account",
     },
   ];
   const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About this prototype"];

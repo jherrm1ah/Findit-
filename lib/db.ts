@@ -1,10 +1,17 @@
 import Database from "better-sqlite3";
+import crypto from "crypto";
 import path from "path";
 import { buildProductRows } from "./catalogue";
 
 const DB_PATH = path.join(process.cwd(), "data", "findit.db");
 
 let db: Database.Database | null = null;
+
+// Admin accounts aren't self-service (there's no "I'm an admin" signup option),
+// so seed one demo admin here. Documented in the README - change it for anything
+// beyond local/demo use.
+const SEED_ADMIN_PHONE = "08000000000";
+const SEED_ADMIN_PASSWORD = "admin1234";
 
 const SEED_SELLERS = [
   { id: "s1", name: "Bakassi Auto Parts", city: "Jos", docs: "Govt ID + shop photo", status: "pending" },
@@ -145,8 +152,28 @@ export function getDb(): Database.Database {
 
   migrate(db);
   seedIfEmpty(db);
+  seedAdminIfMissing(db);
 
   return db;
+}
+
+function seedAdminIfMissing(database: Database.Database) {
+  const existing = database.prepare("SELECT id FROM users WHERE role = 'admin'").get();
+  if (existing) return;
+
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = crypto.scryptSync(SEED_ADMIN_PASSWORD, salt, 64).toString("hex");
+  database
+    .prepare(
+      `INSERT INTO users (id, phone, password_hash, password_salt, name, role, business_name, created_at)
+       VALUES ('admin_seed', @phone, @passwordHash, @salt, 'FindIt Admin', 'admin', NULL, @createdAt)`
+    )
+    .run({
+      phone: SEED_ADMIN_PHONE,
+      passwordHash,
+      salt,
+      createdAt: new Date().toISOString(),
+    });
 }
 
 // Adds columns to tables that existed before auth was introduced. SQLite has

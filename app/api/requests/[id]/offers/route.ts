@@ -7,8 +7,11 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   const user = getSessionUser(req);
-  const sellerName = user?.role === "seller" ? user.businessName : null;
-  const offer = addSellerOfferToRequest(params.id, sellerName);
+  if (user?.role !== "seller") {
+    return NextResponse.json({ error: "Seller access required." }, { status: 403 });
+  }
+
+  const offer = addSellerOfferToRequest(params.id, user.businessName);
   if (!offer) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

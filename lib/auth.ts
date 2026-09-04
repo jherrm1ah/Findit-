@@ -5,7 +5,7 @@ import { getDb } from "./db";
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
 
-export type Role = "buyer" | "seller";
+export type Role = "buyer" | "seller" | "admin";
 
 export type User = {
   id: string;

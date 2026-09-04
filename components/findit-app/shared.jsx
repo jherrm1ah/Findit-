@@ -1,4 +1,4 @@
-import { Search } from "lucide-react";
+import { Search, Lock, LogOut } from "lucide-react";
 import { ART } from "./data";
 
 export function Pill({ children, tone = "stone" }) {
@@ -47,6 +47,27 @@ export function IconButton({ children, onClick, badge }) {
       {children}
       {badge && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
     </button>
+  );
+}
+
+export function RoleGate({ title, message, onLogout, logoutLabel = "Log out" }) {
+  return (
+    <div className="px-5 pt-16 pb-10 flex flex-col items-center text-center min-h-[70vh]">
+      <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+        <Lock size={26} className="text-white" strokeWidth={1.8} />
+      </div>
+      <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>{title}</h1>
+      <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">{message}</p>
+      {onLogout && (
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <LogOut size={14} /> {logoutLabel}
+        </button>
+      )}
+    </div>
   );
 }
 

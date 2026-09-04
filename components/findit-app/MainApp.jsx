@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import {
   Home as HomeIcon, Search, ShoppingCart, MessageCircle, User,
 } from "lucide-react";
-import { Logo, Wordmark } from "./shared";
+import { Logo, Wordmark, RoleGate } from "./shared";
 import { api } from "./api";
 import Home from "./Home";
 import Browse from "./Browse";
@@ -26,6 +26,9 @@ const TABS = [
 ];
 
 export default function MainApp({ user, onLogout }) {
+  const isSeller = user?.role === "seller";
+  const isAdmin = user?.role === "admin";
+
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
@@ -39,36 +42,41 @@ export default function MainApp({ user, onLogout }) {
   const [requests, setRequests] = useState([]);
 
   useEffect(() => {
-    Promise.all([
-      api.getProducts(),
-      api.getOrders(),
-      api.getNotifications(),
-      api.getSellers(),
-      api.getOpenRequests(),
-    ])
-      .then(([p, o, n, s, r]) => {
+    const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
+    Promise.all(tasks)
+      .then(([p, o, n]) => {
         setProducts(p);
         setOrders(o);
         setNotifications(n);
-        setSellers(s);
-        setRequests(r);
       })
       .finally(() => setLoaded(true));
-  }, []);
+
+    // These two are role-gated server-side; only fetch them for roles that
+    // can actually see the screens they back, so a buyer/guest doesn't spend
+    // a request hitting a 403 it can't do anything with.
+    if (isSeller || isAdmin) {
+      api.getOpenRequests().then(setRequests).catch(() => {});
+    }
+    if (isAdmin) {
+      api.getSellers().then(setSellers).catch(() => {});
+    }
+  }, [user?.id]);
 
   const go = (s, group) => {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
     window.scrollTo?.(0, 0);
-    if (s === "seller" || s === "admin") {
+    if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
     }
   };
 
   const handleOrderCreated = (order) => {
     setOrders((os) => [order, ...os]);
-    api.getOpenRequests().then(setRequests).catch(() => {});
+    if (isSeller || isAdmin) {
+      api.getOpenRequests().then(setRequests).catch(() => {});
+    }
   };
 
   const buyNow = async (prod, qty, condition) => {
@@ -156,9 +164,29 @@ export default function MainApp({ user, onLogout }) {
         )}
         {screen === "browse" && <Browse initialGroup={browseGroup} openProduct={setProduct} products={products} />}
         {screen === "request" && <RequestForm go={go} onOrderCreated={handleOrderCreated} />}
-        {screen === "seller" && <SellerDashboard requests={requests} onSendOffer={handleSendOffer} user={user} />}
+        {screen === "seller" && (
+          isSeller ? (
+            <SellerDashboard requests={requests} onSendOffer={handleSendOffer} user={user} />
+          ) : (
+            <RoleGate
+              title="Seller access needed"
+              message="This dashboard belongs to seller accounts. Sign up with a seller account (or log in with one) to respond to customer requests here."
+              onLogout={onLogout}
+              logoutLabel={user ? "Log out" : "Log in"}
+            />
+          )
+        )}
         {screen === "admin" && (
-          <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} />
+          isAdmin ? (
+            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} />
+          ) : (
+            <RoleGate
+              title="Admin access needed"
+              message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
+              onLogout={onLogout}
+              logoutLabel={user ? "Log out" : "Log in"}
+            />
+          )
         )}
         {screen === "profile" && (
           <Profile go={go} user={user} onLogout={onLogout} unreadCount={notifications.filter((n) => n.unread).length} />

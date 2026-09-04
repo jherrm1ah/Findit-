@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { listOpenRequests, createRequestWithAutoOffers } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const user = getSessionUser(req);
+  if (user?.role !== "seller" && user?.role !== "admin") {
+    return NextResponse.json(
+      { error: "Seller or admin access required." },
+      { status: 403 }
+    );
+  }
   return NextResponse.json({ requests: listOpenRequests() });
 }
 

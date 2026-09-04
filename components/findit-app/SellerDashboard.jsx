@@ -13,21 +13,13 @@ function budgetLabel(r) {
 }
 
 export default function SellerDashboard({ requests, onSendOffer, user }) {
-  const isSeller = user?.role === "seller";
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
         <LayoutDashboard size={17} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Seller dashboard</h1>
       </div>
-      <p className="text-[12px] text-[#6B6483] mb-5">
-        {isSeller ? `${user.businessName} · Jos` : "Demo view · PowerPoint Electricals · Jos"}
-      </p>
-      {!isSeller && (
-        <p className="text-[11px] text-[#6B6483] bg-[#F5F2FC] rounded-xl px-3 py-2 mb-5">
-          Sign up with a seller account from your Profile to run this as your own shop.
-        </p>
-      )}
+      <p className="text-[12px] text-[#6B6483] mb-5">{user.businessName} · Jos</p>
 
       <div className="grid grid-cols-4 gap-2 mb-6">
         {[["Rating", "4.9"], ["Orders", "212"], ["Response", "98%"], ["Payout", "₦186k"]].map(([l, v]) => (

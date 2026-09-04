@@ -22,10 +22,12 @@ simulated state) — see "Next steps" below.
   and a delivery-status tracker.
 - **Request an item** — submits a real request; the server auto-generates offers from three
   sellers (simulating instant matching), compare and accept one to pay and track delivery.
-- **Seller dashboard** — respond to open customer requests with a real offer, attributed to your
-  real business name once you're signed in as a seller.
-- **Admin queue** — approve/reject pending sellers (including real seller signups); requests with
-  zero offers show as unmatched.
+- **Seller dashboard** — seller accounts only; everyone else sees a locked screen explaining why
+  and a way to log in as one. Respond to open customer requests with a real offer, attributed to
+  your real business name.
+- **Admin queue** — staff-only (there's no self-serve "I'm an admin" signup); log in with the seed
+  admin account below. Approve/reject pending sellers (including real seller signups); requests
+  with zero offers show as unmatched.
 - **Account** — real order history, delivery tracking, reviews, saved items. Orders you place are
   tied to your account; guests and every account also see the shared seed/demo orders.
 - **Notifications** — mark one or all as read, persisted, scoped per account the same way.
@@ -49,7 +51,15 @@ npm run dev
 ```
 
 Then open http://localhost:3000. The SQLite database (`data/findit.db`, gitignored) is created
-and seeded automatically on first run.
+and seeded automatically on first run — including a demo admin account:
+
+```
+Phone:    08000000000
+Password: admin1234
+```
+
+This is a local-demo credential seeded directly in `lib/db.ts`, not something anyone can sign up
+for — change or remove it before this goes anywhere near production.
 
 ## Code layout
 
@@ -70,8 +80,14 @@ and seeded automatically on first run.
   Login), plus `MainApp.jsx` (tab bar + screen router + data fetching) and `App.jsx`
   (splash/onboarding/login/main phase machine).
 
+## Access control
+
+Three roles: `buyer`, `seller`, `admin`. The Seller Dashboard requires `seller`; the Admin Queue
+requires `admin` — both gated server-side (`GET`/`PATCH /api/sellers`, `GET /api/requests`, and
+`POST /api/requests/:id/offers` all check the session's role and return 403 otherwise), not just
+hidden in the UI. `admin` has no public signup path — see the seed credentials above.
+
 ## Next steps toward a real product
 
-A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, and gating
-sensitive seller/admin actions behind actual authorization rather than leaving them open to any
-signed-in (or guest) session.
+A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, and a real
+way to provision admin accounts beyond the single seeded one.
