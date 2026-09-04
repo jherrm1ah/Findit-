@@ -409,28 +409,10 @@ export default function MainApp({ user, onLogout, showToast }) {
           />
         )}
         {screen === "request" && (
-          user ? (
-            <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
-          ) : (
-            <RoleGate
-              title="Log in to request an item"
-              message="Create an account or log in so real sellers can respond to your request and you can track it."
-              onLogout={onLogout}
-              logoutLabel="Log in"
-            />
-          )
+          <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
         )}
         {screen === "myRequests" && (
-          user ? (
-            <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} />
-          ) : (
-            <RoleGate
-              title="Log in to see your requests"
-              message="Create an account or log in to track requests and accept offers from sellers."
-              onLogout={onLogout}
-              logoutLabel="Log in"
-            />
-          )
+          <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} />
         )}
         {screen === "seller" && (
           isSeller ? (
@@ -452,7 +434,7 @@ export default function MainApp({ user, onLogout, showToast }) {
               title="Seller access needed"
               message="This dashboard belongs to seller accounts. Sign up with a seller account (or log in with one) to respond to customer requests here."
               onLogout={onLogout}
-              logoutLabel={user ? "Log out" : "Log in"}
+              logoutLabel="Log out"
             />
           )
         )}
@@ -464,7 +446,7 @@ export default function MainApp({ user, onLogout, showToast }) {
               title="Admin access needed"
               message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
               onLogout={onLogout}
-              logoutLabel={user ? "Log out" : "Log in"}
+              logoutLabel="Log out"
             />
           )
         )}
@@ -472,16 +454,7 @@ export default function MainApp({ user, onLogout, showToast }) {
           <Profile go={go} user={user} onLogout={onLogout} unreadCount={notifications.filter((n) => n.unread).length} />
         )}
         {screen === "messages" && (
-          user ? (
-            <Messages conversations={conversations} onOpenThread={handleOpenThread} />
-          ) : (
-            <RoleGate
-              title="Log in to message sellers"
-              message="Create an account or log in to start a conversation with a seller."
-              onLogout={onLogout}
-              logoutLabel="Log in"
-            />
-          )
+          <Messages conversations={conversations} onOpenThread={handleOpenThread} />
         )}
         {screen === "account" && (
           <Account
