@@ -14,8 +14,8 @@ funds UI as a simulated state) — see "Next steps" below.
 
 - **Splash → Onboarding → Login/signup** on first load. Signing up picks a buyer or seller
   account; a returning user with a live session skips straight past login. A seller signup
-  immediately enters the admin verification queue. There is no "Continue as guest" for anything
-  that creates data (placing an order, submitting a request) — see "Access control" for why.
+  immediately enters the admin verification queue. There's no guest/anonymous browsing — every
+  visitor logs in or creates an account before reaching the app.
 - **Home** — promo banner, category shortcuts, and "New Listings" (the most recently created
   products — there's no curated "trending" concept, just real recency); a real unread-notification
   badge.

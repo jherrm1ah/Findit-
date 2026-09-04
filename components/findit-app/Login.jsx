@@ -129,16 +129,6 @@ export default function Login({ onDone, showToast }) {
         {!loading && <ArrowRight size={16} />}
       </button>
 
-      <div className="flex items-center gap-3 mb-4">
-        <div className="flex-1 h-px bg-[#ECE9F7]" />
-        <span className="text-[11px] text-[#8A8372]">or</span>
-        <div className="flex-1 h-px bg-[#ECE9F7]" />
-      </div>
-
-      <button onClick={() => onDone(null)} className="w-full text-[#1E1B4B] text-[13px] font-semibold py-3 rounded-xl border border-[#ECE9F7] bg-white mb-6">
-        Continue as guest
-      </button>
-
       <p className="text-center text-[13px] text-[#6B6483] mt-auto">
         {mode === "login" ? "New to FindIt?" : "Already have an account?"}{" "}
         <button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} className="font-semibold text-[#7C3AED]">
