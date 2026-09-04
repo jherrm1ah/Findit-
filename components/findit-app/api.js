@@ -28,6 +28,15 @@ export const api = {
     return request("/api/uploads", { method: "POST", body: fd }).then((d) => d.url);
   },
 
+  getSavedIds: () => request("/api/saved").then((d) => d.productIds),
+  saveItem: (productId) =>
+    request("/api/saved", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId }),
+    }),
+  unsaveItem: (productId) => request(`/api/saved/${productId}`, { method: "DELETE" }),
+
   getOrders: () => request("/api/orders").then((d) => d.orders),
   createOrder: (payload) =>
     request("/api/orders", {
@@ -62,21 +71,33 @@ export const api = {
       body: JSON.stringify({ status }),
     }).then((d) => d.seller),
 
+  classifyRequest: (description) =>
+    request("/api/ai/classify-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    }).then((d) => d.result),
+
   getOpenRequests: () => request("/api/requests").then((d) => d.requests),
+  getMyRequests: () => request("/api/requests/mine").then((d) => d.requests),
   createRequest: (payload) =>
     request("/api/requests", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-    }),
+    }).then((d) => d.request),
   acceptOffer: (requestId, offerId) =>
     request(`/api/requests/${requestId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ acceptOfferId: offerId }),
     }).then((d) => d.order),
-  sendSellerOffer: (requestId) =>
-    request(`/api/requests/${requestId}/offers`, { method: "POST" }).then((d) => d.offer),
+  sendSellerOffer: (requestId, payload) =>
+    request(`/api/requests/${requestId}/offers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.offer),
 
   me: () => request("/api/auth/me").then((d) => d.user),
   signup: (payload) =>

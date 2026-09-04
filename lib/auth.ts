@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getDb } from "./db";
+import { getDb, assertNoError } from "./db";
 
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
@@ -27,7 +27,7 @@ function rowToUser(row: Row): User {
   };
 }
 
-function hashPassword(password: string, salt: string): string {
+export function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString("hex");
 }
 
@@ -35,16 +35,18 @@ export function normalizePhone(phone: string): string {
   return phone.replace(/[^\d+]/g, "");
 }
 
-export function createUser(input: {
+export async function createUser(input: {
   phone: string;
   password: string;
   name: string;
   role: Role;
   businessName: string | null;
-}): User {
+}): Promise<User> {
   const db = getDb();
   const phone = normalizePhone(input.phone);
-  const existing = db.prepare("SELECT id FROM users WHERE phone = ?").get(phone);
+
+  const existingResult = await db.from("users").select("id").eq("phone", phone).maybeSingle();
+  const existing = assertNoError(existingResult, "checking for an existing account") as Row | null;
   if (existing) {
     throw new Error("An account with this phone number already exists.");
   }
@@ -53,34 +55,42 @@ export function createUser(input: {
   const salt = crypto.randomBytes(16).toString("hex");
   const passwordHash = hashPassword(input.password, salt);
 
-  db.prepare(
-    `INSERT INTO users (id, phone, password_hash, password_salt, name, role, business_name, created_at)
-     VALUES (@id, @phone, @passwordHash, @salt, @name, @role, @businessName, @createdAt)`
-  ).run({
+  const insertResult = await db.from("users").insert({
     id,
     phone,
-    passwordHash,
-    salt,
+    password_hash: passwordHash,
+    password_salt: salt,
     name: input.name,
     role: input.role,
-    businessName: input.businessName,
-    createdAt: new Date().toISOString(),
+    business_name: input.businessName,
   });
+  assertNoError(insertResult, "creating account");
 
   if (input.role === "seller") {
-    db.prepare(
-      `INSERT INTO sellers (id, name, city, docs, status) VALUES (@id, @name, 'Nigeria', 'Pending review', 'pending')`
-    ).run({ id: "seller_" + id, name: input.businessName || input.name });
+    const sellerResult = await db.from("sellers").insert({
+      id: "seller_" + id,
+      user_id: id,
+      name: input.businessName || input.name,
+      status: "pending",
+    });
+    assertNoError(sellerResult, "creating seller verification record");
   }
 
-  return rowToUser(db.prepare("SELECT * FROM users WHERE id = ?").get(id) as Row);
+  const row = assertNoError(
+    await db.from("users").select("*").eq("id", id).single(),
+    "loading the account just created"
+  ) as Row;
+  return rowToUser(row);
 }
 
-export function verifyLogin(phone: string, password: string): User | null {
+export async function verifyLogin(phone: string, password: string): Promise<User | null> {
   const db = getDb();
-  const row = db
-    .prepare("SELECT * FROM users WHERE phone = ?")
-    .get(normalizePhone(phone)) as Row | undefined;
+  const result = await db
+    .from("users")
+    .select("*")
+    .eq("phone", normalizePhone(phone))
+    .maybeSingle();
+  const row = assertNoError(result, "logging in") as Row | null;
   if (!row) return null;
 
   const candidateHash = hashPassword(password, row.password_salt as string);
@@ -95,34 +105,39 @@ export function verifyLogin(phone: string, password: string): User | null {
   return rowToUser(row);
 }
 
-export function createSession(userId: string): string {
+export async function createSession(userId: string): Promise<string> {
   const db = getDb();
   const token = crypto.randomBytes(32).toString("hex");
-  const now = new Date();
-  const expires = new Date(now.getTime() + SESSION_DAYS * 24 * 60 * 60 * 1000);
-  db.prepare(
-    "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)"
-  ).run(token, userId, now.toISOString(), expires.toISOString());
+  const expires = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
+  const result = await db
+    .from("sessions")
+    .insert({ token, user_id: userId, expires_at: expires.toISOString() });
+  assertNoError(result, "creating session");
   return token;
 }
 
-export function destroySession(token: string): void {
-  getDb().prepare("DELETE FROM sessions WHERE token = ?").run(token);
+export async function destroySession(token: string): Promise<void> {
+  const result = await getDb().from("sessions").delete().eq("token", token);
+  assertNoError(result, "destroying session");
 }
 
-export function getUserForToken(token: string | undefined): User | null {
+export async function getUserForToken(token: string | undefined): Promise<User | null> {
   if (!token) return null;
   const db = getDb();
-  const row = db
-    .prepare(
-      `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
-       WHERE s.token = ? AND s.expires_at > ?`
-    )
-    .get(token, new Date().toISOString()) as Row | undefined;
+  const sessionResult = await db
+    .from("sessions")
+    .select("user_id, expires_at")
+    .eq("token", token)
+    .maybeSingle();
+  const session = assertNoError(sessionResult, "checking session") as Row | null;
+  if (!session || new Date(session.expires_at as string) <= new Date()) return null;
+
+  const userResult = await db.from("users").select("*").eq("id", session.user_id).maybeSingle();
+  const row = assertNoError(userResult, "loading session user") as Row | null;
   return row ? rowToUser(row) : null;
 }
 
-export function getSessionUser(req: NextRequest): User | null {
+export async function getSessionUser(req: NextRequest): Promise<User | null> {
   return getUserForToken(req.cookies.get(SESSION_COOKIE)?.value);
 }
 

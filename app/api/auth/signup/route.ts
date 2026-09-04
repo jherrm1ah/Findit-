@@ -49,14 +49,14 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const user = createUser({
+    const user = await createUser({
       phone,
       password,
       name: name.trim(),
       role,
       businessName: role === "seller" ? businessName!.trim() : null,
     });
-    const token = createSession(user.id);
+    const token = await createSession(user.id);
     const res = NextResponse.json({ user });
     setSessionCookie(res, token);
     return res;

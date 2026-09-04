@@ -6,6 +6,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Log in to accept an offer." }, { status: 401 });
+  }
+
   let body: { acceptOfferId?: string };
   try {
     body = await req.json();
@@ -17,8 +22,7 @@ export async function PATCH(
     return NextResponse.json({ error: "acceptOfferId is required" }, { status: 400 });
   }
 
-  const user = getSessionUser(req);
-  const result = acceptOffer(params.id, body.acceptOfferId, user?.id ?? null);
+  const result = await acceptOffer(params.id, body.acceptOfferId, user.id);
   if (!result) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

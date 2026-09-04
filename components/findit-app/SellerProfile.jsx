@@ -12,10 +12,11 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
     [products, sellerName]
   );
 
-  const avgRating = listings.length
-    ? (listings.reduce((sum, p) => sum + p.rating, 0) / listings.length).toFixed(1)
-    : null;
-  const verified = listings.some((p) => p.verified);
+  // Every listing from the same seller already carries the same computed
+  // rating/verified values (see getSellerStatsMap in lib/repo.ts) — no need
+  // to re-aggregate them here.
+  const avgRating = listings[0]?.rating ?? null;
+  const verified = listings[0]?.verified ?? false;
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10">

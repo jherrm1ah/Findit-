@@ -13,26 +13,26 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { conversationId: string } }
 ) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to see this conversation." }, { status: 401 });
   }
-  const conversation = getConversation(params.conversationId);
+  const conversation = await getConversation(params.conversationId);
   if (!conversation || !isParticipant(user.id, conversation)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  return NextResponse.json({ messages: listMessages(params.conversationId, user.id) });
+  return NextResponse.json({ messages: await listMessages(params.conversationId, user.id) });
 }
 
 export async function POST(
   req: NextRequest,
   { params }: { params: { conversationId: string } }
 ) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to send a message." }, { status: 401 });
   }
-  const conversation = getConversation(params.conversationId);
+  const conversation = await getConversation(params.conversationId);
   if (!conversation || !isParticipant(user.id, conversation)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
@@ -45,7 +45,7 @@ export async function POST(
   }
 
   try {
-    const message = sendMessage(params.conversationId, user.id, body.body || "");
+    const message = await sendMessage(params.conversationId, user.id, body.body || "");
     return NextResponse.json({ message });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't send that message.";

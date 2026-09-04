@@ -3,11 +3,11 @@ import { listProducts, createProduct } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
-  return NextResponse.json({ products: listProducts() });
+  return NextResponse.json({ products: await listProducts() });
 }
 
 export async function POST(req: NextRequest) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (user?.role !== "seller") {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const product = createProduct({
+    const product = await createProduct({
       category: body.category,
       name: body.name,
       price: body.price,

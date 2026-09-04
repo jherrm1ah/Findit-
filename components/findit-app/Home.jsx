@@ -15,12 +15,13 @@ const BANNERS = [
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
-export default function Home({ go, openProduct, products, unreadCount = 0 }) {
+export default function Home({ go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved }) {
   const [banner, setBanner] = useState(0);
-  const [wishlist, setWishlist] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
-  const toggleWishlist = (id, e) => { e.stopPropagation(); setWishlist((w) => ({ ...w, [id]: !w[id] })); };
-  const trending = products.filter((p) => p.marketingCat).slice(0, 8);
+  // Products are already ordered newest-first by the API, so "trending" here
+  // means "recently listed" — there's no real signal yet (like view/order
+  // counts) to rank by anything fancier.
+  const trending = products.slice(0, 8);
 
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },
@@ -118,7 +119,7 @@ export default function Home({ go, openProduct, products, unreadCount = 0 }) {
 
       {/* product grid */}
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-[15px] font-bold text-[#1E1B4B]">Trending Discoveries</h2>
+        <h2 className="text-[15px] font-bold text-[#1E1B4B]">New Listings</h2>
         <button onClick={() => go("browse")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7">
@@ -126,14 +127,19 @@ export default function Home({ go, openProduct, products, unreadCount = 0 }) {
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
               <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
-              <span onClick={(e) => toggleWishlist(p.id, e)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
-                <Heart size={14} className={wishlist[p.id] ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
+              <span onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
+                <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
               </span>
             </div>
             <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
             <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
           </button>
         ))}
+        {trending.length === 0 && (
+          <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-8">
+            No listings yet — be the first to sell on FindIt, or request an item to get the ball rolling.
+          </p>
+        )}
       </div>
 
       <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-7">

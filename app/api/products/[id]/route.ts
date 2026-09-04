@@ -1,11 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, updateProduct, deleteProduct } from "@/lib/repo";
-import { getSessionUser } from "@/lib/auth";
+import { getProduct, updateProduct, deleteProduct, Product } from "@/lib/repo";
+import { getSessionUser, User } from "@/lib/auth";
 
-function canManage(
-  user: ReturnType<typeof getSessionUser>,
-  product: NonNullable<ReturnType<typeof getProduct>>
-) {
+function canManage(user: User | null, product: Product) {
   return user?.role === "admin" || (user?.role === "seller" && user.businessName === product.seller);
 }
 
@@ -13,11 +10,11 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const product = getProduct(params.id);
+  const product = await getProduct(params.id);
   if (!product) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!canManage(user, product)) {
     return NextResponse.json(
       { error: "Only the seller who owns this listing (or an admin) can edit it." },
@@ -33,7 +30,7 @@ export async function PATCH(
   }
 
   try {
-    const updated = updateProduct(params.id, body);
+    const updated = await updateProduct(params.id, body);
     return NextResponse.json({ product: updated });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't update that listing.";
@@ -45,11 +42,11 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const product = getProduct(params.id);
+  const product = await getProduct(params.id);
   if (!product) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!canManage(user, product)) {
     return NextResponse.json(
       { error: "Only the seller who owns this listing (or an admin) can delete it." },
@@ -57,6 +54,6 @@ export async function DELETE(
     );
   }
 
-  deleteProduct(params.id);
+  await deleteProduct(params.id);
   return NextResponse.json({ ok: true });
 }

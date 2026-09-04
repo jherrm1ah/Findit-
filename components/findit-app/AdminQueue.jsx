@@ -23,7 +23,7 @@ export default function AdminQueue({ sellers, requests, onSellerStatusChange }) 
               {s.status === "approved" && <Pill tone="green"><CheckCircle2 size={11} /> Approved</Pill>}
               {s.status === "rejected" && <Pill tone="red"><X size={11} /> Rejected</Pill>}
             </div>
-            <p className="text-[11px] text-[#6B6483] mb-3">{s.city} · Docs: {s.docs}</p>
+            <p className="text-[11px] text-[#6B6483] mb-3">{s.phone || "No phone on file"} · Applied {new Date(s.createdAt).toLocaleDateString("en-NG")}</p>
             {s.status === "pending" && (
               <div className="flex gap-2">
                 <button onClick={() => onSellerStatusChange(s.id, "approved")} className="flex-1 text-white text-[12px] font-semibold py-2 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>Approve</button>

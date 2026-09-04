@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn, MessageCircle } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn, MessageCircle, PackageSearch } from "lucide-react";
 
 export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
   const CARDS = [
@@ -12,6 +12,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       primary: user?.role === "admin",
     },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
+    { key: "myRequests", icon: PackageSearch, label: "My requests", subtitle: user ? "See offers from real sellers" : "Log in to track requests" },
     { key: "messages", icon: MessageCircle, label: "Messages", subtitle: user ? "Chat with sellers" : "Log in to message sellers" },
     { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
     {
@@ -21,7 +22,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       subtitle: user?.role === "seller" ? user.businessName : "Requires a seller account",
     },
   ];
-  const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About this prototype"];
+  const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About FindIt"];
 
   return (
     <div className="px-5 pt-6 pb-10">

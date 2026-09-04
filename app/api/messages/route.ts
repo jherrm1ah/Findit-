@@ -3,15 +3,15 @@ import { listConversations, findUserByBusinessName, getOrCreateConversation } fr
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to see your messages." }, { status: 401 });
   }
-  return NextResponse.json({ conversations: listConversations(user.id) });
+  return NextResponse.json({ conversations: await listConversations(user.id) });
 }
 
 export async function POST(req: NextRequest) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to message a seller." }, { status: 401 });
   }
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "sellerBusinessName is required" }, { status: 400 });
   }
 
-  const seller = findUserByBusinessName(body.sellerBusinessName);
+  const seller = await findUserByBusinessName(body.sellerBusinessName);
   if (!seller) {
     return NextResponse.json(
       { error: "This seller hasn't joined FindIt directly yet, so there's no one to message." },
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const conversationId = getOrCreateConversation(user.id, seller.id);
+    const conversationId = await getOrCreateConversation(user.id, seller.id);
     return NextResponse.json({ conversationId });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't start that conversation.";

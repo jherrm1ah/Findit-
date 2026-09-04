@@ -19,6 +19,74 @@ function statusTone(status) {
   return "gold";
 }
 
+const EMPTY_OFFER = { price: "", delivery: "", eta: "", warranty: "", note: "" };
+
+function OfferForm({ onSend, onCancel, sending }) {
+  const [form, setForm] = useState(EMPTY_OFFER);
+  const valid = Number(form.price) > 0 && form.delivery.trim() && form.eta.trim() && form.warranty.trim();
+
+  return (
+    <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
+      <Field label="Your price (₦)">
+        <input
+          type="number"
+          min={1}
+          value={form.price}
+          onChange={(e) => setForm({ ...form, price: e.target.value })}
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+        />
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Delivery (₦ or 'Pickup only')">
+          <input
+            value={form.delivery}
+            onChange={(e) => setForm({ ...form, delivery: e.target.value })}
+            placeholder="e.g. 2,000"
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
+        <Field label="ETA">
+          <input
+            value={form.eta}
+            onChange={(e) => setForm({ ...form, eta: e.target.value })}
+            placeholder="e.g. 1–2 days"
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
+      </div>
+      <Field label="Warranty">
+        <input
+          value={form.warranty}
+          onChange={(e) => setForm({ ...form, warranty: e.target.value })}
+          placeholder="e.g. 6 months, or 'No warranty'"
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+        />
+      </Field>
+      <Field label="Note to buyer (optional)">
+        <textarea
+          value={form.note}
+          onChange={(e) => setForm({ ...form, note: e.target.value })}
+          rows={2}
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none"
+        />
+      </Field>
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => onSend(form)}
+          disabled={sending || !valid}
+          className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-lg ${sending || !valid ? "opacity-50" : ""}`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {sending ? "Sending…" : "Send offer"}
+        </button>
+        <button onClick={onCancel} disabled={sending} className="px-3 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-lg bg-white">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const EMPTY_FORM = { name: "", category: Object.keys(GROUPS)[0], price: "", imageUrl: null };
 
 function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
@@ -105,7 +173,8 @@ export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
 }) {
-  const [sendingId, setSendingId] = useState(null);
+  const [offeringId, setOfferingId] = useState(null);
+  const [sendingOffer, setSendingOffer] = useState(false);
   const [advancingId, setAdvancingId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -115,12 +184,31 @@ export default function SellerDashboard({
   const myOrders = orders.filter((o) => o.seller === user.businessName);
   const myListings = products.filter((p) => p.seller === user.businessName);
 
-  const send = async (id) => {
-    setSendingId(id);
+  const reviewedOrders = myOrders.filter((o) => o.reviewed && o.myRating != null);
+  const avgRating = reviewedOrders.length
+    ? (reviewedOrders.reduce((sum, o) => sum + o.myRating, 0) / reviewedOrders.length).toFixed(1)
+    : null;
+  const orderValue = myOrders.reduce((sum, o) => sum + o.price, 0);
+  const STATS = [
+    ["Rating", avgRating ?? "—"],
+    ["Orders", String(myOrders.length)],
+    ["Listings", String(myListings.length)],
+    ["Order value", naira(orderValue)],
+  ];
+
+  const sendOffer = async (requestId, form) => {
+    setSendingOffer(true);
     try {
-      await onSendOffer(id);
+      await onSendOffer(requestId, {
+        price: Number(form.price),
+        delivery: form.delivery.trim(),
+        eta: form.eta.trim(),
+        warranty: form.warranty.trim(),
+        note: form.note.trim() || null,
+      });
+      setOfferingId(null);
     } finally {
-      setSendingId(null);
+      setSendingOffer(false);
     }
   };
 
@@ -174,7 +262,7 @@ export default function SellerDashboard({
       <p className="text-[12px] text-[#6B6483] mb-5">{user.businessName}</p>
 
       <div className="grid grid-cols-4 gap-2 mb-6">
-        {[["Rating", "4.9"], ["Orders", "212"], ["Response", "98%"], ["Payout", "₦186k"]].map(([l, v]) => (
+        {STATS.map(([l, v]) => (
           <div key={l} className="bg-white border border-[#ECE9F7] rounded-[20px] py-3 text-center shadow-sm shadow-[#4C1D95]/5">
             <p className="text-[14px] font-bold text-[#1E1B4B]">{v}</p>
             <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">{l}</p>
@@ -279,18 +367,19 @@ export default function SellerDashboard({
               <span className="text-[10px] text-[#8A8372] whitespace-nowrap">{r.posted}</span>
             </div>
             <p className="text-[11px] text-[#6B6483] mb-3">
-              {r.customer || "Customer"} · Budget {budgetLabel(r)}
+              {r.customerName || "A buyer"} · Budget {budgetLabel(r)}
             </p>
             {r.offerCount > 0 ? (
               <Pill tone="green"><CheckCircle2 size={11} /> Offer sent</Pill>
+            ) : offeringId === r.id ? (
+              <OfferForm onSend={(form) => sendOffer(r.id, form)} onCancel={() => setOfferingId(null)} sending={sendingOffer} />
             ) : (
               <button
-                onClick={() => send(r.id)}
-                disabled={sendingId !== null}
-                className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${sendingId !== null ? "opacity-60" : ""}`}
+                onClick={() => setOfferingId(r.id)}
+                className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl"
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
-                <Send size={12} /> {sendingId === r.id ? "Sending…" : "Send offer"}
+                <Send size={12} /> Send offer
               </button>
             )}
           </div>

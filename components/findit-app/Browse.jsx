@@ -5,14 +5,11 @@ import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star } f
 import { GROUPS, naira } from "./data";
 import { ArtBlock } from "./shared";
 
-export default function Browse({ initialGroup, openProduct, products }) {
+export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved }) {
   const [group, setGroup] = useState(initialGroup || "all");
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
-  const [testOnly, setTestOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
-  const [wishlist, setWishlist] = useState({});
-  const toggleWishlist = (id, e) => { e.stopPropagation(); setWishlist((w) => ({ ...w, [id]: !w[id] })); };
 
   useEffect(() => { setGroup(initialGroup || "all"); }, [initialGroup]);
 
@@ -21,11 +18,10 @@ export default function Browse({ initialGroup, openProduct, products }) {
     return products.filter((p) => {
       if (group !== "all" && p.category !== group) return false;
       if (verifiedOnly && !p.verified) return false;
-      if (testOnly && !p.testBatch) return false;
       if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [products, group, query, verifiedOnly, testOnly]);
+  }, [products, group, query, verifiedOnly]);
 
   return (
     <div className="px-5 pt-6 pb-10">
@@ -62,12 +58,6 @@ export default function Browse({ initialGroup, openProduct, products }) {
             </div>
             Verified sellers only
           </button>
-          <button onClick={() => setTestOnly((v) => !v)} className="flex items-center gap-1.5 text-[#514B67]">
-            <div className={`w-4 h-4 rounded border flex items-center justify-center ${testOnly ? "bg-[#7C3AED] border-[#7C3AED]" : "border-[#B7AFD6]"}`}>
-              {testOnly && <CheckCircle2 size={12} className="text-white" />}
-            </div>
-            First-20 test batch only
-          </button>
         </div>
       )}
 
@@ -96,8 +86,8 @@ export default function Browse({ initialGroup, openProduct, products }) {
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
               <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
-              <span onClick={(e) => toggleWishlist(p.id, e)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
-                <Heart size={14} className={wishlist[p.id] ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
+              <span onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
+                <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
               </span>
               {p.verified && (
                 <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
@@ -108,7 +98,9 @@ export default function Browse({ initialGroup, openProduct, products }) {
             <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
             <div className="flex items-center justify-between">
               <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-              <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
+              {p.rating != null && (
+                <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
+              )}
             </div>
           </button>
         ))}

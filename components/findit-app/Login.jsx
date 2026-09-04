@@ -111,7 +111,7 @@ export default function Login({ onDone, showToast }) {
       {mode === "login" && (
         <button
           type="button"
-          onClick={() => showToast?.("Password reset isn't available in this demo yet.", "error")}
+          onClick={() => showToast?.("Password reset isn't available yet — contact support.", "error")}
           className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end"
         >
           Forgot password?

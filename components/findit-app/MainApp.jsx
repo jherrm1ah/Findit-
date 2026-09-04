@@ -19,6 +19,7 @@ import ProductDetail from "./ProductDetail";
 import Messages from "./Messages";
 import Thread from "./Thread";
 import SellerProfile from "./SellerProfile";
+import MyRequests from "./MyRequests";
 
 function tabsFor(role) {
   const middle =
@@ -55,6 +56,8 @@ export default function MainApp({ user, onLogout, showToast }) {
   const [activeThread, setActiveThread] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [savedIds, setSavedIds] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
 
   useEffect(() => {
     const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
@@ -75,6 +78,11 @@ export default function MainApp({ user, onLogout, showToast }) {
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
     }
+    if (user) {
+      api.getSavedIds().then(setSavedIds).catch(() => {});
+    } else {
+      setSavedIds([]);
+    }
   }, [user?.id]);
 
   const go = (s, group) => {
@@ -89,6 +97,28 @@ export default function MainApp({ user, onLogout, showToast }) {
     if (s === "messages" && user) {
       api.getConversations().then(setConversations).catch(() => {});
     }
+    if (s === "myRequests" && user) {
+      api.getMyRequests().then(setMyRequests).catch(() => {});
+    }
+  };
+
+  const handleToggleSaved = async (productId) => {
+    if (!user) {
+      showToast("Log in to save items.", "error");
+      return;
+    }
+    const wasSaved = savedIds.includes(productId);
+    setSavedIds((ids) => (wasSaved ? ids.filter((id) => id !== productId) : [...ids, productId]));
+    try {
+      if (wasSaved) {
+        await api.unsaveItem(productId);
+      } else {
+        await api.saveItem(productId);
+      }
+    } catch (err) {
+      setSavedIds((ids) => (wasSaved ? [...ids, productId] : ids.filter((id) => id !== productId)));
+      showToast(err.message || "Couldn't update your saved items — try again.", "error");
+    }
   };
 
   const handleViewSeller = (sellerName) => {
@@ -99,13 +129,6 @@ export default function MainApp({ user, onLogout, showToast }) {
   const handleOpenProductFromSeller = (p) => {
     setViewedSeller(null);
     setProduct(p);
-  };
-
-  const handleOrderCreated = (order) => {
-    setOrders((os) => [order, ...os]);
-    if (isSeller || isAdmin) {
-      api.getOpenRequests().then(setRequests).catch(() => {});
-    }
   };
 
   const buyNow = async (prod, qty, condition) => {
@@ -218,13 +241,31 @@ export default function MainApp({ user, onLogout, showToast }) {
     }
   };
 
-  const handleSendOffer = async (requestId) => {
+  const handleSendOffer = async (requestId, offerInput) => {
     try {
-      await api.sendSellerOffer(requestId);
+      await api.sendSellerOffer(requestId, offerInput);
       setRequests(await api.getOpenRequests());
       showToast("Offer sent to the customer.");
     } catch (err) {
       showToast(err.message || "Couldn't send that offer — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleAcceptOffer = async (requestId, offerId) => {
+    try {
+      const order = await api.acceptOffer(requestId, offerId);
+      setOrders((os) => [order, ...os]);
+      setMyRequests((rs) =>
+        rs.map((r) =>
+          r.id === requestId
+            ? { ...r, status: "matched", offers: r.offers.map((o) => (o.id === offerId ? { ...o, accepted: true } : o)) }
+            : r
+        )
+      );
+      showToast("Order placed — track it in My orders.");
+    } catch (err) {
+      showToast(err.message || "Couldn't accept that offer — try again.", "error");
     }
   };
 
@@ -295,10 +336,48 @@ export default function MainApp({ user, onLogout, showToast }) {
 
       <main className="pb-24">
         {screen === "home" && (
-          <Home go={go} openProduct={setProduct} products={products} unreadCount={notifications.filter((n) => n.unread).length} />
+          <Home
+            go={go}
+            openProduct={setProduct}
+            products={products}
+            unreadCount={notifications.filter((n) => n.unread).length}
+            savedIds={savedIds}
+            onToggleSaved={handleToggleSaved}
+          />
         )}
-        {screen === "browse" && <Browse initialGroup={browseGroup} openProduct={setProduct} products={products} />}
-        {screen === "request" && <RequestForm go={go} onOrderCreated={handleOrderCreated} />}
+        {screen === "browse" && (
+          <Browse
+            initialGroup={browseGroup}
+            openProduct={setProduct}
+            products={products}
+            savedIds={savedIds}
+            onToggleSaved={handleToggleSaved}
+          />
+        )}
+        {screen === "request" && (
+          user ? (
+            <RequestForm go={go} showToast={showToast} />
+          ) : (
+            <RoleGate
+              title="Log in to request an item"
+              message="Create an account or log in so real sellers can respond to your request and you can track it."
+              onLogout={onLogout}
+              logoutLabel="Log in"
+            />
+          )
+        )}
+        {screen === "myRequests" && (
+          user ? (
+            <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} />
+          ) : (
+            <RoleGate
+              title="Log in to see your requests"
+              message="Create an account or log in to track requests and accept offers from sellers."
+              onLogout={onLogout}
+              logoutLabel="Log in"
+            />
+          )
+        )}
         {screen === "seller" && (
           isSeller ? (
             <SellerDashboard
@@ -350,7 +429,13 @@ export default function MainApp({ user, onLogout, showToast }) {
           )
         )}
         {screen === "account" && (
-          <Account openProduct={setProduct} orders={orders} products={products} onReview={handleReview} />
+          <Account
+            openProduct={setProduct}
+            orders={orders}
+            products={products}
+            onReview={handleReview}
+            savedIds={savedIds}
+          />
         )}
         {screen === "notifications" && (
           <Notifications
@@ -372,6 +457,8 @@ export default function MainApp({ user, onLogout, showToast }) {
           onBuyNow={buyNow}
           onContact={handleContactSeller}
           onViewSeller={handleViewSeller}
+          savedIds={savedIds}
+          onToggleSaved={handleToggleSaved}
         />
       )}
 

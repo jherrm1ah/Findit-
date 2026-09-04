@@ -1,22 +1,31 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOpenRequests, createRequestWithAutoOffers } from "@/lib/repo";
+import { listOpenRequests, createRequest } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (user?.role !== "seller" && user?.role !== "admin") {
     return NextResponse.json(
       { error: "Seller or admin access required." },
       { status: 403 }
     );
   }
-  return NextResponse.json({ requests: listOpenRequests() });
+  return NextResponse.json({ requests: await listOpenRequests() });
 }
 
 export async function POST(req: NextRequest) {
+  // Requesting an item needs a real buyer to notify when sellers respond —
+  // there's no more instant fake matching, so a request that nobody can
+  // ever look back up isn't useful. Real requests require login.
+  const user = await getSessionUser(req);
+  if (!user) {
+    return NextResponse.json({ error: "Log in to submit a request." }, { status: 401 });
+  }
+
   let body: {
     title?: string;
     description?: string;
+    category?: string;
     budgetMin?: number | string;
     budgetMax?: number | string;
     qty?: number | string;
@@ -39,17 +48,17 @@ export async function POST(req: NextRequest) {
     return Number.isFinite(n) ? n : null;
   };
 
-  const user = getSessionUser(req);
-  const { request, offers } = createRequestWithAutoOffers({
+  const request = await createRequest({
     title: body.title.trim(),
     description: body.description?.trim() || null,
+    category: body.category || null,
     budgetMin: toNumberOrNull(body.budgetMin),
     budgetMax: toNumberOrNull(body.budgetMax),
     qty: Number(body.qty) > 0 ? Number(body.qty) : 1,
-    location: body.location?.trim() || "Nigeria",
+    location: body.location?.trim() || null,
     condition: body.condition || "New",
-    customer: user?.name ?? null,
+    userId: user.id,
   });
 
-  return NextResponse.json({ request, offers });
+  return NextResponse.json({ request });
 }

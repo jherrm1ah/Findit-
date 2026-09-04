@@ -6,7 +6,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (user?.role !== "admin") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
@@ -25,7 +25,7 @@ export async function PATCH(
     );
   }
 
-  const seller = setSellerStatus(params.id, body.status);
+  const seller = await setSellerStatus(params.id, body.status);
   if (!seller) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

@@ -1,154 +1,180 @@
 # FindIt Naija
 
 A request-first marketplace connecting buyers to verified sellers, starting in Nigeria and built
-to scale globally: tell FindIt what you need (or browse the catalogue directly), sellers near you
-send offers, you pay into escrow and confirm on delivery. Jos is the pilot city in the seed data —
-not a hardcoded assumption about where the app runs.
+to scale globally: tell FindIt what you need (or browse the catalogue directly), real sellers near
+you send offers, you pay into escrow and confirm on delivery.
 
-This is a Next.js port of a mobile-first React prototype, now backed by a real SQLite database:
-products, orders, requests/offers, notifications, seller verification, and user accounts all
-persist across a reload. Payments are still a stub (checkout shows the escrow-held-funds UI as a
-simulated state) — see "Next steps" below.
+This is a Next.js app backed by a real Supabase Postgres database and real Gemini AI classification.
+There is no mock or seed data anywhere in the app — a fresh install starts genuinely empty, and
+every product, order, request, offer, review, message, and notification you see was created by a
+real signup, listing, or transaction. Payments are still a stub (checkout shows the escrow-held-
+funds UI as a simulated state) — see "Next steps" below.
 
 ## Flows
 
-- **Splash → Onboarding → Login/signup** (or "Continue as guest") on first load. Signing up picks
-  a buyer or seller account; a returning user with a live session skips straight past login. A
-  seller signup immediately enters the admin verification queue.
-- **Home** — promo banner, category shortcuts, trending discoveries; a real unread-notification
+- **Splash → Onboarding → Login/signup** on first load. Signing up picks a buyer or seller
+  account; a returning user with a live session skips straight past login. A seller signup
+  immediately enters the admin verification queue. There is no "Continue as guest" for anything
+  that creates data (placing an order, submitting a request) — see "Access control" for why.
+- **Home** — promo banner, category shortcuts, and "New Listings" (the most recently created
+  products — there's no curated "trending" concept, just real recency); a real unread-notification
   badge.
-- **Browse** — all 300 products across 15 categories from the FindIt idea bank; search, filter
-  by category/verified/first-20 test batch.
-- **Product detail → Buy now → Checkout** — creates a real order, with a simulated escrow hold
-  and a delivery-status tracker.
-- **Request an item** — submits a real request; the server auto-generates offers from three
-  sellers (simulating instant matching), compare and accept one to pay and track delivery.
+- **Browse** — every real product currently listed, across 15 fixed categories (`lib/categories.js`
+  — a taxonomy, not seed data); search, filter by category/verified seller.
+- **Product detail → Buy now → Checkout** — creates a real order (requires login), with a simulated
+  escrow hold and a delivery-status tracker. Tap a seller's name to see their public profile.
+- **Request an item** — submits a real request tied to your account (requires login). An optional
+  AI-assist button (Gemini) turns your description into a suggested title/category/budget. Sellers
+  see it in their dashboard and can send a real offer (their own price, delivery cost, ETA,
+  warranty, note — nothing auto-filled); accept one from **My requests** to pay and track delivery.
+- **My requests** — see every request you've submitted and the real offers sellers have sent,
+  accept whenever one looks right.
 - **Seller dashboard** — seller accounts only; everyone else sees a locked screen explaining why
-  and a way to log in as one. Manage your own listings (add/edit/delete), advance your orders
-  through the fulfillment lifecycle, and respond to open customer requests with a real offer,
-  attributed to your real business name.
-- **Admin queue** — staff-only (there's no self-serve "I'm an admin" signup); log in with the seed
-  admin account below. Approve/reject pending sellers (including real seller signups); requests
-  with zero offers show as unmatched.
-- **Account** — real order history with a live delivery-status tracker (Awaiting payment → Seller
-  preparing → Dispatched → Out for delivery → Delivered), reviews, saved items. Orders you place
-  are tied to your account; guests and every account also see the shared seed/demo orders.
-- **Messages** — real buyer-seller chat. Tap "Contact" on a product to start a conversation with
-  its seller; both sides see the thread, unread counts, and can reply from their own account.
+  and a way to log in as one. Manage your own listings (add/edit/delete, with real photo upload),
+  advance your orders through the fulfillment lifecycle, and respond to open customer requests with
+  a real offer. Stats (rating, orders, listings, order value) are computed from your real order/
+  listing history, not hardcoded.
+- **Admin queue** — staff-only (there's no self-serve "I'm an admin" signup); see "Creating an
+  admin account" below. Approve/reject pending sellers; requests with zero offers show as
+  unmatched. Seller verification is currently a judgment call based on the account and phone
+  number — there's no real document/ID upload system yet.
+- **Account** — real order history with a live delivery-status tracker, reviews, and a real saved-
+  items list (tap the heart on any product). Empty until you actually have orders/saved items.
+- **Messages** — real buyer-seller chat. Tap "Contact" on a product or a seller's profile to start
+  a conversation; both sides see the thread, unread counts, and can reply from their own account.
 - **Seller profile (storefront)** — tap a seller's name from a product to see their public page:
-  aggregate rating, listing count, verified status, a "Contact seller" button, and a grid of
-  every product they currently have listed. Works for any seller name that appears on a product,
-  not just ones with real accounts — contacting one who hasn't signed up surfaces a clear message
-  instead of erroring.
-- **Notifications** — mark one or all as read, persisted, scoped per account the same way.
-- **Profile** — shows your real name/phone/role with a working log out (or a log-in prompt as a
-  guest), plus entry points into your orders, messages, and notifications.
+  real aggregate rating (from their reviewed orders), listing count, verified status, a "Contact
+  seller" button, and a grid of everything they currently have listed.
+- **Notifications** — real, per-account. You're notified when a seller sends a real offer on your
+  request. Mark one or all as read.
+- **Profile** — shows your real name/phone/role with a working log out, plus entry points into
+  your orders, requests, messages, and notifications.
 - **Product photos** — sellers can attach a real photo to a listing (add or edit), stored in
   Supabase Storage; falls back to a generated gradient icon for listings without one.
 
 ## Stack
 
-Next.js (App Router) + Tailwind CSS + lucide-react icons, with SQLite (`better-sqlite3`) for
-storage via API routes under `app/api/`. The screen shell is one client component tree mounted at
-`app/page.tsx`; screen navigation is in-memory state (`components/findit-app/App.jsx` →
-`MainApp.jsx`), not URL routing, matching the original prototype's design. `MainApp.jsx` owns all
-server-backed state (products, orders, notifications, sellers, open requests) and passes it down
-as props, with handlers that call the API and update local state.
+Next.js (App Router) + Tailwind CSS + lucide-react icons, with **Supabase Postgres** as the
+database and **Gemini** for AI request classification, both accessed only from server-side API
+routes under `app/api/` (never from the browser). The screen shell is one client component tree
+mounted at `app/page.tsx`; screen navigation is in-memory state (`components/findit-app/App.jsx` →
+`MainApp.jsx`), not URL routing. `MainApp.jsx` owns all server-backed state and passes it down as
+props, with handlers that call the API and update local state.
 
 ## Running locally
+
+### 1. Set up the database
+
+Create a free [Supabase](https://supabase.com) project, then run `supabase/schema.sql` against it
+(Supabase dashboard → SQL Editor → paste the file → Run). This creates every table the app needs.
+It does **not** seed any data — a fresh database is genuinely empty on purpose.
+
+### 2. Configure environment variables
+
+Copy `.env.example` to `.env.local` and fill in:
+
+- `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` — Settings → API in your Supabase project. The
+  service role key has full access to your database; it's used server-side only and is never sent
+  to the browser.
+- `GEMINI_API_KEY` — from [ai.google.dev](https://ai.google.dev) ("Get API key"). Optional: without
+  it, everything else works, and the AI-suggest button on the request form shows a clear error
+  instead of a fake response.
+
+### 3. Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open http://localhost:3000. The SQLite database (`data/findit.db`, gitignored) is created
-and seeded automatically on first run — including a demo admin account:
+Then open http://localhost:3000.
 
-```
-Phone:    08000000000
-Password: admin1234
+### Creating an admin account
+
+There's no self-service admin signup (on purpose). Create the first one with:
+
+```bash
+node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --password "a real password" --name "Your Name"
 ```
 
-This is a local-demo credential seeded directly in `lib/db.ts`, not something anyone can sign up
-for — change or remove it before this goes anywhere near production.
+(On Node < 20.6, export `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` yourself instead of using
+`--env-file`.) Log in with that phone number and password to reach the Admin Queue.
 
 ## Code layout
 
-- `lib/catalogue.js` — the category → product-name lists and deterministic listing generator
-  (price/seller/rating/etc), used only for seeding.
-- `lib/db.ts` — schema + seeding (products, sellers, requests, offers, orders, notifications,
-  users, sessions, conversations, messages), with a tiny startup migration for columns added
-  after the first release. `DB_PATH` can be overridden with the `FINDIT_DB_PATH` env var (used by
-  the test suite to keep test data out of the dev database).
-- `lib/repo.ts` — typed query/mutation functions used by the API routes.
-- `lib/auth.ts` — password hashing (scrypt) and cookie-based sessions (no external auth service).
-- `lib/rateLimit.ts` — a small in-memory sliding-window limiter guarding login/signup (see
-  "Access control" below). Single-process only — fine for this app, not for a multi-instance
+- `supabase/schema.sql` — the full Postgres schema (every table, no seed data). Run this once
+  against a fresh Supabase project before starting the app.
+- `scripts/create-admin.mjs` — one-time script to create an admin account directly in Supabase.
+- `lib/categories.js` — the fixed category id → label taxonomy (15 categories). Shared by
+  `lib/repo.ts` (server-side validation) and `components/findit-app/data.js` (client labels/icons).
+  Not seed data — it's the marketplace's category structure, same as any e-commerce site's nav.
+- `lib/db.ts` — the Supabase client factory (`getDb()`) used by `lib/repo.ts` and `lib/auth.ts`.
+- `lib/repo.ts` — typed query/mutation functions used by the API routes, plus the pure business
+  logic they build on (input validation, the forward-only order-status rule, seller-stats
+  aggregation) — see "Testing" below for why that split matters.
+- `lib/auth.ts` — password hashing (scrypt) and cookie-based sessions (no external auth service;
+  Supabase is used only as the database here, not as the auth provider).
+- `lib/rateLimit.ts` — a small in-memory sliding-window limiter guarding login/signup/AI classify
+  (see "Access control"). Single-process only — fine for this app, not for a multi-instance
   deployment.
-- `lib/storage.ts` — uploads product photos to Supabase Storage (server-side only, using
-  `SUPABASE_SERVICE_ROLE_KEY`), auto-creating the `product-images` bucket on first use. See
-  "Image uploads" below for setup.
+- `lib/storage.ts` — uploads product photos to Supabase Storage (server-side only), auto-creating
+  the `product-images` bucket on first use.
+- `lib/ai.ts` — Gemini request classification (server-side only, `GEMINI_API_KEY`).
 - `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
-  sellers, messages, uploads, and auth (signup/login/logout/me).
-- `components/findit-app/data.js` — client-only presentation data: category labels/icons,
-  notification-type icons, gradient swatches, static copy.
+  sellers, messages, saved items, uploads, AI classification, and auth (signup/login/logout/me).
+- `components/findit-app/data.js` — client-only presentation data: category icons (paired with
+  `lib/categories.js` labels), notification-type icons, gradient swatches, static copy.
 - `components/findit-app/api.js` — small fetch wrapper used by the client components.
 - `components/findit-app/shared.jsx` — small shared UI primitives (Pill, ArtBlock, Logo, etc).
 - `components/findit-app/*.jsx` — one file per screen (Home, Browse, ProductDetail, Checkout,
-  RequestForm, SellerDashboard, AdminQueue, Account, Notifications, Profile, Splash, Onboarding,
-  Login), plus `MainApp.jsx` (tab bar + screen router + data fetching) and `App.jsx`
-  (splash/onboarding/login/main phase machine).
-
-## UI polish
-
-- **Toasts, not `alert()`** — every background action (send offer, approve/reject a seller,
-  submit a review, a failed purchase) surfaces an in-app toast (`components/findit-app/Toast.jsx`,
-  hosted once in `App.jsx` so it works on the Login screen too) instead of a native browser
-  dialog.
-- **Busy states** on every button that fires an async request it can't otherwise tell happened
-  (Buy now, Accept offer, Send offer, Submit review) — disabled + a "…" label while in flight, so
-  there's no silent double-submit window.
-- **Role-aware bottom nav** — the middle tab used to always say "Messages" and point at the
-  seller dashboard regardless of who was logged in; it now shows "Dashboard" for a seller, "Admin"
-  for an admin, and "Sell" for anyone else, with a matching icon and destination.
-- Removed the leftover "PROTOTYPE" header badge and the dead "Forgot password?" button (now
-  surfaces a toast instead of doing nothing); the loading screen got a branded spinner instead of
-  bare text; the splash screen is snappier and tappable-to-skip instead of a fixed 5s wait.
+  RequestForm, MyRequests, SellerDashboard, SellerProfile, AdminQueue, Account, Messages, Thread,
+  Notifications, Profile, Splash, Onboarding, Login), plus `MainApp.jsx` (tab bar + screen router +
+  data fetching) and `App.jsx` (splash/onboarding/login/main phase machine).
 
 ## Access control
 
 Three roles: `buyer`, `seller`, `admin`. The Seller Dashboard requires `seller`; the Admin Queue
-requires `admin` — both gated server-side (`GET`/`PATCH /api/sellers`, `GET /api/requests`, and
-`POST /api/requests/:id/offers` all check the session's role and return 403 otherwise), not just
-hidden in the UI. `admin` has no public signup path — see the seed credentials above. Product
-listing management (`POST`/`PATCH`/`DELETE /api/products*`) and order status advances are
-restricted to the listing's/order's own seller (matched by business name) or an admin. Messaging
-routes require a session and check the caller is a participant in the conversation.
+requires `admin` — both gated server-side, not just hidden in the UI. `admin` has no public signup
+path — see "Creating an admin account" above.
 
-`POST /api/auth/login` and `POST /api/auth/signup` are rate-limited (5 attempts per 15 minutes,
-keyed by IP + phone for login and by IP for signup) — a 429 with a friendly error is returned once
-the limit is hit. This doesn't cover phone verification (OTP), since that needs a real SMS
-provider — same "needs external setup" category as payments below.
+**Placing an order or submitting a request requires login.** Earlier versions of this app allowed
+anonymous "guest" orders/requests scoped to a shared bucket — which meant any guest could see every
+other guest's orders, since there was no way to tell two anonymous sessions apart. Real checkout
+needs a real, identifiable buyer, so that path was removed.
+
+Product listing management, order status advances, and sending an offer are restricted to the
+listing's/order's own seller (matched by business name) or an admin. Messaging routes require a
+session and check the caller is a participant in the conversation. Notification and review actions
+check the row actually belongs to the calling user.
+
+`POST /api/auth/login`, `POST /api/auth/signup`, and `POST /api/ai/classify-request` are rate-
+limited — a 429 with a friendly error is returned once the limit is hit. This doesn't cover phone
+verification (OTP) at signup, since that needs a real SMS provider — same "needs external setup"
+category as payments below.
+
+**On Row Level Security:** this app doesn't use Supabase Auth, so Postgres RLS can't be tied to a
+logged-in user's identity the way it would with a Supabase-Auth-based app. RLS is enabled on every
+table with no policies (default-deny for the `anon`/`authenticated` Postgres roles) as defense in
+depth; the real authorization logic — everything described above — lives in the Next.js API route
+code, using the service role key server-side only. See the note at the top of `supabase/schema.sql`
+for more detail, and if you migrate to Supabase Auth later, that's where real per-user RLS policies
+would go.
 
 ## Image uploads
 
-Product photos are stored in [Supabase](https://supabase.com) Storage, not in the app's own
-database. To enable it:
+Product photos are stored in Supabase Storage. The `product-images` bucket is created
+automatically the first time a seller uploads a photo — no manual setup beyond the env vars in
+"Configure environment variables" above. Without `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` set,
+everything else in the app still fails to start (they're required for the database too now, not
+just uploads).
 
-1. Create a free Supabase project.
-2. Copy `.env.example` to `.env.local` and fill in:
-   - `SUPABASE_URL` — your project's URL (Settings → API).
-   - `SUPABASE_SERVICE_ROLE_KEY` — the `service_role` secret key from the same page (either the
-     newer `sb_secret_...` format or the classic JWT-style key starting with `eyJ` should work —
-     this hasn't been verified end-to-end from every environment, so if uploads fail with a
-     Supabase-side error after following this guide, double-check the key is the `service_role`
-     one and not `anon`/`publishable`).
-3. That's it — the `product-images` bucket is created automatically the first time a seller
-   uploads a photo. No manual bucket setup needed.
+## AI request classification
 
-Without these env vars set, everything else in the app still works; only the photo-upload button
-in "Add listing" will fail with a clear error until they're configured.
+Optional. With `GEMINI_API_KEY` set, the "Suggest title, category & budget with AI" button on the
+request form sends the buyer's description to Gemini and gets back a structured suggestion
+(constrained to the app's real 15 categories) to prefill the form — the buyer can still edit
+anything before submitting. Without the key set, clicking the button shows a clear error instead of
+a fake response.
 
 ## Testing
 
@@ -156,14 +182,18 @@ in "Add listing" will fail with a clear error until they're configured.
 npm test
 ```
 
-Runs the Vitest suite (`lib/**/*.test.ts`) covering password hashing/login, order creation and
-scoping, the request → offer → accept flow, order status progression (including the
-forward-only rule), product listing validation, buyer-seller messaging, and the rate limiter.
-Tests run against an isolated SQLite file (`data/findit.test.db`, also gitignored) so they never
-touch your dev database.
+Runs the Vitest suite (`lib/**/*.test.ts`). Since the database is now a real Supabase Postgres
+project rather than a local SQLite file, and this environment may not have network access to
+Supabase, the automated tests cover the real business logic that doesn't require a live database —
+input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
+math, password hashing, and phone normalization — extracted into pure, directly-testable functions
+in `lib/repo.ts`/`lib/auth.ts`. The database-touching paths (signup/login, creating orders,
+accepting offers, messaging, etc.) need to be verified by actually running the app against a real
+Supabase project, the same way you'd test any app whose database lives outside your own machine.
 
 ## Next steps toward a real product
 
 A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
-deployment, phone number verification (OTP) at signup, and a real way to provision admin accounts
-beyond the single seeded one.
+deployment (see the note in "Testing" — this repo has never been deployed to a live host), phone
+number verification (OTP) at signup, and a real seller ID/document verification system (currently
+admin approval is a judgment call, not a document check).

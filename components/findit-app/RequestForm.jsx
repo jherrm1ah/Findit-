@@ -1,149 +1,83 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Search, CheckCircle2, ArrowRight, Camera, Mic, Link2, Star, BadgeCheck,
-} from "lucide-react";
-import { STEPS, naira } from "./data";
-import { Pill, Field } from "./shared";
+import { CheckCircle2, ArrowRight, ListOrdered, Sparkles } from "lucide-react";
+import { Field } from "./shared";
+import { GROUPS } from "./data";
 import { api } from "./api";
 
-export default function RequestForm({ go, onOrderCreated }) {
+export default function RequestForm({ go, showToast }) {
   const [stage, setStage] = useState("form");
-  const [form, setForm] = useState({ title: "", desc: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New", deadline: "" });
-  const [request, setRequest] = useState(null);
-  const [offers, setOffers] = useState([]);
-  const [selectedOffer, setSelectedOffer] = useState(null);
+  const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New", deadline: "" });
   const [error, setError] = useState(null);
-  const [acceptingId, setAcceptingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [classifying, setClassifying] = useState(false);
+
+  const suggestWithAi = async () => {
+    if (!form.desc.trim() && !form.title.trim()) {
+      showToast?.("Describe what you're looking for first.", "error");
+      return;
+    }
+    setClassifying(true);
+    try {
+      const result = await api.classifyRequest(form.desc.trim() || form.title.trim());
+      setForm((f) => ({
+        ...f,
+        title: f.title.trim() ? f.title : result.title,
+        category: result.category,
+        budgetMin: f.budgetMin || (result.estimatedBudgetMin != null ? String(result.estimatedBudgetMin) : f.budgetMin),
+        budgetMax: f.budgetMax || (result.estimatedBudgetMax != null ? String(result.estimatedBudgetMax) : f.budgetMax),
+      }));
+      showToast?.(`AI suggested: ${result.categoryLabel}`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't get an AI suggestion — try again.", "error");
+    } finally {
+      setClassifying(false);
+    }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return;
-    setStage("searching");
+    setSubmitting(true);
     setError(null);
-    const searchDelay = new Promise((resolve) => setTimeout(resolve, 2200));
     try {
-      const [result] = await Promise.all([
-        api.createRequest({
-          title: form.title,
-          description: form.desc,
-          budgetMin: form.budgetMin,
-          budgetMax: form.budgetMax,
-          qty: form.qty,
-          location: form.location,
-          condition: form.condition,
-        }),
-        searchDelay,
-      ]);
-      setRequest(result.request);
-      setOffers(result.offers);
-      setStage("offers");
+      await api.createRequest({
+        title: form.title,
+        description: form.desc,
+        category: form.category || null,
+        budgetMin: form.budgetMin,
+        budgetMax: form.budgetMax,
+        qty: form.qty,
+        location: form.location,
+        condition: form.condition,
+      });
+      setStage("submitted");
     } catch (err) {
       setError(err.message || "Couldn't submit that request — try again.");
-      setStage("form");
+    } finally {
+      setSubmitting(false);
     }
   };
 
-  const acceptOffer = async (offer) => {
-    setAcceptingId(offer.id);
-    setError(null);
-    try {
-      const order = await api.acceptOffer(request.id, offer.id);
-      onOrderCreated?.(order);
-      setSelectedOffer(offer);
-      setStage("accepted");
-    } catch (err) {
-      setError(err.message || "Couldn't accept that offer — try again.");
-      setAcceptingId(null);
-    }
-  };
-
-  if (stage === "accepted" && selectedOffer) {
-    const activeIdx = 1;
+  if (stage === "submitted") {
     return (
-      <div className="px-5 pt-6 pb-10">
-        <div className="flex items-center gap-2 mb-5">
-          <CheckCircle2 className="text-[#7C3AED]" size={22} />
-          <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Order confirmed</h1>
+      <div className="px-5 pt-6 pb-10 flex flex-col items-center text-center min-h-[70vh] justify-center">
+        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+          <CheckCircle2 size={26} className="text-white" />
         </div>
-        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5">
-          <p className="text-[12px] text-[#6B6483] mb-1">{request.title}</p>
-          <p className="text-[15px] font-semibold text-[#1E1B4B] mb-1">{selectedOffer.seller}</p>
-          <p className="text-[18px] font-bold text-[#7C3AED]">{naira(selectedOffer.price)}</p>
-        </div>
-        <p className="text-[12px] font-medium text-[#514B67] mb-3 uppercase tracking-wide">Delivery status</p>
-        <div className="space-y-0">
-          {STEPS.map((s, i) => (
-            <div key={s} className="flex gap-3">
-              <div className="flex flex-col items-center">
-                <div className={`w-3 h-3 rounded-full ${i <= activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} />
-                {i < STEPS.length - 1 && <div className={`w-0.5 flex-1 ${i < activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} style={{ minHeight: 28 }} />}
-              </div>
-              <p className={`text-[13px] pb-6 ${i <= activeIdx ? "text-[#1E1B4B] font-medium" : "text-[#8A8372]"}`}>{s}</p>
-            </div>
-          ))}
-        </div>
-        <button onClick={() => go("account")} className="w-full text-white text-[13px] font-semibold py-3 rounded-xl" style={{ background: "linear-gradient(135deg,#1E1B4B,#3B1874)" }}>
-          Track in My orders
+        <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>Request sent</h1>
+        <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">
+          Real sellers can now see and respond to "{form.title}". We'll notify you the moment an offer comes in.
+        </p>
+        <button
+          onClick={() => go("myRequests")}
+          className="flex items-center gap-2 text-white text-[13px] font-semibold px-5 py-3 rounded-xl mb-3"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <ListOrdered size={14} /> View my requests
         </button>
-      </div>
-    );
-  }
-
-  if (stage === "offers") {
-    return (
-      <div className="px-5 pt-6 pb-10">
-        <p className="text-[11px] uppercase tracking-widest text-[#7C3AED] font-semibold mb-1">{request.id}</p>
-        <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>{request.title}</h1>
-        <p className="text-[13px] text-[#514B67] mb-5">{offers.length} sellers responded. Compare and choose.</p>
-        {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
-        <div className="space-y-3">
-          {offers.map((o) => (
-            <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
-              <div className="flex items-start justify-between mb-2">
-                <div>
-                  <p className="text-[14px] font-semibold text-[#1E1B4B]">{o.seller}</p>
-                  <div className="flex items-center gap-1 text-[11px] text-[#6B6483] mt-0.5">
-                    {o.verified ? <Pill tone="green"><BadgeCheck size={10} /> Verified</Pill> : <Pill tone="stone">Unverified</Pill>}
-                    <span className="flex items-center gap-0.5 ml-1"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" />{o.rating}</span>
-                    <span>· {o.orders} orders</span>
-                  </div>
-                </div>
-                <p className="text-[16px] font-bold text-[#7C3AED]">{naira(o.price)}</p>
-              </div>
-              <div className="grid grid-cols-2 gap-y-1 text-[11px] text-[#514B67] mb-3">
-                <span>Condition: {o.condition}</span>
-                <span>Delivery: {o.delivery === "Pickup only" ? o.delivery : `₦${o.delivery}`}</span>
-                <span>ETA: {o.eta}</span>
-                <span>Warranty: {o.warranty}</span>
-              </div>
-              <p className="text-[11px] text-[#6B6483] italic mb-3">"{o.note}"</p>
-              <button
-                onClick={() => acceptOffer(o)}
-                disabled={acceptingId !== null}
-                className={`w-full text-white text-[12px] font-semibold py-2.5 rounded-xl ${acceptingId !== null ? "opacity-60" : ""}`}
-                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-              >
-                {acceptingId === o.id ? "Placing order…" : "Accept offer & pay"}
-              </button>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (stage === "searching") {
-    return (
-      <div className="px-5 pt-6 pb-10 flex flex-col items-center justify-center min-h-[70vh]">
-        <div className="relative w-20 h-20 mb-6">
-          <div className="absolute inset-0 rounded-full border-4 border-[#ECE9F7]" />
-          <div className="absolute inset-0 rounded-full border-4 border-[#7C3AED] border-t-transparent animate-spin" />
-          <Search className="absolute inset-0 m-auto text-[#7C3AED]" size={22} />
-        </div>
-        <p className="text-[14px] font-semibold text-[#1E1B4B] mb-1">Searching trusted sellers {form.location.trim() ? `in ${form.location.trim()}` : "near you"}…</p>
-        <p className="text-[12px] text-[#6B6483] text-center max-w-[220px]">Matching "{form.title}" against our verified seller network.</p>
+        <button onClick={() => go("home")} className="text-[12px] font-semibold text-[#6B6483]">Back to home</button>
       </div>
     );
   }
@@ -151,7 +85,7 @@ export default function RequestForm({ go, onOrderCreated }) {
   return (
     <div className="px-5 pt-6 pb-10">
       <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>Request an item</h1>
-      <p className="text-[13px] text-[#514B67] mb-5">Don't know the exact name? Just describe the problem — we'll help classify it.</p>
+      <p className="text-[13px] text-[#514B67] mb-5">Don't know the exact name? Just describe the problem — real sellers will respond with offers.</p>
       {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
       <form onSubmit={submit} className="space-y-4">
         <Field label="What are you looking for?">
@@ -160,21 +94,22 @@ export default function RequestForm({ go, onOrderCreated }) {
         <Field label="Describe it in more detail">
           <textarea value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} rows={3} placeholder="Brand, model, part number, or just the problem it should solve…" className="input resize-none" />
         </Field>
-        <div className="flex gap-2 text-[11px]">
-          {[["photo", Camera, "Photo"], ["voice", Mic, "Voice note"], ["link", Link2, "Link"]].map(([key, Icon, label]) => {
-            const on = !!form.attachments?.[key];
-            return (
-              <button
-                key={key}
-                type="button"
-                onClick={() => setForm((f) => ({ ...f, attachments: { ...f.attachments, [key]: !on } }))}
-                className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 border ${on ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-dashed border-[#B7AFD6] text-[#514B67]"}`}
-              >
-                {on ? <CheckCircle2 size={13} /> : <Icon size={13} />} {on ? "Attached" : label}
-              </button>
-            );
-          })}
-        </div>
+        <button
+          type="button"
+          onClick={suggestWithAi}
+          disabled={classifying}
+          className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2.5 border border-dashed border-[#B7AFD6] text-[12px] font-semibold text-[#7C3AED] ${classifying ? "opacity-60" : ""}`}
+        >
+          <Sparkles size={13} /> {classifying ? "Thinking…" : "Suggest title, category & budget with AI"}
+        </button>
+        <Field label="Category">
+          <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input">
+            <option value="">Not sure — leave it to sellers</option>
+            {Object.entries(GROUPS).map(([key, g]) => (
+              <option key={key} value={key}>{g.label}</option>
+            ))}
+          </select>
+        </Field>
         <div className="grid grid-cols-2 gap-3">
           <Field label="Budget min (₦)"><input type="number" value={form.budgetMin} onChange={(e) => setForm({ ...form, budgetMin: e.target.value })} className="input" /></Field>
           <Field label="Budget max (₦)"><input type="number" value={form.budgetMax} onChange={(e) => setForm({ ...form, budgetMax: e.target.value })} className="input" /></Field>
@@ -189,8 +124,13 @@ export default function RequestForm({ go, onOrderCreated }) {
         </div>
         <Field label="Your city (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Lagos, Abuja, Jos…" className="input" /></Field>
         <Field label="Deadline (optional)"><input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className="input" /></Field>
-        <button type="submit" className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-2 shadow-lg shadow-[#7C3AED]/25" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-          Submit request <ArrowRight size={15} />
+        <button
+          type="submit"
+          disabled={submitting}
+          className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-2 shadow-lg shadow-[#7C3AED]/25 ${submitting ? "opacity-60" : ""}`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {submitting ? "Sending…" : <>Submit request <ArrowRight size={15} /></>}
         </button>
       </form>
       <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>

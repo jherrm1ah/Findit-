@@ -3,15 +3,14 @@
 import { useState } from "react";
 import {
   ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
-  Minus, Plus, Sparkles,
+  Minus, Plus,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 
 const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller }) {
-  const [saved, setSaved] = useState(false);
+export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved }) {
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
   const [contacting, setContacting] = useState(false);
@@ -40,8 +39,8 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
         <div className="flex items-start justify-between mb-1">
           <p className="text-[12px] text-[#8A8372]">{GROUPS[product.category].label}</p>
-          <button onClick={() => setSaved((s) => !s)} className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1">
-            <Heart size={14} className={saved ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
+          <button onClick={() => onToggleSaved(product.id)} className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1">
+            <Heart size={14} className={savedIds.includes(product.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
           </button>
         </div>
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</h1>
@@ -56,7 +55,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
                 {product.seller} {product.verified && <BadgeCheck size={13} className="text-[#7C3AED]" />}
               </p>
               <p className="text-[11px] text-[#8A8372] flex items-center gap-1">
-                <Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {product.rating} · {product.loc}
+                {product.rating != null ? (
+                  <><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {product.rating}</>
+                ) : (
+                  "No ratings yet"
+                )}
               </p>
             </div>
           </button>
@@ -115,7 +118,6 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
         <div className="flex gap-1.5 flex-wrap mb-2">
           {product.verified ? <Pill tone="green"><BadgeCheck size={11} /> Verified seller</Pill> : <Pill tone="stone">Unverified seller</Pill>}
-          {product.testBatch && <Pill tone="brand"><Sparkles size={10} /> First-20 test batch</Pill>}
         </div>
       </div>
 

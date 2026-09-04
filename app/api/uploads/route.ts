@@ -9,7 +9,7 @@ const MAX_UPLOADS = 20;
 const WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
-  const user = getSessionUser(req);
+  const user = await getSessionUser(req);
   if (!user || (user.role !== "seller" && user.role !== "admin")) {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }

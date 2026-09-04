@@ -1,7 +1,7 @@
-import { getDb } from "./db";
-import { SELLERS, CATALOGUE } from "./catalogue";
+import { getDb, assertNoError } from "./db";
+import { CATEGORY_LABELS } from "./categories";
 
-export const CATEGORY_KEYS = Object.keys(CATALOGUE);
+export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
 type Row = Record<string, unknown>;
 
@@ -11,27 +11,28 @@ export type Product = {
   name: string;
   price: number;
   seller: string;
-  rating: number;
-  verified: boolean;
-  testBatch: boolean;
-  marketingCat: string | null;
-  loc: string;
-  art: number;
   imageUrl: string | null;
+  art: number;
+  createdAt: string;
+  // Computed at read time from the seller's real account/order history —
+  // not stored on the product row. See getSellerStatsMap().
+  verified: boolean;
+  rating: number | null;
 };
 
 export type Order = {
   id: string;
+  userId: string;
   item: string;
   seller: string;
   price: number;
   status: string;
-  date: string;
   canReview: boolean;
   reviewed: boolean;
   myRating: number | null;
   reviewComment: string | null;
   requestId: string | null;
+  createdAt: string;
 };
 
 export type Notification = {
@@ -45,42 +46,48 @@ export type Notification = {
 
 export type Seller = {
   id: string;
+  userId: string;
   name: string;
-  city: string;
-  docs: string;
+  phone: string | null;
   status: "pending" | "approved" | "rejected";
+  createdAt: string;
 };
 
 export type Offer = {
   id: string;
   requestId: string;
   seller: string;
-  verified: boolean;
-  rating: number;
-  orders: number;
   price: number;
   delivery: string;
   eta: string;
   condition: string;
   warranty: string;
-  note: string;
+  note: string | null;
   accepted: boolean;
+  createdAt: string;
+  // Computed the same way as Product.verified/rating.
+  verified: boolean;
+  rating: number | null;
 };
 
 export type RequestRow = {
   id: string;
+  userId: string;
   title: string;
   description: string | null;
-  customer: string | null;
+  category: string | null;
   budgetMin: number | null;
   budgetMax: number | null;
   qty: number;
-  location: string;
+  location: string | null;
   condition: string;
   status: string;
   createdAt: string;
   posted: string;
   offerCount: number;
+  // Only populated by listOpenRequests (the seller/admin-facing queue) —
+  // a buyer viewing their own requests already knows it's them.
+  customerName?: string | null;
 };
 
 function timeAgo(iso: string): string {
@@ -95,122 +102,202 @@ function timeAgo(iso: string): string {
   return `${days} days ago`;
 }
 
-function rowToProduct(row: Row): Product {
+/* ------------------------------------------------------------------ */
+/*  Real seller stats — replaces the old fake per-product/per-offer     */
+/*  rating/verified/orders-count fields. Computed from the seller's     */
+/*  real approval status (sellers.status) and real order reviews.       */
+/* ------------------------------------------------------------------ */
+
+type SellerStats = { verified: boolean; rating: number | null; orderCount: number };
+
+// Pure — takes already-fetched rows and computes the stats map. Split out
+// from getSellerStatsMap() so this (the actual business logic: how a
+// seller's rating and verified badge are derived) can be unit-tested without
+// a database, the same way it would be tested if it read from a real
+// Supabase project.
+export function computeSellerStatsMap(
+  sellerRows: Array<{ name: string; status: string }>,
+  reviewedOrderRows: Array<{ seller: string; my_rating: number | null }>
+): Map<string, SellerStats> {
+  const map = new Map<string, SellerStats>();
+
+  for (const row of sellerRows) {
+    map.set(row.name, { verified: row.status === "approved", rating: null, orderCount: 0 });
+  }
+
+  const ratingSums = new Map<string, { sum: number; count: number }>();
+  for (const row of reviewedOrderRows) {
+    if (row.my_rating == null) continue;
+    const agg = ratingSums.get(row.seller) ?? { sum: 0, count: 0 };
+    agg.sum += row.my_rating;
+    agg.count += 1;
+    ratingSums.set(row.seller, agg);
+  }
+  for (const [seller, agg] of ratingSums) {
+    const existing = map.get(seller) ?? { verified: false, rating: null, orderCount: 0 };
+    existing.rating = Number((agg.sum / agg.count).toFixed(1));
+    existing.orderCount = agg.count;
+    map.set(seller, existing);
+  }
+
+  return map;
+}
+
+async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
+  const db = getDb();
+
+  const sellersResult = await db.from("sellers").select("name, status");
+  const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
+
+  const ordersResult = await db
+    .from("orders")
+    .select("seller, my_rating, reviewed")
+    .eq("reviewed", true);
+  const orderRows = assertNoError(ordersResult, "loading order reviews") as Row[];
+
+  return computeSellerStatsMap(
+    sellerRows.map((r) => ({ name: r.name as string, status: r.status as string })),
+    orderRows.map((r) => ({ seller: r.seller as string, my_rating: r.my_rating as number | null }))
+  );
+}
+
+function statsFor(map: Map<string, SellerStats>, seller: string): SellerStats {
+  return map.get(seller) ?? { verified: false, rating: null, orderCount: 0 };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Products                                                            */
+/* ------------------------------------------------------------------ */
+
+function rowToProduct(row: Row, stats: SellerStats): Product {
   return {
     id: row.id as string,
     category: row.category as string,
     name: row.name as string,
     price: row.price as number,
     seller: row.seller as string,
-    rating: row.rating as number,
-    verified: Boolean(row.verified),
-    testBatch: Boolean(row.test_batch),
-    marketingCat: (row.marketing_cat as string | null) ?? null,
-    loc: row.loc as string,
-    art: row.art as number,
     imageUrl: (row.image_url as string | null) ?? null,
+    art: row.art as number,
+    createdAt: row.created_at as string,
+    verified: stats.verified,
+    rating: stats.rating,
   };
 }
 
-export function listProducts(): Product[] {
-  const rows = getDb().prepare("SELECT * FROM products").all() as Row[];
-  return rows.map(rowToProduct);
+export async function listProducts(): Promise<Product[]> {
+  const db = getDb();
+  const result = await db.from("products").select("*").order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing products") as Row[];
+  const stats = await getSellerStatsMap();
+  return rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string)));
 }
 
-export function getProduct(id: string): Product | null {
-  const row = getDb().prepare("SELECT * FROM products WHERE id = ?").get(id) as Row | undefined;
-  return row ? rowToProduct(row) : null;
+export async function getProduct(id: string): Promise<Product | null> {
+  const db = getDb();
+  const result = await db.from("products").select("*").eq("id", id).maybeSingle();
+  const row = assertNoError(result, "loading product") as Row | null;
+  if (!row) return null;
+  const stats = await getSellerStatsMap();
+  return rowToProduct(row, statsFor(stats, row.seller as string));
 }
 
 let productSeq = 0;
 
-export function createProduct(input: {
+// Pure — the actual listing-validity rules, unit-testable without a
+// database. category/name are only checked when provided, so this also
+// covers a partial update patch.
+export function validateProductInput(input: {
+  category?: string;
+  name?: string;
+  price?: number;
+}): void {
+  if (input.category !== undefined && !CATEGORY_KEYS.includes(input.category)) {
+    throw new Error("Unknown category.");
+  }
+  if (input.name !== undefined && !input.name.trim()) {
+    throw new Error("Name is required.");
+  }
+  if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
+    throw new Error("Price must be a positive number.");
+  }
+}
+
+export async function createProduct(input: {
   category: string;
   name: string;
   price: number;
   seller: string;
   imageUrl?: string | null;
-}): Product {
-  if (!CATEGORY_KEYS.includes(input.category)) {
-    throw new Error("Unknown category.");
-  }
-  if (!input.name.trim()) {
-    throw new Error("Name is required.");
-  }
-  if (!Number.isFinite(input.price) || input.price <= 0) {
-    throw new Error("Price must be a positive number.");
-  }
+}): Promise<Product> {
+  validateProductInput(input);
 
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
-  db.prepare(
-    `INSERT INTO products (id, category, name, price, seller, rating, verified, test_batch, marketing_cat, loc, art, image_url)
-     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Nigeria', @art, @imageUrl)`
-  ).run({
-    id,
-    category: input.category,
-    name: input.name.trim(),
-    price: Math.round(input.price),
-    seller: input.seller,
-    art: Math.floor(Math.random() * 5),
-    imageUrl: input.imageUrl ?? null,
-  });
-  return getProduct(id)!;
+  const result = await db
+    .from("products")
+    .insert({
+      id,
+      category: input.category,
+      name: input.name.trim(),
+      price: Math.round(input.price),
+      seller: input.seller,
+      image_url: input.imageUrl ?? null,
+      art: Math.floor(Math.random() * 5),
+    })
+    .select()
+    .single();
+  assertNoError(result, "creating product");
+  return getProduct(id) as Promise<Product>;
 }
 
-export function updateProduct(
+export async function updateProduct(
   id: string,
   patch: Partial<{ name: string; category: string; price: number; imageUrl: string | null }>
-): Product | null {
-  const existing = getProduct(id);
+): Promise<Product | null> {
+  const existing = await getProduct(id);
   if (!existing) return null;
 
-  if (patch.category !== undefined && !CATEGORY_KEYS.includes(patch.category)) {
-    throw new Error("Unknown category.");
-  }
-  if (patch.name !== undefined && !patch.name.trim()) {
-    throw new Error("Name is required.");
-  }
-  if (patch.price !== undefined && (!Number.isFinite(patch.price) || patch.price <= 0)) {
-    throw new Error("Price must be a positive number.");
-  }
+  validateProductInput(patch);
 
   const db = getDb();
-  db.prepare(
-    `UPDATE products SET
-       name = @name,
-       category = @category,
-       price = @price,
-       image_url = @imageUrl
-     WHERE id = @id`
-  ).run({
-    id,
-    name: (patch.name ?? existing.name).trim(),
-    category: patch.category ?? existing.category,
-    price: Math.round(patch.price ?? existing.price),
-    imageUrl: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
-  });
+  const result = await db
+    .from("products")
+    .update({
+      name: (patch.name ?? existing.name).trim(),
+      category: patch.category ?? existing.category,
+      price: Math.round(patch.price ?? existing.price),
+      image_url: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
+    })
+    .eq("id", id);
+  assertNoError(result, "updating product");
   return getProduct(id);
 }
 
-export function deleteProduct(id: string): boolean {
-  const result = getDb().prepare("DELETE FROM products WHERE id = ?").run(id);
-  return result.changes > 0;
+export async function deleteProduct(id: string): Promise<boolean> {
+  const db = getDb();
+  const result = await db.from("products").delete().eq("id", id).select();
+  const rows = assertNoError(result, "deleting product") as Row[];
+  return rows.length > 0;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Orders                                                              */
+/* ------------------------------------------------------------------ */
 
 function rowToOrder(row: Row): Order {
   return {
     id: row.id as string,
+    userId: row.user_id as string,
     item: row.item as string,
     seller: row.seller as string,
     price: row.price as number,
     status: row.status as string,
-    date: row.date as string,
     canReview: Boolean(row.can_review),
     reviewed: Boolean(row.reviewed),
     myRating: (row.my_rating as number | null) ?? null,
     reviewComment: (row.review_comment as string | null) ?? null,
     requestId: (row.request_id as string | null) ?? null,
+    createdAt: row.created_at as string,
   };
 }
 
@@ -222,79 +309,71 @@ export const ORDER_STATUSES = [
   "Delivered",
 ] as const;
 
-// Orders with no user_id are seed/demo content, visible to everyone
-// (including guests) alongside whatever the current session actually owns.
-// A seller additionally sees orders where they're the seller (by business
-// name, the same string-matching pattern products use) so they have
-// something to fulfill.
-export function listOrders(userId?: string | null, sellerName?: string | null): Order[] {
+// A buyer's own orders, plus (when sellerName is given) orders placed
+// against that seller's business name so they have something to fulfill.
+// There is no more "shared guest content" — every order belongs to a real
+// logged-in buyer (see the "guest checkout" note in app/api/orders/route.ts).
+export async function listOrders(userId: string, sellerName?: string | null): Promise<Order[]> {
   const db = getDb();
-  let rows: Row[];
-  if (userId && sellerName) {
-    rows = db
-      .prepare(
-        "SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL OR seller = ? ORDER BY created_at DESC"
-      )
-      .all(userId, sellerName) as Row[];
-  } else if (userId) {
-    rows = db
-      .prepare("SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC")
-      .all(userId) as Row[];
-  } else if (sellerName) {
-    rows = db
-      .prepare("SELECT * FROM orders WHERE user_id IS NULL OR seller = ? ORDER BY created_at DESC")
-      .all(sellerName) as Row[];
+  let query = db.from("orders").select("*");
+  if (sellerName) {
+    query = query.or(`user_id.eq.${userId},seller.eq.${sellerName}`);
   } else {
-    rows = db
-      .prepare("SELECT * FROM orders WHERE user_id IS NULL ORDER BY created_at DESC")
-      .all() as Row[];
+    query = query.eq("user_id", userId);
   }
+  const result = await query.order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing orders") as Row[];
   return rows.map(rowToOrder);
 }
 
-export function createOrder(input: {
+export async function createOrder(input: {
   item: string;
   seller: string;
   price: number;
   status: string;
   requestId?: string | null;
-  userId?: string | null;
-}): Order {
+  userId: string;
+}): Promise<Order> {
   const db = getDb();
   const id = "ORD-" + Math.floor(1000 + Math.random() * 9000);
-  const now = new Date();
-  db.prepare(
-    `INSERT INTO orders (id, item, seller, price, status, date, can_review, reviewed, my_rating, review_comment, request_id, user_id, created_at)
-     VALUES (@id, @item, @seller, @price, @status, @date, 0, 0, NULL, NULL, @requestId, @userId, @createdAt)`
-  ).run({
-    id,
-    item: input.item,
-    seller: input.seller,
-    price: input.price,
-    status: input.status,
-    date: "Today",
-    requestId: input.requestId ?? null,
-    userId: input.userId ?? null,
-    createdAt: now.toISOString(),
-  });
-  return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
+  const result = await db
+    .from("orders")
+    .insert({
+      id,
+      user_id: input.userId,
+      item: input.item,
+      seller: input.seller,
+      price: input.price,
+      status: input.status,
+      request_id: input.requestId ?? null,
+    })
+    .select()
+    .single();
+  const row = assertNoError(result, "creating order") as Row;
+  return rowToOrder(row);
 }
 
-export function submitOrderReview(
+export async function submitOrderReview(
   id: string,
+  userId: string,
   review: { rating: number; comment: string | null }
-): Order | null {
+): Promise<Order | null> {
   const db = getDb();
-  const existing = db.prepare("SELECT * FROM orders WHERE id = ?").get(id);
-  if (!existing) return null;
-  db.prepare(
-    "UPDATE orders SET reviewed = 1, my_rating = @rating, review_comment = @comment WHERE id = @id"
-  ).run({ id, rating: review.rating, comment: review.comment });
-  return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
+  const result = await db
+    .from("orders")
+    .update({ reviewed: true, my_rating: review.rating, review_comment: review.comment })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "submitting review") as Row | null;
+  return row ? rowToOrder(row) : null;
 }
 
-export function getOrder(id: string): Order | null {
-  const row = getDb().prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row | undefined;
+export async function getOrder(id: string): Promise<Order | null> {
+  const db = getDb();
+  const result = await db.from("orders").select("*").eq("id", id).maybeSingle();
+  const row = assertNoError(result, "loading order") as Row | null;
   return row ? rowToOrder(row) : null;
 }
 
@@ -302,28 +381,39 @@ export function getOrder(id: string): Order | null {
 // status explicitly (rather than always "next") so a seller can also jump
 // straight to "Delivered" for a pickup-style order; going backwards isn't
 // allowed. Reaching "Delivered" makes the order reviewable.
-export function updateOrderStatus(id: string, status: string): Order | null {
-  if (!ORDER_STATUSES.includes(status as (typeof ORDER_STATUSES)[number])) {
+// Pure — validates a status transition without touching the database, so
+// the forward-only rule is unit-testable on its own.
+export function validateStatusTransition(currentStatus: string, nextStatus: string): void {
+  if (!ORDER_STATUSES.includes(nextStatus as (typeof ORDER_STATUSES)[number])) {
     throw new Error("Invalid order status.");
   }
-  const db = getDb();
-  const existing = db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row | undefined;
-  if (!existing) return null;
-
-  const currentIdx = ORDER_STATUSES.indexOf(existing.status as (typeof ORDER_STATUSES)[number]);
-  const nextIdx = ORDER_STATUSES.indexOf(status as (typeof ORDER_STATUSES)[number]);
-  if (nextIdx < currentIdx) {
+  const currentIdx = ORDER_STATUSES.indexOf(currentStatus as (typeof ORDER_STATUSES)[number]);
+  const nextIdx = ORDER_STATUSES.indexOf(nextStatus as (typeof ORDER_STATUSES)[number]);
+  if (currentIdx !== -1 && nextIdx < currentIdx) {
     throw new Error("Can't move an order backwards.");
   }
-
-  const canReview = status === "Delivered" ? 1 : (existing.can_review as number);
-  db.prepare("UPDATE orders SET status = @status, can_review = @canReview WHERE id = @id").run({
-    id,
-    status,
-    canReview,
-  });
-  return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
 }
+
+export async function updateOrderStatus(id: string, status: string): Promise<Order | null> {
+  validateStatusTransition("", status); // checks `status` is a known one; "" skips the forward-only check
+  const existing = await getOrder(id);
+  if (!existing) return null;
+  validateStatusTransition(existing.status, status);
+
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ status, can_review: status === "Delivered" ? true : existing.canReview })
+    .eq("id", id)
+    .select()
+    .single();
+  const row = assertNoError(result, "updating order status") as Row;
+  return rowToOrder(row);
+}
+
+/* ------------------------------------------------------------------ */
+/*  Notifications                                                        */
+/* ------------------------------------------------------------------ */
 
 function rowToNotification(row: Row): Notification {
   return {
@@ -336,225 +426,321 @@ function rowToNotification(row: Row): Notification {
   };
 }
 
-export function listNotifications(userId?: string | null): Notification[] {
+export async function listNotifications(userId: string): Promise<Notification[]> {
   const db = getDb();
-  const rows = (
-    userId
-      ? db
-          .prepare(
-            "SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
-          )
-          .all(userId)
-      : db
-          .prepare("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY created_at DESC")
-          .all()
-  ) as Row[];
+  const result = await db
+    .from("notifications")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing notifications") as Row[];
   return rows.map(rowToNotification);
 }
 
-export function markNotificationRead(id: string): Notification | null {
+export async function createNotification(input: {
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+}): Promise<Notification> {
   const db = getDb();
-  const existing = db.prepare("SELECT * FROM notifications WHERE id = ?").get(id);
-  if (!existing) return null;
-  db.prepare("UPDATE notifications SET unread = 0 WHERE id = ?").run(id);
-  return rowToNotification(
-    db.prepare("SELECT * FROM notifications WHERE id = ?").get(id) as Row
-  );
+  const id = "n_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const result = await db
+    .from("notifications")
+    .insert({ id, user_id: input.userId, type: input.type, title: input.title, body: input.body })
+    .select()
+    .single();
+  const row = assertNoError(result, "creating notification") as Row;
+  return rowToNotification(row);
 }
 
-export function markAllNotificationsRead(userId?: string | null): void {
+export async function markNotificationRead(id: string, userId: string): Promise<Notification | null> {
   const db = getDb();
-  if (userId) {
-    db.prepare("UPDATE notifications SET unread = 0 WHERE user_id = ? OR user_id IS NULL").run(
-      userId
-    );
-  } else {
-    db.prepare("UPDATE notifications SET unread = 0 WHERE user_id IS NULL").run();
-  }
+  const result = await db
+    .from("notifications")
+    .update({ unread: false })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "marking notification read") as Row | null;
+  return row ? rowToNotification(row) : null;
 }
+
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  const db = getDb();
+  const result = await db.from("notifications").update({ unread: false }).eq("user_id", userId);
+  assertNoError(result, "marking all notifications read");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Sellers (admin verification queue)                                  */
+/* ------------------------------------------------------------------ */
 
 function rowToSeller(row: Row): Seller {
+  const userRow = row.users as Row | null;
   return {
     id: row.id as string,
+    userId: row.user_id as string,
     name: row.name as string,
-    city: row.city as string,
-    docs: row.docs as string,
+    phone: (userRow?.phone as string | undefined) ?? null,
     status: row.status as Seller["status"],
+    createdAt: row.created_at as string,
   };
 }
 
-export function listSellers(): Seller[] {
-  const rows = getDb().prepare("SELECT * FROM sellers").all() as Row[];
+export async function listSellers(): Promise<Seller[]> {
+  const db = getDb();
+  const result = await db
+    .from("sellers")
+    .select("*, users(phone)")
+    .order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing sellers") as Row[];
   return rows.map(rowToSeller);
 }
 
-export function setSellerStatus(
-  id: string,
-  status: Seller["status"]
-): Seller | null {
+export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {
   const db = getDb();
-  const existing = db.prepare("SELECT * FROM sellers WHERE id = ?").get(id);
-  if (!existing) return null;
-  db.prepare("UPDATE sellers SET status = ? WHERE id = ?").run(status, id);
-  return rowToSeller(db.prepare("SELECT * FROM sellers WHERE id = ?").get(id) as Row);
+  const result = await db
+    .from("sellers")
+    .update({ status })
+    .eq("id", id)
+    .select("*, users(phone)")
+    .maybeSingle();
+  const row = assertNoError(result, "updating seller status") as Row | null;
+  return row ? rowToSeller(row) : null;
 }
 
-function rowToOffer(row: Row): Offer {
+/* ------------------------------------------------------------------ */
+/*  Requests / offers                                                   */
+/* ------------------------------------------------------------------ */
+
+function rowToOffer(row: Row, stats: SellerStats): Offer {
   return {
     id: row.id as string,
     requestId: row.request_id as string,
     seller: row.seller as string,
-    verified: Boolean(row.verified),
-    rating: row.rating as number,
-    orders: row.orders_count as number,
     price: row.price as number,
     delivery: row.delivery as string,
     eta: row.eta as string,
     condition: row.condition as string,
     warranty: row.warranty as string,
-    note: row.note as string,
+    note: (row.note as string | null) ?? null,
     accepted: Boolean(row.accepted),
+    createdAt: row.created_at as string,
+    verified: stats.verified,
+    rating: stats.rating,
   };
 }
 
-export function listOffersForRequest(requestId: string): Offer[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM offers WHERE request_id = ?")
-    .all(requestId) as Row[];
-  return rows.map(rowToOffer);
+export async function listOffersForRequest(requestId: string): Promise<Offer[]> {
+  const db = getDb();
+  const result = await db
+    .from("offers")
+    .select("*")
+    .eq("request_id", requestId)
+    .order("created_at", { ascending: true });
+  const rows = assertNoError(result, "listing offers") as Row[];
+  const stats = await getSellerStatsMap();
+  return rows.map((row) => rowToOffer(row, statsFor(stats, row.seller as string)));
 }
 
-export function listOpenRequests(): RequestRow[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT r.*, (SELECT COUNT(*) FROM offers o WHERE o.request_id = r.id) AS offer_count
-       FROM requests r WHERE r.status = 'open' ORDER BY r.created_at DESC`
-    )
-    .all() as Row[];
-  return rows.map((row) => ({
+function rowToRequest(row: Row, offerCount: number, customerName?: string | null): RequestRow {
+  return {
     id: row.id as string,
+    userId: row.user_id as string,
     title: row.title as string,
     description: (row.description as string | null) ?? null,
-    customer: (row.customer as string | null) ?? null,
+    category: (row.category as string | null) ?? null,
     budgetMin: (row.budget_min as number | null) ?? null,
     budgetMax: (row.budget_max as number | null) ?? null,
     qty: row.qty as number,
-    location: row.location as string,
+    location: (row.location as string | null) ?? null,
     condition: row.condition as string,
     status: row.status as string,
     createdAt: row.created_at as string,
     posted: timeAgo(row.created_at as string),
-    offerCount: row.offer_count as number,
-  }));
+    offerCount,
+    customerName: customerName ?? null,
+  };
 }
 
-function randomOfferFor(requestBudgetMin: number | null, requestBudgetMax: number | null) {
-  const base =
-    requestBudgetMax ?? requestBudgetMin ?? 15000 + Math.floor(Math.random() * 15000);
-  const price = Math.round((base * (0.85 + Math.random() * 0.3)) / 50) * 50;
-  return price;
+async function customerNamesFor(userIds: string[]): Promise<Map<string, string>> {
+  const names = new Map<string, string>();
+  if (userIds.length === 0) return names;
+  const db = getDb();
+  const result = await db.from("users").select("id, name").in("id", userIds);
+  const rows = assertNoError(result, "loading requester names") as Row[];
+  for (const row of rows) names.set(row.id as string, row.name as string);
+  return names;
 }
 
-const OFFER_NOTES = [
-  "Original, tested before dispatch.",
-  "Slightly different spec but covers the same need.",
-  "Buyer inspects before payment release.",
-  "In stock now, ready to ship today.",
-];
+async function offerCountsFor(requestIds: string[]): Promise<Map<string, number>> {
+  const counts = new Map<string, number>();
+  if (requestIds.length === 0) return counts;
+  const db = getDb();
+  const result = await db.from("offers").select("request_id").in("request_id", requestIds);
+  const rows = assertNoError(result, "counting offers") as Row[];
+  for (const row of rows) {
+    const id = row.request_id as string;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
 
-export function createRequestWithAutoOffers(input: {
+export async function listOpenRequests(): Promise<RequestRow[]> {
+  const db = getDb();
+  const result = await db
+    .from("requests")
+    .select("*")
+    .eq("status", "open")
+    .order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing open requests") as Row[];
+  const counts = await offerCountsFor(rows.map((r) => r.id as string));
+  const names = await customerNamesFor(rows.map((r) => r.user_id as string));
+  return rows.map((row) =>
+    rowToRequest(row, counts.get(row.id as string) ?? 0, names.get(row.user_id as string))
+  );
+}
+
+// A buyer's own requests (any status), each with its real offers so they can
+// see and accept whatever real sellers have sent — no more instant
+// auto-generated offers.
+export async function listMyRequests(userId: string): Promise<(RequestRow & { offers: Offer[] })[]> {
+  const db = getDb();
+  const result = await db
+    .from("requests")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing your requests") as Row[];
+  const counts = await offerCountsFor(rows.map((r) => r.id as string));
+  const requests = rows.map((row) => rowToRequest(row, counts.get(row.id as string) ?? 0));
+  const withOffers = await Promise.all(
+    requests.map(async (r) => ({ ...r, offers: await listOffersForRequest(r.id) }))
+  );
+  return withOffers;
+}
+
+export async function createRequest(input: {
   title: string;
   description: string | null;
+  category?: string | null;
   budgetMin: number | null;
   budgetMax: number | null;
   qty: number;
-  location: string;
+  location: string | null;
   condition: string;
-  customer?: string | null;
-}): { request: RequestRow; offers: Offer[] } {
+  userId: string;
+}): Promise<RequestRow> {
+  if (input.category && !CATEGORY_KEYS.includes(input.category)) {
+    throw new Error("Unknown category.");
+  }
   const db = getDb();
   const id = "REQ-" + Math.floor(1000 + Math.random() * 9000);
-  const now = new Date().toISOString();
-  db.prepare(
-    `INSERT INTO requests (id, title, description, customer, budget_min, budget_max, qty, location, condition, deadline, status, created_at)
-     VALUES (@id, @title, @description, @customer, @budgetMin, @budgetMax, @qty, @location, @condition, NULL, 'open', @createdAt)`
-  ).run({ id, createdAt: now, ...input, customer: input.customer ?? null });
-
-  const sellerPool = [...SELLERS].sort(() => Math.random() - 0.5).slice(0, 3);
-  const insertOffer = db.prepare(`
-    INSERT INTO offers (id, request_id, seller, verified, rating, orders_count, price, delivery, eta, condition, warranty, note, accepted, created_at)
-    VALUES (@id, @requestId, @seller, @verified, @rating, @orders, @price, @delivery, @eta, @condition, @warranty, @note, 0, @createdAt)
-  `);
-  sellerPool.forEach((seller, i) => {
-    insertOffer.run({
-      id: "OFR-" + Math.floor(1000 + Math.random() * 9000) + i,
-      requestId: id,
-      seller,
-      verified: i === 0 ? 1 : Math.random() > 0.4 ? 1 : 0,
-      rating: Number((3.9 + Math.random() * 1.0).toFixed(1)),
-      orders: 10 + Math.floor(Math.random() * 300),
-      price: randomOfferFor(input.budgetMin, input.budgetMax),
-      delivery: Math.random() > 0.2 ? String(500 + Math.floor(Math.random() * 2500)) : "Pickup only",
-      eta: ["Same day", "1–2 days", "2–3 days"][i % 3],
+  const result = await db
+    .from("requests")
+    .insert({
+      id,
+      user_id: input.userId,
+      title: input.title,
+      description: input.description,
+      category: input.category ?? null,
+      budget_min: input.budgetMin,
+      budget_max: input.budgetMax,
+      qty: input.qty,
+      location: input.location,
       condition: input.condition,
-      warranty: ["6 months", "3 months", "No warranty"][i % 3],
-      note: OFFER_NOTES[i % OFFER_NOTES.length],
-      createdAt: now,
-    });
-  });
-
-  const request = listOpenRequests().find((r) => r.id === id)!;
-  return { request, offers: listOffersForRequest(id) };
+      status: "open",
+    })
+    .select()
+    .single();
+  const row = assertNoError(result, "creating request") as Row;
+  return rowToRequest(row, 0);
 }
 
-export function addSellerOfferToRequest(
+// A real seller-submitted offer — every field is what the seller entered in
+// the form, nothing is auto-generated.
+// Pure — the offer-validity rules a seller's submitted form has to satisfy.
+export function validateOfferInput(input: { price: number; delivery: string; eta: string; warranty: string }): void {
+  if (!Number.isFinite(input.price) || input.price <= 0) {
+    throw new Error("Price must be a positive number.");
+  }
+  if (!input.delivery.trim() || !input.eta.trim() || !input.warranty.trim()) {
+    throw new Error("Delivery, ETA, and warranty are required.");
+  }
+}
+
+export async function addSellerOfferToRequest(
   requestId: string,
-  sellerName?: string | null
-): Offer | null {
+  sellerName: string,
+  input: { price: number; delivery: string; eta: string; warranty: string; note?: string | null }
+): Promise<Offer | null> {
   const db = getDb();
-  const request = db.prepare("SELECT * FROM requests WHERE id = ?").get(requestId) as
-    | Row
-    | undefined;
+  const requestResult = await db.from("requests").select("*").eq("id", requestId).maybeSingle();
+  const request = assertNoError(requestResult, "loading request") as Row | null;
   if (!request) return null;
 
+  validateOfferInput(input);
+
   const id = "OFR-" + Math.floor(1000 + Math.random() * 9000);
-  const price = randomOfferFor(
-    request.budget_min as number | null,
-    request.budget_max as number | null
-  );
-  db.prepare(`
-    INSERT INTO offers (id, request_id, seller, verified, rating, orders_count, price, delivery, eta, condition, warranty, note, accepted, created_at)
-    VALUES (@id, @requestId, @seller, 1, 4.9, 212, @price, '2,000', '1–2 days', @condition, '6 months', 'Sent from the seller dashboard.', 0, @createdAt)
-  `).run({
-    id,
-    requestId,
-    seller: sellerName || "PowerPoint Electricals",
-    price,
-    condition: (request.condition as string) || "New",
-    createdAt: new Date().toISOString(),
+  const insertResult = await db
+    .from("offers")
+    .insert({
+      id,
+      request_id: requestId,
+      seller: sellerName,
+      price: Math.round(input.price),
+      delivery: input.delivery.trim(),
+      eta: input.eta.trim(),
+      condition: (request.condition as string) || "New",
+      warranty: input.warranty.trim(),
+      note: input.note?.trim() || null,
+    })
+    .select()
+    .single();
+  const row = assertNoError(insertResult, "sending offer") as Row;
+
+  // Let the buyer know a real offer came in — this is the honest replacement
+  // for the old fake "3 sellers responded" seed notification.
+  await createNotification({
+    userId: request.user_id as string,
+    type: "offer",
+    title: "New offer on your request",
+    body: `${sellerName} responded to "${request.title}"`,
   });
 
-  return listOffersForRequest(requestId).find((o) => o.id === id) ?? null;
+  const stats = await getSellerStatsMap();
+  return rowToOffer(row, statsFor(stats, sellerName));
 }
 
-export function acceptOffer(
+export async function acceptOffer(
   requestId: string,
   offerId: string,
-  userId?: string | null
-): { order: Order } | null {
+  userId: string
+): Promise<{ order: Order } | null> {
   const db = getDb();
-  const offer = db
-    .prepare("SELECT * FROM offers WHERE id = ? AND request_id = ?")
-    .get(offerId, requestId) as Row | undefined;
-  const request = db.prepare("SELECT * FROM requests WHERE id = ?").get(requestId) as
-    | Row
-    | undefined;
+  const offerResult = await db
+    .from("offers")
+    .select("*")
+    .eq("id", offerId)
+    .eq("request_id", requestId)
+    .maybeSingle();
+  const offer = assertNoError(offerResult, "loading offer") as Row | null;
+  const requestResult = await db.from("requests").select("*").eq("id", requestId).maybeSingle();
+  const request = assertNoError(requestResult, "loading request") as Row | null;
   if (!offer || !request) return null;
 
-  db.prepare("UPDATE offers SET accepted = 1 WHERE id = ?").run(offerId);
-  db.prepare("UPDATE requests SET status = 'matched' WHERE id = ?").run(requestId);
+  await assertNoError(
+    await db.from("offers").update({ accepted: true }).eq("id", offerId),
+    "accepting offer"
+  );
+  await assertNoError(
+    await db.from("requests").update({ status: "matched" }).eq("id", requestId),
+    "updating request status"
+  );
 
-  const order = createOrder({
+  const order = await createOrder({
     item: request.title as string,
     seller: offer.seller as string,
     price: offer.price as number,
@@ -567,7 +753,37 @@ export function acceptOffer(
 }
 
 /* ------------------------------------------------------------------ */
-/*  Messaging                                                          */
+/*  Saved items (wishlist)                                              */
+/* ------------------------------------------------------------------ */
+
+export async function listSavedProductIds(userId: string): Promise<string[]> {
+  const db = getDb();
+  const result = await db.from("saved_items").select("product_id").eq("user_id", userId);
+  const rows = assertNoError(result, "listing saved items") as Row[];
+  return rows.map((r) => r.product_id as string);
+}
+
+export async function saveItem(userId: string, productId: string): Promise<void> {
+  const db = getDb();
+  const id = "sv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const result = await db
+    .from("saved_items")
+    .upsert({ id, user_id: userId, product_id: productId }, { onConflict: "user_id,product_id" });
+  assertNoError(result, "saving item");
+}
+
+export async function unsaveItem(userId: string, productId: string): Promise<void> {
+  const db = getDb();
+  const result = await db
+    .from("saved_items")
+    .delete()
+    .eq("user_id", userId)
+    .eq("product_id", productId);
+  assertNoError(result, "removing saved item");
+}
+
+/* ------------------------------------------------------------------ */
+/*  Messaging                                                            */
 /* ------------------------------------------------------------------ */
 
 export type PublicUser = {
@@ -603,84 +819,118 @@ function rowToPublicUser(row: Row): PublicUser {
   };
 }
 
-export function findUserByBusinessName(name: string): PublicUser | null {
-  const row = getDb()
-    .prepare("SELECT * FROM users WHERE role = 'seller' AND business_name = ?")
-    .get(name) as Row | undefined;
+export async function findUserByBusinessName(name: string): Promise<PublicUser | null> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .select("*")
+    .eq("role", "seller")
+    .eq("business_name", name)
+    .maybeSingle();
+  const row = assertNoError(result, "looking up seller") as Row | null;
   return row ? rowToPublicUser(row) : null;
 }
 
-function getPublicUser(id: string): PublicUser | null {
-  const row = getDb().prepare("SELECT * FROM users WHERE id = ?").get(id) as Row | undefined;
+async function getPublicUser(id: string): Promise<PublicUser | null> {
+  const db = getDb();
+  const result = await db.from("users").select("*").eq("id", id).maybeSingle();
+  const row = assertNoError(result, "loading user") as Row | null;
   return row ? rowToPublicUser(row) : null;
 }
 
-export function getOrCreateConversation(buyerId: string, sellerId: string): string {
+export async function getOrCreateConversation(buyerId: string, sellerId: string): Promise<string> {
   if (buyerId === sellerId) {
     throw new Error("Can't start a conversation with yourself.");
   }
   const db = getDb();
-  const existing = db
-    .prepare("SELECT id FROM conversations WHERE buyer_id = ? AND seller_id = ?")
-    .get(buyerId, sellerId) as Row | undefined;
+  const existingResult = await db
+    .from("conversations")
+    .select("id")
+    .eq("buyer_id", buyerId)
+    .eq("seller_id", sellerId)
+    .maybeSingle();
+  const existing = assertNoError(existingResult, "looking up conversation") as Row | null;
   if (existing) return existing.id as string;
 
   const id = "conv_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  db.prepare(
-    "INSERT INTO conversations (id, buyer_id, seller_id, created_at) VALUES (?, ?, ?, ?)"
-  ).run(id, buyerId, sellerId, new Date().toISOString());
+  const insertResult = await db
+    .from("conversations")
+    .insert({ id, buyer_id: buyerId, seller_id: sellerId });
+  assertNoError(insertResult, "creating conversation");
   return id;
 }
 
-export function getConversation(id: string): { buyerId: string; sellerId: string } | null {
-  const row = getDb().prepare("SELECT * FROM conversations WHERE id = ?").get(id) as
-    | Row
-    | undefined;
+export async function getConversation(
+  id: string
+): Promise<{ buyerId: string; sellerId: string } | null> {
+  const db = getDb();
+  const result = await db.from("conversations").select("*").eq("id", id).maybeSingle();
+  const row = assertNoError(result, "loading conversation") as Row | null;
   if (!row) return null;
   return { buyerId: row.buyer_id as string, sellerId: row.seller_id as string };
 }
 
-export function listConversations(userId: string): Conversation[] {
+export async function listConversations(userId: string): Promise<Conversation[]> {
   const db = getDb();
-  const rows = db
-    .prepare(
-      "SELECT * FROM conversations WHERE buyer_id = ? OR seller_id = ? ORDER BY created_at DESC"
-    )
-    .all(userId, userId) as Row[];
+  const result = await db
+    .from("conversations")
+    .select("*")
+    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .order("created_at", { ascending: false });
+  const rows = assertNoError(result, "listing conversations") as Row[];
 
-  return rows.map((row) => {
-    const otherId = row.buyer_id === userId ? (row.seller_id as string) : (row.buyer_id as string);
-    const other = getPublicUser(otherId)!;
-    const lastMessage = db
-      .prepare(
-        "SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at DESC LIMIT 1"
-      )
-      .get(row.id) as Row | undefined;
-    const unreadCount = (
-      db
-        .prepare(
-          "SELECT COUNT(*) AS count FROM messages WHERE conversation_id = ? AND sender_id != ? AND read = 0"
-        )
-        .get(row.id, userId) as { count: number }
-    ).count;
-    return {
-      id: row.id as string,
-      otherParty: other,
-      lastMessage: (lastMessage?.body as string) ?? null,
-      lastMessageAt: (lastMessage?.created_at as string) ?? (row.created_at as string),
-      unreadCount,
-    };
-  });
+  const conversations = await Promise.all(
+    rows.map(async (row) => {
+      const otherId = row.buyer_id === userId ? (row.seller_id as string) : (row.buyer_id as string);
+      const other = (await getPublicUser(otherId))!;
+
+      const lastMessageResult = await db
+        .from("messages")
+        .select("*")
+        .eq("conversation_id", row.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const lastMessage = assertNoError(lastMessageResult, "loading last message") as Row | null;
+
+      const unreadResult = await db
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", row.id)
+        .neq("sender_id", userId)
+        .eq("read", false);
+      assertNoError(unreadResult, "counting unread messages");
+      const unreadCount = unreadResult.count ?? 0;
+
+      return {
+        id: row.id as string,
+        otherParty: other,
+        lastMessage: (lastMessage?.body as string) ?? null,
+        lastMessageAt: (lastMessage?.created_at as string) ?? (row.created_at as string),
+        unreadCount,
+      };
+    })
+  );
+  return conversations;
 }
 
-export function listMessages(conversationId: string, viewerId: string): Message[] {
+export async function listMessages(conversationId: string, viewerId: string): Promise<Message[]> {
   const db = getDb();
-  const rows = db
-    .prepare("SELECT * FROM messages WHERE conversation_id = ? ORDER BY created_at ASC")
-    .all(conversationId) as Row[];
-  db.prepare(
-    "UPDATE messages SET read = 1 WHERE conversation_id = ? AND sender_id != ? AND read = 0"
-  ).run(conversationId, viewerId);
+  const result = await db
+    .from("messages")
+    .select("*")
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: true });
+  const rows = assertNoError(result, "listing messages") as Row[];
+
+  const updateResult = await db
+    .from("messages")
+    .update({ read: true })
+    .eq("conversation_id", conversationId)
+    .neq("sender_id", viewerId)
+    .eq("read", false);
+  assertNoError(updateResult, "marking messages read");
+
   return rows.map((row) => ({
     id: row.id as string,
     conversationId: row.conversation_id as string,
@@ -691,19 +941,28 @@ export function listMessages(conversationId: string, viewerId: string): Message[
   }));
 }
 
-export function sendMessage(
+export async function sendMessage(
   conversationId: string,
   senderId: string,
   body: string
-): Message {
+): Promise<Message> {
   if (!body.trim()) {
     throw new Error("Message can't be empty.");
   }
   const db = getDb();
   const id = "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
-  const createdAt = new Date().toISOString();
-  db.prepare(
-    "INSERT INTO messages (id, conversation_id, sender_id, body, created_at, read) VALUES (?, ?, ?, ?, ?, 0)"
-  ).run(id, conversationId, senderId, body.trim(), createdAt);
-  return { id, conversationId, senderId, body: body.trim(), createdAt, mine: true };
+  const result = await db
+    .from("messages")
+    .insert({ id, conversation_id: conversationId, sender_id: senderId, body: body.trim() })
+    .select()
+    .single();
+  const row = assertNoError(result, "sending message") as Row;
+  return {
+    id: row.id as string,
+    conversationId: row.conversation_id as string,
+    senderId: row.sender_id as string,
+    body: row.body as string,
+    createdAt: row.created_at as string,
+    mine: true,
+  };
 }

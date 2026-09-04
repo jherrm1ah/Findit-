@@ -1,233 +1,126 @@
 import { describe, it, expect } from "vitest";
-import { createUser } from "./auth";
 import {
-  createOrder,
-  listOrders,
-  updateOrderStatus,
+  validateProductInput,
+  validateOfferInput,
+  validateStatusTransition,
+  computeSellerStatsMap,
   ORDER_STATUSES,
-  createRequestWithAutoOffers,
-  addSellerOfferToRequest,
-  acceptOffer,
-  listOffersForRequest,
-  createProduct,
-  updateProduct,
-  deleteProduct,
-  getOrCreateConversation,
-  listConversations,
-  listMessages,
-  sendMessage,
-  findUserByBusinessName,
 } from "./repo";
 
-let seq = 0;
-function uniquePhone() {
-  seq += 1;
-  return `0804${String(2000000 + seq).padStart(7, "0")}`;
-}
+// NOTE ON SCOPE: lib/repo.ts now talks to a real Supabase Postgres database
+// (see lib/db.ts) instead of a local SQLite file. This sandbox has no
+// network access to Supabase, so the DB-touching functions (createProduct,
+// createOrder, acceptOffer, the messaging functions, etc.) can't be
+// exercised here — there is nothing to fake that would actually prove they
+// work. What CAN be tested honestly, offline, is the real business logic
+// those functions build on: input validation, the forward-only order status
+// rule, and the seller-stats aggregation math. That's what this file covers.
+// The DB-touching paths need to be verified by running the app against a
+// real Supabase project (see README.md) — they are not covered by an
+// automated test here.
 
-describe("orders: creation and scoping", () => {
-  it("scopes a user's orders to their own rows plus the shared demo rows", () => {
-    const buyer = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Order Buyer",
-      role: "buyer",
-      businessName: null,
-    });
-    const order = createOrder({
-      item: "Test Item",
-      seller: "Some Seller",
-      price: 1000,
-      status: "Awaiting payment",
-      userId: buyer.id,
-    });
-
-    const mine = listOrders(buyer.id);
-    expect(mine.some((o) => o.id === order.id)).toBe(true);
-
-    const otherBuyer = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Other Buyer",
-      role: "buyer",
-      businessName: null,
-    });
-    const othersView = listOrders(otherBuyer.id);
-    expect(othersView.some((o) => o.id === order.id)).toBe(false);
-  });
-
-  it("surfaces orders under a seller's business name even without owning the row", () => {
-    const businessName = "Repo Test Sellers " + uniquePhone();
-    const order = createOrder({
-      item: "Widget",
-      seller: businessName,
-      price: 2000,
-      status: "Awaiting payment",
-    });
-    const sellerView = listOrders(null, businessName);
-    expect(sellerView.some((o) => o.id === order.id)).toBe(true);
-  });
-});
-
-describe("order status progression", () => {
-  it("moves forward through the lifecycle and marks Delivered as reviewable", () => {
-    const order = createOrder({
-      item: "Progression Item",
-      seller: "Progression Seller",
-      price: 500,
-      status: ORDER_STATUSES[0],
-    });
-    expect(order.canReview).toBe(false);
-
-    const advanced = updateOrderStatus(order.id, "Seller preparing");
-    expect(advanced?.status).toBe("Seller preparing");
-
-    const delivered = updateOrderStatus(order.id, "Delivered");
-    expect(delivered?.status).toBe("Delivered");
-    expect(delivered?.canReview).toBe(true);
-  });
-
-  it("refuses to move an order backwards", () => {
-    const order = createOrder({
-      item: "Backwards Item",
-      seller: "Progression Seller",
-      price: 500,
-      status: "Dispatched",
-    });
-    expect(() => updateOrderStatus(order.id, "Seller preparing")).toThrow();
-  });
-
-  it("rejects an unknown status", () => {
-    const order = createOrder({
-      item: "Bad Status Item",
-      seller: "Progression Seller",
-      price: 500,
-      status: "Awaiting payment",
-    });
-    expect(() => updateOrderStatus(order.id, "Cancelled")).toThrow();
-  });
-});
-
-describe("request -> offer -> accept flow", () => {
-  it("auto-generates offers for a new request, and accepting one creates an order", () => {
-    const { request, offers } = createRequestWithAutoOffers({
-      title: "Test request " + uniquePhone(),
-      description: null,
-      budgetMin: 1000,
-      budgetMax: 2000,
-      qty: 1,
-      location: "Jos",
-      condition: "New",
-      customer: "Test Customer",
-    });
-    expect(offers.length).toBeGreaterThan(0);
-
-    const sellerOffer = addSellerOfferToRequest(request.id, "Manual Test Seller");
-    expect(sellerOffer).not.toBeNull();
-
-    const allOffers = listOffersForRequest(request.id);
-    expect(allOffers.length).toBe(offers.length + 1);
-
-    const buyer = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Accepting Buyer",
-      role: "buyer",
-      businessName: null,
-    });
-    const result = acceptOffer(request.id, sellerOffer!.id, buyer.id);
-    expect(result?.order.seller).toBe("Manual Test Seller");
-    expect(result?.order.status).toBe("Seller preparing");
-
-    const mine = listOrders(buyer.id);
-    expect(mine.some((o) => o.id === result?.order.id)).toBe(true);
-  });
-});
-
-describe("product listing validation", () => {
+describe("validateProductInput", () => {
   it("rejects an unknown category, empty name, and non-positive price", () => {
-    expect(() =>
-      createProduct({ category: "not-a-real-category", name: "X", price: 100, seller: "S" })
-    ).toThrow();
-    expect(() =>
-      createProduct({ category: "reading", name: "  ", price: 100, seller: "S" })
-    ).toThrow();
-    expect(() =>
-      createProduct({ category: "reading", name: "X", price: 0, seller: "S" })
-    ).toThrow();
+    expect(() => validateProductInput({ category: "not-a-real-category" })).toThrow();
+    expect(() => validateProductInput({ name: "   " })).toThrow();
+    expect(() => validateProductInput({ price: 0 })).toThrow();
+    expect(() => validateProductInput({ price: -5 })).toThrow();
   });
 
-  it("creates, updates, and deletes a listing", () => {
-    const product = createProduct({
-      category: "reading",
-      name: "Repo Test Product",
-      price: 3000,
-      seller: "Repo Test Seller",
-    });
-    expect(product.name).toBe("Repo Test Product");
-
-    const updated = updateProduct(product.id, { price: 3500 });
-    expect(updated?.price).toBe(3500);
-
-    expect(deleteProduct(product.id)).toBe(true);
-    expect(deleteProduct(product.id)).toBe(false);
+  it("accepts a valid full input and a valid partial patch", () => {
+    expect(() => validateProductInput({ category: "reading", name: "Reading light", price: 3000 })).not.toThrow();
+    expect(() => validateProductInput({ price: 5000 })).not.toThrow();
+    expect(() => validateProductInput({})).not.toThrow();
   });
 });
 
-describe("messaging", () => {
-  it("dedupes conversations for the same buyer/seller pair and refuses self-conversations", () => {
-    const buyer = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Msg Buyer",
-      role: "buyer",
-      businessName: null,
-    });
-    const seller = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Msg Seller",
-      role: "seller",
-      businessName: "Msg Business " + uniquePhone(),
-    });
-
-    const id1 = getOrCreateConversation(buyer.id, seller.id);
-    const id2 = getOrCreateConversation(buyer.id, seller.id);
-    expect(id1).toBe(id2);
-
-    expect(() => getOrCreateConversation(buyer.id, buyer.id)).toThrow();
-
-    expect(findUserByBusinessName(seller.businessName!)?.id).toBe(seller.id);
+describe("validateOfferInput", () => {
+  it("rejects a non-positive price and missing delivery/eta/warranty", () => {
+    expect(() =>
+      validateOfferInput({ price: 0, delivery: "2000", eta: "1 day", warranty: "6 months" })
+    ).toThrow();
+    expect(() =>
+      validateOfferInput({ price: 5000, delivery: "  ", eta: "1 day", warranty: "6 months" })
+    ).toThrow();
+    expect(() =>
+      validateOfferInput({ price: 5000, delivery: "2000", eta: "", warranty: "6 months" })
+    ).toThrow();
+    expect(() =>
+      validateOfferInput({ price: 5000, delivery: "2000", eta: "1 day", warranty: "" })
+    ).toThrow();
   });
 
-  it("sends messages, marks them read on fetch, and rejects an empty body", () => {
-    const buyer = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Msg Buyer 2",
-      role: "buyer",
-      businessName: null,
-    });
-    const seller = createUser({
-      phone: uniquePhone(),
-      password: "pw12345",
-      name: "Msg Seller 2",
-      role: "seller",
-      businessName: "Msg Business 2 " + uniquePhone(),
-    });
-    const conversationId = getOrCreateConversation(buyer.id, seller.id);
+  it("accepts a fully filled-in offer", () => {
+    expect(() =>
+      validateOfferInput({ price: 5000, delivery: "2000", eta: "1–2 days", warranty: "6 months" })
+    ).not.toThrow();
+  });
+});
 
-    sendMessage(conversationId, buyer.id, "Hello there");
-    expect(() => sendMessage(conversationId, buyer.id, "   ")).toThrow();
+describe("validateStatusTransition", () => {
+  it("rejects an unknown status", () => {
+    expect(() => validateStatusTransition("Awaiting payment", "Cancelled")).toThrow();
+  });
 
-    const sellerUnreadBefore = listConversations(seller.id).find((c) => c.id === conversationId);
-    expect(sellerUnreadBefore?.unreadCount).toBe(1);
+  it("allows moving forward, including staying in place", () => {
+    expect(() => validateStatusTransition("Awaiting payment", "Seller preparing")).not.toThrow();
+    expect(() => validateStatusTransition("Awaiting payment", "Delivered")).not.toThrow();
+    expect(() => validateStatusTransition("Dispatched", "Dispatched")).not.toThrow();
+  });
 
-    const messages = listMessages(conversationId, seller.id);
-    expect(messages).toHaveLength(1);
-    expect(messages[0].mine).toBe(false);
+  it("rejects moving backwards", () => {
+    expect(() => validateStatusTransition("Dispatched", "Seller preparing")).toThrow();
+    expect(() => validateStatusTransition("Delivered", "Awaiting payment")).toThrow();
+  });
 
-    const sellerUnreadAfter = listConversations(seller.id).find((c) => c.id === conversationId);
-    expect(sellerUnreadAfter?.unreadCount).toBe(0);
+  it("covers the full real lifecycle in order", () => {
+    for (let i = 1; i < ORDER_STATUSES.length; i++) {
+      expect(() => validateStatusTransition(ORDER_STATUSES[i - 1], ORDER_STATUSES[i])).not.toThrow();
+    }
+  });
+});
+
+describe("computeSellerStatsMap", () => {
+  it("marks a seller verified only when their account is approved", () => {
+    const map = computeSellerStatsMap(
+      [
+        { name: "Approved Co", status: "approved" },
+        { name: "Pending Co", status: "pending" },
+        { name: "Rejected Co", status: "rejected" },
+      ],
+      []
+    );
+    expect(map.get("Approved Co")?.verified).toBe(true);
+    expect(map.get("Pending Co")?.verified).toBe(false);
+    expect(map.get("Rejected Co")?.verified).toBe(false);
+  });
+
+  it("averages a seller's reviewed-order ratings and counts them", () => {
+    const map = computeSellerStatsMap(
+      [{ name: "Terra Gadgets", status: "approved" }],
+      [
+        { seller: "Terra Gadgets", my_rating: 5 },
+        { seller: "Terra Gadgets", my_rating: 3 },
+        { seller: "Terra Gadgets", my_rating: null }, // unrated order, shouldn't count
+      ]
+    );
+    const stats = map.get("Terra Gadgets");
+    expect(stats?.rating).toBe(4);
+    expect(stats?.orderCount).toBe(2);
+  });
+
+  it("gives a seller with no reviews yet a null rating instead of zero", () => {
+    const map = computeSellerStatsMap([{ name: "New Seller", status: "approved" }], []);
+    expect(map.get("New Seller")?.rating).toBeNull();
+    expect(map.get("New Seller")?.orderCount).toBe(0);
+  });
+
+  it("still surfaces ratings for a seller with orders but no sellers-table row", () => {
+    // Can happen for the seed/demo seller-name strings used in local testing
+    // that don't have a real registered account.
+    const map = computeSellerStatsMap([], [{ seller: "Ghost Seller", my_rating: 4 }]);
+    const stats = map.get("Ghost Seller");
+    expect(stats?.verified).toBe(false);
+    expect(stats?.rating).toBe(4);
   });
 });

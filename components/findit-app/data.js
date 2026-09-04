@@ -3,27 +3,33 @@ import {
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
   Send, ShieldCheck, Star, Truck, BadgeCheck,
 } from "lucide-react";
+import { CATEGORY_LABELS } from "../../lib/categories";
 
-/* Category labels + icons for the FindIt idea bank. Product data itself
-   (name, price, seller, rating…) is now served from /api/products —
-   see lib/catalogue.js for the shared category->item list used to seed it. */
-export const GROUPS = {
-  reading: { label: "Reading & Book Gadgets", icon: BookOpen },
-  tools: { label: "Tools & Repair", icon: Wrench },
-  organization: { label: "Home Organization", icon: Package },
-  lighting: { label: "Lighting", icon: Lightbulb },
-  cleaning: { label: "Cleaning", icon: Droplet },
-  kitchen: { label: "Kitchen", icon: Utensils },
-  bathroom: { label: "Bathroom & Personal Care", icon: Droplets },
-  campus: { label: "Student & Campus", icon: GraduationCap },
-  travel: { label: "Travel & Everyday Carry", icon: Briefcase },
-  phonetech: { label: "Phone & Everyday Tech", icon: Smartphone },
-  car: { label: "Car Products", icon: Car },
-  power: { label: "Power & Connectivity", icon: BatteryCharging },
-  weird: { label: "Weirdly Useful", icon: Sparkles },
-  plant: { label: "Plant & Agriculture", icon: Leaf },
-  desk: { label: "Desk Setup", icon: Monitor },
+/* Category icons, paired with the real category labels in lib/categories.js
+   (the single source of truth for category ids/labels, shared with the
+   server-side listing validation in lib/repo.ts). Product data itself
+   (name, price, seller…) is real, served from /api/products. */
+const CATEGORY_ICONS = {
+  reading: BookOpen,
+  tools: Wrench,
+  organization: Package,
+  lighting: Lightbulb,
+  cleaning: Droplet,
+  kitchen: Utensils,
+  bathroom: Droplets,
+  campus: GraduationCap,
+  travel: Briefcase,
+  phonetech: Smartphone,
+  car: Car,
+  power: BatteryCharging,
+  weird: Sparkles,
+  plant: Leaf,
+  desk: Monitor,
 };
+
+export const GROUPS = Object.fromEntries(
+  Object.entries(CATEGORY_LABELS).map(([key, label]) => [key, { label, icon: CATEGORY_ICONS[key] }])
+);
 
 /* Gradient swatches for ArtBlock — product.art (from /api/products) indexes into this. */
 export const ART = [
@@ -40,7 +46,5 @@ export const NOTIFICATION_ICONS = {
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
-
-export const MY_SAVED_IDS = ["p2", "p7", "p45"];
 
 export const naira = (n) => `₦${Number(n).toLocaleString("en-NG")}`;

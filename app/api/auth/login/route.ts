@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const user = verifyLogin(body.phone, body.password);
+  const user = await verifyLogin(body.phone, body.password);
   if (!user) {
     return NextResponse.json(
       { error: "Phone number or password is incorrect." },
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const token = createSession(user.id);
+  const token = await createSession(user.id);
   const res = NextResponse.json({ user });
   setSessionCookie(res, token);
   return res;

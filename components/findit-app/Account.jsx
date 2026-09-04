@@ -2,15 +2,15 @@
 
 import { useState } from "react";
 import { Heart, Star as StarFilled } from "lucide-react";
-import { GROUPS, MY_SAVED_IDS, naira } from "./data";
+import { GROUPS, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 
-export default function Account({ openProduct, orders, products, onReview }) {
+export default function Account({ openProduct, orders, products, onReview, savedIds }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const saved = products.filter((p) => MY_SAVED_IDS.includes(p.id));
+  const saved = products.filter((p) => savedIds.includes(p.id));
 
   const submitReview = async (orderId) => {
     setSubmitting(true);
@@ -34,6 +34,9 @@ export default function Account({ openProduct, orders, products, onReview }) {
       <p className="text-[12px] text-[#6B6483] mb-5">Track deliveries, view history, and leave a review once an order arrives.</p>
 
       <div className="space-y-3 mb-8">
+        {orders.length === 0 && (
+          <p className="text-[12px] text-[#6B6483]">No orders yet — browse the catalogue or request an item to get started.</p>
+        )}
         {orders.map((o) => (
           <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
             <div className="flex items-start justify-between mb-1">
@@ -109,6 +112,9 @@ export default function Account({ openProduct, orders, products, onReview }) {
             <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
           </button>
         ))}
+        {saved.length === 0 && (
+          <p className="col-span-2 text-[12px] text-[#6B6483]">Nothing saved yet — tap the heart on a product to save it here.</p>
+        )}
       </div>
     </div>
   );
