@@ -1,8 +1,9 @@
 # FindIt Naija
 
-A request-first marketplace connecting buyers in Jos, Nigeria to verified sellers: tell FindIt
-what you need (or browse the catalogue directly), sellers send offers, you pay into escrow and
-confirm on delivery.
+A request-first marketplace connecting buyers to verified sellers, starting in Nigeria and built
+to scale globally: tell FindIt what you need (or browse the catalogue directly), sellers near you
+send offers, you pay into escrow and confirm on delivery. Jos is the pilot city in the seed data —
+not a hardcoded assumption about where the app runs.
 
 This is a Next.js port of a mobile-first React prototype, now backed by a real SQLite database:
 products, orders, requests/offers, notifications, seller verification, and user accounts all

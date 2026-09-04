@@ -12,7 +12,7 @@ const ONBOARDING_SLIDES = [
   },
   {
     icon: Search,
-    title: "We search trusted\nsellers in Jos",
+    title: "We search trusted\nsellers near you",
     subtitle: "Verified shops, wholesalers and artisans compete to find your item and send real offers.",
   },
   {

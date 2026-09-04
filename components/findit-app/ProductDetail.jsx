@@ -109,7 +109,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
         <p className="text-[12px] font-semibold text-[#1E1B4B] mb-2">Description</p>
         <p className="text-[13px] leading-relaxed text-[#514B67] mb-4">
-          Ships within Jos with pickup available. Payment is held by FindIt until you confirm delivery, so you never
+          Ships from your nearest seller, with pickup available. Payment is held by FindIt until you confirm delivery, so you never
           pay a seller directly. Condition and specifications are confirmed before dispatch.
         </p>
 

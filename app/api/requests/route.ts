@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     budgetMin: toNumberOrNull(body.budgetMin),
     budgetMax: toNumberOrNull(body.budgetMax),
     qty: Number(body.qty) > 0 ? Number(body.qty) : 1,
-    location: body.location?.trim() || "Jos",
+    location: body.location?.trim() || "Nigeria",
     condition: body.condition || "New",
     customer: user?.name ?? null,
   });

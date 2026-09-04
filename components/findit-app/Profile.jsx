@@ -18,7 +18,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       key: "seller",
       icon: LayoutDashboard,
       label: "Seller dashboard",
-      subtitle: user?.role === "seller" ? `${user.businessName} · Jos` : "Requires a seller account",
+      subtitle: user?.role === "seller" ? user.businessName : "Requires a seller account",
     },
   ];
   const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About this prototype"];

@@ -10,7 +10,7 @@ import { api } from "./api";
 
 export default function RequestForm({ go, onOrderCreated }) {
   const [stage, setStage] = useState("form");
-  const [form, setForm] = useState({ title: "", desc: "", budgetMin: "", budgetMax: "", qty: 1, location: "Jos", condition: "New", deadline: "" });
+  const [form, setForm] = useState({ title: "", desc: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New", deadline: "" });
   const [request, setRequest] = useState(null);
   const [offers, setOffers] = useState([]);
   const [selectedOffer, setSelectedOffer] = useState(null);
@@ -142,7 +142,7 @@ export default function RequestForm({ go, onOrderCreated }) {
           <div className="absolute inset-0 rounded-full border-4 border-[#7C3AED] border-t-transparent animate-spin" />
           <Search className="absolute inset-0 m-auto text-[#7C3AED]" size={22} />
         </div>
-        <p className="text-[14px] font-semibold text-[#1E1B4B] mb-1">Searching trusted sellers in {form.location}…</p>
+        <p className="text-[14px] font-semibold text-[#1E1B4B] mb-1">Searching trusted sellers {form.location.trim() ? `in ${form.location.trim()}` : "near you"}…</p>
         <p className="text-[12px] text-[#6B6483] text-center max-w-[220px]">Matching "{form.title}" against our verified seller network.</p>
       </div>
     );
@@ -187,7 +187,7 @@ export default function RequestForm({ go, onOrderCreated }) {
             </select>
           </Field>
         </div>
-        <Field label="Location"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} className="input" /></Field>
+        <Field label="Your city (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Lagos, Abuja, Jos…" className="input" /></Field>
         <Field label="Deadline (optional)"><input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className="input" /></Field>
         <button type="submit" className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-2 shadow-lg shadow-[#7C3AED]/25" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           Submit request <ArrowRight size={15} />

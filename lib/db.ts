@@ -15,12 +15,12 @@ const SEED_ADMIN_PASSWORD = "admin1234";
 
 const SEED_SELLERS = [
   { id: "s1", name: "Bakassi Auto Parts", city: "Jos", docs: "Govt ID + shop photo", status: "pending" },
-  { id: "s2", name: "NightOwl Electronics", city: "Jos", docs: "Govt ID only", status: "pending" },
+  { id: "s2", name: "NightOwl Electronics", city: "Lagos", docs: "Govt ID only", status: "pending" },
 ];
 
 const SEED_ORDERS = [
   { id: "ORD-4821", item: "Router Backup Mini-UPS", seller: "PowerPoint Electricals", price: 24000, status: "Delivered", date: "12 Aug", canReview: 1, reviewed: 0, myRating: null, reviewComment: null },
-  { id: "ORD-4790", item: "Mini Endoscope Camera", seller: "TechBase Plateau", price: 15500, status: "Out for delivery", date: "18 Aug", canReview: 0, reviewed: 0, myRating: null, reviewComment: null },
+  { id: "ORD-4790", item: "Mini Endoscope Camera", seller: "TechBase Traders", price: 15500, status: "Out for delivery", date: "18 Aug", canReview: 0, reviewed: 0, myRating: null, reviewComment: null },
   { id: "ORD-4712", item: "Book-Insert Reading Light", seller: "Terra Gadgets", price: 6500, status: "Delivered", date: "2 Aug", canReview: 1, reviewed: 1, myRating: 5, reviewComment: null },
 ];
 
@@ -36,10 +36,10 @@ const SEED_NOTIFICATIONS = [
 // aren't empty on first load. Left with zero offers until a seller responds.
 const SEED_REQUESTS = [
   { id: "REQ-1001", title: "Generator carburettor for Elemax SV6500", description: null, budgetMin: 8000, budgetMax: 12000, qty: 1, location: "Jos", condition: "New", customer: "Amaka O." },
-  { id: "REQ-1002", title: "Replacement charger for HP EliteBook 840", description: null, budgetMin: 10000, budgetMax: 15000, qty: 1, location: "Jos", condition: "New", customer: "Danladi P." },
-  { id: "REQ-1003", title: "100 branded cups for a wedding", description: null, budgetMin: 45000, budgetMax: 45000, qty: 100, location: "Jos", condition: "New", customer: "Chiamaka N." },
-  { id: "REQ-1004", title: "Vintage Peugeot 504 door handle", description: null, budgetMin: null, budgetMax: null, qty: 1, location: "Jos", condition: "Used", customer: null },
-  { id: "REQ-1005", title: "Industrial sewing machine needle #16", description: null, budgetMin: null, budgetMax: null, qty: 1, location: "Jos", condition: "New", customer: null },
+  { id: "REQ-1002", title: "Replacement charger for HP EliteBook 840", description: null, budgetMin: 10000, budgetMax: 15000, qty: 1, location: "Lagos", condition: "New", customer: "Danladi P." },
+  { id: "REQ-1003", title: "100 branded cups for a wedding", description: null, budgetMin: 45000, budgetMax: 45000, qty: 100, location: "Abuja", condition: "New", customer: "Chiamaka N." },
+  { id: "REQ-1004", title: "Vintage Peugeot 504 door handle", description: null, budgetMin: null, budgetMax: null, qty: 1, location: "Port Harcourt", condition: "Used", customer: null },
+  { id: "REQ-1005", title: "Industrial sewing machine needle #16", description: null, budgetMin: null, budgetMax: null, qty: 1, location: "Kano", condition: "New", customer: null },
 ];
 
 function minutesAgoIso(minutes: number): string {

@@ -4,7 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "FindIt Naija",
   description:
-    "Request-first marketplace connecting buyers in Jos, Nigeria to verified sellers.",
+    "Request-first marketplace connecting buyers to verified sellers, starting in Nigeria.",
 };
 
 export default function RootLayout({

@@ -69,7 +69,7 @@ export function createUser(input: {
 
   if (input.role === "seller") {
     db.prepare(
-      `INSERT INTO sellers (id, name, city, docs, status) VALUES (@id, @name, 'Jos', 'Pending review', 'pending')`
+      `INSERT INTO sellers (id, name, city, docs, status) VALUES (@id, @name, 'Nigeria', 'Pending review', 'pending')`
     ).run({ id: "seller_" + id, name: input.businessName || input.name });
   }
 

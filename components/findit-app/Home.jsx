@@ -41,7 +41,7 @@ export default function Home({ go, openProduct, products, unreadCount = 0 }) {
         </IconButton>
         <div className="flex items-center gap-1.5">
           <Logo size={22} />
-          <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">Jos, Plateau</span>
+          <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">Nearest sellers</span>
         </div>
         <div className="flex items-center gap-2">
           <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined}><Bell size={17} className="text-[#1E1B4B]" /></IconButton>

@@ -142,7 +142,7 @@ export function createProduct(input: {
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
   db.prepare(
     `INSERT INTO products (id, category, name, price, seller, rating, verified, test_batch, marketing_cat, loc, art)
-     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Jos', @art)`
+     VALUES (@id, @category, @name, @price, @seller, 4.5, 0, 0, NULL, 'Nigeria', @art)`
   ).run({
     id,
     category: input.category,
