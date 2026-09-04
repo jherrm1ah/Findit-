@@ -45,8 +45,9 @@ funds UI as a simulated state) — see "Next steps" below.
 - **Seller profile (storefront)** — tap a seller's name from a product to see their public page:
   real aggregate rating (from their reviewed orders), listing count, verified status, a "Contact
   seller" button, and a grid of everything they currently have listed.
-- **Notifications** — real, per-account. You're notified when a seller sends a real offer on your
-  request. Mark one or all as read.
+- **Notifications** — real, per-account, sent on every meaningful state change: a seller sends an
+  offer, an order moves to the next fulfillment step, a seller gets a new order or a review, and a
+  seller's application is approved or rejected. Mark one or all as read.
 - **Profile** — shows your real name/phone/role with a working log out, plus entry points into
   your orders, requests, messages, and notifications.
 - **Product photos** — sellers can attach a real photo to a listing (add or edit), stored in

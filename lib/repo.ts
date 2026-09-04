@@ -421,12 +421,29 @@ export async function createOrderFromProduct(
   if (!product) {
     throw new ValidationError("That product is no longer available.");
   }
-  return insertOrder({
+  const order = await insertOrder({
     item: product.name,
     seller: product.seller,
     price: product.price * qty,
     status: "Awaiting payment",
     userId,
+  });
+
+  await notifySellerOfNewOrder(product.seller, order);
+  return order;
+}
+
+// Shared by both ways an order gets created (direct purchase and accepting
+// a request offer) — looks the seller's account up by business name so the
+// notification lands on the right user, not just a string on the order row.
+async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
+  const seller = await findUserByBusinessName(sellerBusinessName);
+  if (!seller) return; // seller hasn't joined FindIt as an account directly — nothing to notify
+  await notifyBestEffort({
+    userId: seller.id,
+    type: "payment",
+    title: "New order",
+    body: `"${order.item}" was just ordered — ₦${order.price.toLocaleString("en-NG")} is held by FindIt until delivery is confirmed.`,
   });
 }
 
@@ -450,7 +467,20 @@ export async function submitOrderReview(
     .select()
     .maybeSingle();
   const row = assertNoError(result, "submitting review") as Row | null;
-  return row ? rowToOrder(row) : null;
+  if (!row) return null;
+  const order = rowToOrder(row);
+
+  const seller = await findUserByBusinessName(order.seller);
+  if (seller) {
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "review",
+      title: "New review",
+      body: `You got a ${review.rating}-star review for "${order.item}".`,
+    });
+  }
+
+  return order;
 }
 
 export async function getOrder(id: string): Promise<Order | null> {
@@ -477,6 +507,13 @@ export function validateStatusTransition(currentStatus: string, nextStatus: stri
   }
 }
 
+const STATUS_NOTIFICATION_COPY: Record<string, { title: string; body: (item: string) => string }> = {
+  "Seller preparing": { title: "Order update", body: (item) => `"${item}" is now being prepared by the seller.` },
+  "Dispatched": { title: "Your order has shipped", body: (item) => `"${item}" was dispatched — it's on its way.` },
+  "Out for delivery": { title: "Out for delivery", body: (item) => `"${item}" is out for delivery today.` },
+  "Delivered": { title: "Order delivered", body: (item) => `"${item}" has been delivered — you can now leave a review.` },
+};
+
 export async function updateOrderStatus(id: string, status: string): Promise<Order | null> {
   validateStatusTransition("", status); // checks `status` is a known one; "" skips the forward-only check
   const existing = await getOrder(id);
@@ -491,7 +528,21 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
     .select()
     .single();
   const row = assertNoError(result, "updating order status") as Row;
-  return rowToOrder(row);
+  const order = rowToOrder(row);
+
+  // Let the buyer know their order moved forward — best-effort: a
+  // notification failure shouldn't undo or block the status update itself.
+  const copy = STATUS_NOTIFICATION_COPY[status];
+  if (copy) {
+    await notifyBestEffort({
+      userId: order.userId,
+      type: "delivery",
+      title: copy.title,
+      body: copy.body(order.item),
+    });
+  }
+
+  return order;
 }
 
 /* ------------------------------------------------------------------ */
@@ -535,6 +586,23 @@ export async function createNotification(input: {
     .single();
   const row = assertNoError(result, "creating notification") as Row;
   return rowToNotification(row);
+}
+
+// Same as createNotification, but for notifications that are a side effect
+// of some other action succeeding (a new order landed, a status changed) —
+// the primary action has already committed, so a notification failure here
+// should be logged, not surfaced as a failure of that action.
+async function notifyBestEffort(input: {
+  userId: string;
+  type: string;
+  title: string;
+  body: string;
+}): Promise<void> {
+  try {
+    await createNotification(input);
+  } catch (err) {
+    console.error("[notify] failed to create notification:", err);
+  }
 }
 
 export async function markNotificationRead(id: string, userId: string): Promise<Notification | null> {
@@ -603,7 +671,22 @@ export async function setSellerStatus(id: string, status: Seller["status"]): Pro
     .select("*, users(phone)")
     .maybeSingle();
   const row = assertNoError(result, "updating seller status") as Row | null;
-  return row ? rowToSeller(row) : null;
+  if (!row) return null;
+  const seller = rowToSeller(row);
+
+  if (status === "approved" || status === "rejected") {
+    await notifyBestEffort({
+      userId: seller.userId,
+      type: "seller",
+      title: status === "approved" ? "You're approved to sell" : "Seller application update",
+      body:
+        status === "approved"
+          ? "Your seller account has been approved — you can now list products and respond to requests."
+          : "Your seller application wasn't approved this time.",
+    });
+  }
+
+  return seller;
 }
 
 /* ------------------------------------------------------------------ */
@@ -937,6 +1020,7 @@ export async function acceptOffer(
     userId,
   });
 
+  await notifySellerOfNewOrder(offer.seller as string, order);
   return { order };
 }
 
