@@ -25,7 +25,7 @@ const TABS = [
   { key: "profile", label: "Profile", icon: User },
 ];
 
-export default function MainApp() {
+export default function MainApp({ user, onLogout }) {
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
@@ -151,14 +151,18 @@ export default function MainApp() {
       )}
 
       <main className="pb-24">
-        {screen === "home" && <Home go={go} openProduct={setProduct} products={products} />}
+        {screen === "home" && (
+          <Home go={go} openProduct={setProduct} products={products} unreadCount={notifications.filter((n) => n.unread).length} />
+        )}
         {screen === "browse" && <Browse initialGroup={browseGroup} openProduct={setProduct} products={products} />}
         {screen === "request" && <RequestForm go={go} onOrderCreated={handleOrderCreated} />}
-        {screen === "seller" && <SellerDashboard requests={requests} onSendOffer={handleSendOffer} />}
+        {screen === "seller" && <SellerDashboard requests={requests} onSendOffer={handleSendOffer} user={user} />}
         {screen === "admin" && (
           <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} />
         )}
-        {screen === "profile" && <Profile go={go} />}
+        {screen === "profile" && (
+          <Profile go={go} user={user} onLogout={onLogout} unreadCount={notifications.filter((n) => n.unread).length} />
+        )}
         {screen === "account" && (
           <Account openProduct={setProduct} orders={orders} products={products} onReview={handleReview} />
         )}

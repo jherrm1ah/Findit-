@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listOrders, createOrder } from "@/lib/repo";
+import { getSessionUser } from "@/lib/auth";
 
-export async function GET() {
-  return NextResponse.json({ orders: listOrders() });
+export async function GET(req: NextRequest) {
+  const user = getSessionUser(req);
+  return NextResponse.json({ orders: listOrders(user?.id) });
 }
 
 export async function POST(req: NextRequest) {
@@ -20,11 +22,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const user = getSessionUser(req);
   const order = createOrder({
     item: body.item,
     seller: body.seller,
     price: body.price,
     status: body.status || "Awaiting payment",
+    userId: user?.id ?? null,
   });
   return NextResponse.json({ order });
 }

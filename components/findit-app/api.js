@@ -53,4 +53,19 @@ export const api = {
     }).then((d) => d.order),
   sendSellerOffer: (requestId) =>
     request(`/api/requests/${requestId}/offers`, { method: "POST" }).then((d) => d.offer),
+
+  me: () => request("/api/auth/me").then((d) => d.user),
+  signup: (payload) =>
+    request("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.user),
+  login: (payload) =>
+    request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.user),
+  logout: () => request("/api/auth/logout", { method: "POST" }),
 };

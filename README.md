@@ -5,24 +5,32 @@ what you need (or browse the catalogue directly), sellers send offers, you pay i
 confirm on delivery.
 
 This is a Next.js port of a mobile-first React prototype, now backed by a real SQLite database:
-products, orders, requests/offers, notifications, and seller verification all persist across a
-reload. Auth and payments are still stubs (login accepts a guest pass-through; checkout shows the
-escrow-held-funds UI as a simulated state) — see "Next steps" below.
+products, orders, requests/offers, notifications, seller verification, and user accounts all
+persist across a reload. Payments are still a stub (checkout shows the escrow-held-funds UI as a
+simulated state) — see "Next steps" below.
 
 ## Flows
 
-- **Splash → Onboarding → Login** (or "Continue as guest") on first load.
-- **Home** — promo banner, category shortcuts, trending discoveries.
+- **Splash → Onboarding → Login/signup** (or "Continue as guest") on first load. Signing up picks
+  a buyer or seller account; a returning user with a live session skips straight past login. A
+  seller signup immediately enters the admin verification queue.
+- **Home** — promo banner, category shortcuts, trending discoveries; a real unread-notification
+  badge.
 - **Browse** — all 300 products across 15 categories from the FindIt idea bank; search, filter
   by category/verified/first-20 test batch.
 - **Product detail → Buy now → Checkout** — creates a real order, with a simulated escrow hold
   and a delivery-status tracker.
 - **Request an item** — submits a real request; the server auto-generates offers from three
   sellers (simulating instant matching), compare and accept one to pay and track delivery.
-- **Seller dashboard** — respond to open customer requests with a real offer.
-- **Admin queue** — approve/reject pending sellers; requests with zero offers show as unmatched.
-- **Account** — real order history, delivery tracking, reviews, saved items.
-- **Notifications** — mark one or all as read, persisted.
+- **Seller dashboard** — respond to open customer requests with a real offer, attributed to your
+  real business name once you're signed in as a seller.
+- **Admin queue** — approve/reject pending sellers (including real seller signups); requests with
+  zero offers show as unmatched.
+- **Account** — real order history, delivery tracking, reviews, saved items. Orders you place are
+  tied to your account; guests and every account also see the shared seed/demo orders.
+- **Notifications** — mark one or all as read, persisted, scoped per account the same way.
+- **Profile** — shows your real name/phone/role with a working log out (or a log-in prompt as a
+  guest).
 
 ## Stack
 
@@ -47,10 +55,12 @@ and seeded automatically on first run.
 
 - `lib/catalogue.js` — the category → product-name lists and deterministic listing generator
   (price/seller/rating/etc), used only for seeding.
-- `lib/db.ts` — schema + seeding (products, sellers, requests, offers, orders, notifications).
+- `lib/db.ts` — schema + seeding (products, sellers, requests, offers, orders, notifications,
+  users, sessions), with a tiny startup migration for columns added after the first release.
 - `lib/repo.ts` — typed query/mutation functions used by the API routes.
+- `lib/auth.ts` — password hashing (scrypt) and cookie-based sessions (no external auth service).
 - `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
-  sellers.
+  sellers, and auth (signup/login/logout/me).
 - `components/findit-app/data.js` — client-only presentation data: category labels/icons,
   notification-type icons, gradient swatches, static copy.
 - `components/findit-app/api.js` — small fetch wrapper used by the client components.
@@ -62,6 +72,6 @@ and seeded automatically on first run.
 
 ## Next steps toward a real product
 
-Real auth (phone/password accounts, sessions), a real seller-offer/notification pipeline tied to
-actual seller accounts, and a real Nigerian payment processor (e.g. Paystack or Flutterwave) for
-the escrow flow.
+A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, and gating
+sensitive seller/admin actions behind actual authorization rather than leaving them open to any
+signed-in (or guest) session.

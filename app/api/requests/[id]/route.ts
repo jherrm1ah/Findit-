@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { acceptOffer } from "@/lib/repo";
+import { getSessionUser } from "@/lib/auth";
 
 export async function PATCH(
   req: NextRequest,
@@ -16,7 +17,8 @@ export async function PATCH(
     return NextResponse.json({ error: "acceptOfferId is required" }, { status: 400 });
   }
 
-  const result = acceptOffer(params.id, body.acceptOfferId);
+  const user = getSessionUser(req);
+  const result = acceptOffer(params.id, body.acceptOfferId, user?.id ?? null);
   if (!result) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

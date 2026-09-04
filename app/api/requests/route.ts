@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listOpenRequests, createRequestWithAutoOffers } from "@/lib/repo";
+import { getSessionUser } from "@/lib/auth";
 
 export async function GET() {
   return NextResponse.json({ requests: listOpenRequests() });
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
     return Number.isFinite(n) ? n : null;
   };
 
+  const user = getSessionUser(req);
   const { request, offers } = createRequestWithAutoOffers({
     title: body.title.trim(),
     description: body.description?.trim() || null,
@@ -39,6 +41,7 @@ export async function POST(req: NextRequest) {
     qty: Number(body.qty) > 0 ? Number(body.qty) : 1,
     location: body.location?.trim() || "Jos",
     condition: body.condition || "New",
+    customer: user?.name ?? null,
   });
 
   return NextResponse.json({ request, offers });

@@ -123,11 +123,47 @@ export function getDb(): Database.Database {
       unread INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      phone TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      name TEXT NOT NULL,
+      role TEXT NOT NULL,
+      business_name TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id),
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL
+    );
   `);
 
+  migrate(db);
   seedIfEmpty(db);
 
   return db;
+}
+
+// Adds columns to tables that existed before auth was introduced. SQLite has
+// no "ADD COLUMN IF NOT EXISTS", so probe pragma table_info and add what's
+// missing — safe to run on every startup, including a brand-new database.
+function migrate(database: Database.Database) {
+  const addColumnIfMissing = (table: string, column: string, definition: string) => {
+    const columns = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{
+      name: string;
+    }>;
+    if (!columns.some((c) => c.name === column)) {
+      database.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  };
+
+  addColumnIfMissing("orders", "user_id", "TEXT");
+  addColumnIfMissing("notifications", "user_id", "TEXT");
 }
 
 function seedIfEmpty(database: Database.Database) {

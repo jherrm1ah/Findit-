@@ -1,26 +1,41 @@
 "use client";
 
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn } from "lucide-react";
 
-export default function Profile({ go }) {
+export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
   const CARDS = [
     { key: "admin", icon: ShieldCheck, label: "Admin queue", subtitle: "Seller verification & unmatched requests", primary: true },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
-    { key: "notifications", icon: Bell, label: "Notifications", subtitle: "3 unread" },
-    { key: "seller", icon: LayoutDashboard, label: "Seller dashboard", subtitle: "PowerPoint Electricals · Jos" },
+    { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
+    {
+      key: "seller",
+      icon: LayoutDashboard,
+      label: "Seller dashboard",
+      subtitle: user?.role === "seller" ? `${user.businessName} · Jos` : "Demo view · Jos",
+    },
   ];
   const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About this prototype"];
 
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+        <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           <User size={24} className="text-white" />
         </div>
-        <div>
-          <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>FindIt Team</p>
-          <p className="text-[12px] text-[#6B6483]">Jos, Plateau · Managed marketplace phase</p>
+        <div className="flex-1">
+          <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+            {user ? user.name : "Browsing as guest"}
+          </p>
+          <p className="text-[12px] text-[#6B6483]">
+            {user ? `${user.phone} · ${user.role === "seller" ? "Seller account" : "Buyer account"}` : "Log in to save requests and track orders"}
+          </p>
         </div>
+        <button
+          onClick={onLogout}
+          className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] px-3 py-2 rounded-full border border-[#ECE9F7] shrink-0"
+        >
+          {user ? <><LogOut size={12} /> Log out</> : <><LogIn size={12} /> Log in</>}
+        </button>
       </div>
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Management</p>

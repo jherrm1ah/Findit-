@@ -129,10 +129,19 @@ function rowToOrder(row: Row): Order {
   };
 }
 
-export function listOrders(): Order[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM orders ORDER BY created_at DESC")
-    .all() as Row[];
+// Orders with no user_id are seed/demo content, visible to everyone
+// (including guests) alongside whatever the current session actually owns.
+export function listOrders(userId?: string | null): Order[] {
+  const db = getDb();
+  const rows = (
+    userId
+      ? db
+          .prepare(
+            "SELECT * FROM orders WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
+          )
+          .all(userId)
+      : db.prepare("SELECT * FROM orders WHERE user_id IS NULL ORDER BY created_at DESC").all()
+  ) as Row[];
   return rows.map(rowToOrder);
 }
 
@@ -142,13 +151,14 @@ export function createOrder(input: {
   price: number;
   status: string;
   requestId?: string | null;
+  userId?: string | null;
 }): Order {
   const db = getDb();
   const id = "ORD-" + Math.floor(1000 + Math.random() * 9000);
   const now = new Date();
   db.prepare(
-    `INSERT INTO orders (id, item, seller, price, status, date, can_review, reviewed, my_rating, review_comment, request_id, created_at)
-     VALUES (@id, @item, @seller, @price, @status, @date, 0, 0, NULL, NULL, @requestId, @createdAt)`
+    `INSERT INTO orders (id, item, seller, price, status, date, can_review, reviewed, my_rating, review_comment, request_id, user_id, created_at)
+     VALUES (@id, @item, @seller, @price, @status, @date, 0, 0, NULL, NULL, @requestId, @userId, @createdAt)`
   ).run({
     id,
     item: input.item,
@@ -157,9 +167,10 @@ export function createOrder(input: {
     status: input.status,
     date: "Today",
     requestId: input.requestId ?? null,
+    userId: input.userId ?? null,
     createdAt: now.toISOString(),
   });
-  return listOrders().find((o) => o.id === id)!;
+  return rowToOrder(db.prepare("SELECT * FROM orders WHERE id = ?").get(id) as Row);
 }
 
 export function submitOrderReview(
@@ -186,10 +197,19 @@ function rowToNotification(row: Row): Notification {
   };
 }
 
-export function listNotifications(): Notification[] {
-  const rows = getDb()
-    .prepare("SELECT * FROM notifications ORDER BY created_at DESC")
-    .all() as Row[];
+export function listNotifications(userId?: string | null): Notification[] {
+  const db = getDb();
+  const rows = (
+    userId
+      ? db
+          .prepare(
+            "SELECT * FROM notifications WHERE user_id = ? OR user_id IS NULL ORDER BY created_at DESC"
+          )
+          .all(userId)
+      : db
+          .prepare("SELECT * FROM notifications WHERE user_id IS NULL ORDER BY created_at DESC")
+          .all()
+  ) as Row[];
   return rows.map(rowToNotification);
 }
 
@@ -203,8 +223,15 @@ export function markNotificationRead(id: string): Notification | null {
   );
 }
 
-export function markAllNotificationsRead(): void {
-  getDb().prepare("UPDATE notifications SET unread = 0").run();
+export function markAllNotificationsRead(userId?: string | null): void {
+  const db = getDb();
+  if (userId) {
+    db.prepare("UPDATE notifications SET unread = 0 WHERE user_id = ? OR user_id IS NULL").run(
+      userId
+    );
+  } else {
+    db.prepare("UPDATE notifications SET unread = 0 WHERE user_id IS NULL").run();
+  }
 }
 
 function rowToSeller(row: Row): Seller {
@@ -304,14 +331,15 @@ export function createRequestWithAutoOffers(input: {
   qty: number;
   location: string;
   condition: string;
+  customer?: string | null;
 }): { request: RequestRow; offers: Offer[] } {
   const db = getDb();
   const id = "REQ-" + Math.floor(1000 + Math.random() * 9000);
   const now = new Date().toISOString();
   db.prepare(
     `INSERT INTO requests (id, title, description, customer, budget_min, budget_max, qty, location, condition, deadline, status, created_at)
-     VALUES (@id, @title, @description, NULL, @budgetMin, @budgetMax, @qty, @location, @condition, NULL, 'open', @createdAt)`
-  ).run({ id, createdAt: now, ...input });
+     VALUES (@id, @title, @description, @customer, @budgetMin, @budgetMax, @qty, @location, @condition, NULL, 'open', @createdAt)`
+  ).run({ id, createdAt: now, ...input, customer: input.customer ?? null });
 
   const sellerPool = [...SELLERS].sort(() => Math.random() - 0.5).slice(0, 3);
   const insertOffer = db.prepare(`
@@ -340,7 +368,10 @@ export function createRequestWithAutoOffers(input: {
   return { request, offers: listOffersForRequest(id) };
 }
 
-export function addSellerOfferToRequest(requestId: string): Offer | null {
+export function addSellerOfferToRequest(
+  requestId: string,
+  sellerName?: string | null
+): Offer | null {
   const db = getDb();
   const request = db.prepare("SELECT * FROM requests WHERE id = ?").get(requestId) as
     | Row
@@ -354,10 +385,11 @@ export function addSellerOfferToRequest(requestId: string): Offer | null {
   );
   db.prepare(`
     INSERT INTO offers (id, request_id, seller, verified, rating, orders_count, price, delivery, eta, condition, warranty, note, accepted, created_at)
-    VALUES (@id, @requestId, 'PowerPoint Electricals', 1, 4.9, 212, @price, '2,000', '1–2 days', @condition, '6 months', 'Sent from the seller dashboard.', 0, @createdAt)
+    VALUES (@id, @requestId, @seller, 1, 4.9, 212, @price, '2,000', '1–2 days', @condition, '6 months', 'Sent from the seller dashboard.', 0, @createdAt)
   `).run({
     id,
     requestId,
+    seller: sellerName || "PowerPoint Electricals",
     price,
     condition: (request.condition as string) || "New",
     createdAt: new Date().toISOString(),
@@ -368,7 +400,8 @@ export function addSellerOfferToRequest(requestId: string): Offer | null {
 
 export function acceptOffer(
   requestId: string,
-  offerId: string
+  offerId: string,
+  userId?: string | null
 ): { order: Order } | null {
   const db = getDb();
   const offer = db
@@ -388,6 +421,7 @@ export function acceptOffer(
     price: offer.price as number,
     status: "Seller preparing",
     requestId,
+    userId,
   });
 
   return { order };

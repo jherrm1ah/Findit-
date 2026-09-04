@@ -15,7 +15,7 @@ const BANNERS = [
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
-export default function Home({ go, openProduct, products }) {
+export default function Home({ go, openProduct, products, unreadCount = 0 }) {
   const [banner, setBanner] = useState(0);
   const [wishlist, setWishlist] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,7 +44,7 @@ export default function Home({ go, openProduct, products }) {
           <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">Jos, Plateau</span>
         </div>
         <div className="flex items-center gap-2">
-          <IconButton onClick={() => go("notifications")} badge="2"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
+          <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined}><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
           <IconButton onClick={() => go("request")}><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
         </div>
 

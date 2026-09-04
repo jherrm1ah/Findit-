@@ -1,16 +1,42 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, User, Store } from "lucide-react";
 import { Logo, Field } from "./shared";
+import { api } from "./api";
 
 export default function Login({ onDone }) {
   const [mode, setMode] = useState("login"); // login | signup
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("buyer");
+  const [businessName, setBusinessName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  const valid = phone.trim().length >= 10 && password.length >= 4;
+  const valid =
+    phone.trim().length >= 10 &&
+    password.length >= 4 &&
+    (mode === "login" || (name.trim() && (role === "buyer" || businessName.trim())));
+
+  const submit = async () => {
+    if (!valid || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const user =
+        mode === "login"
+          ? await api.login({ phone, password })
+          : await api.signup({ phone, password, name, role, businessName });
+      onDone(user);
+    } catch (err) {
+      setError(err.message || "Something went wrong — try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
@@ -24,7 +50,37 @@ export default function Login({ onDone }) {
         </p>
       </div>
 
+      {mode === "signup" && (
+        <div className="flex gap-2 mb-4">
+          {[
+            ["buyer", "I'm buying", User],
+            ["seller", "I'm selling", Store],
+          ].map(([key, label, Icon]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setRole(key)}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 border text-[12.5px] font-medium ${
+                role === key ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
+              }`}
+            >
+              <Icon size={13} /> {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       <div className="space-y-4 mb-2">
+        {mode === "signup" && (
+          <Field label="Your name">
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Amaka Okafor" className="input" />
+          </Field>
+        )}
+        {mode === "signup" && role === "seller" && (
+          <Field label="Business name">
+            <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Terra Gadgets" className="input" />
+          </Field>
+        )}
         <Field label="Phone number">
           <input
             type="tel"
@@ -50,18 +106,21 @@ export default function Login({ onDone }) {
         </Field>
       </div>
 
+      {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
+
       {mode === "login" && (
         <button className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end">Forgot password?</button>
       )}
       {mode === "signup" && <div className="mb-6" />}
 
       <button
-        onClick={onDone}
-        disabled={!valid}
-        className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${!valid ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"}`}
+        onClick={submit}
+        disabled={!valid || loading}
+        className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${!valid || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"}`}
         style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
       >
-        {mode === "login" ? "Log in" : "Create account"} <ArrowRight size={16} />
+        {loading ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+        {!loading && <ArrowRight size={16} />}
       </button>
 
       <div className="flex items-center gap-3 mb-4">
@@ -70,13 +129,13 @@ export default function Login({ onDone }) {
         <div className="flex-1 h-px bg-[#ECE9F7]" />
       </div>
 
-      <button onClick={onDone} className="w-full text-[#1E1B4B] text-[13px] font-semibold py-3 rounded-xl border border-[#ECE9F7] bg-white mb-6">
+      <button onClick={() => onDone(null)} className="w-full text-[#1E1B4B] text-[13px] font-semibold py-3 rounded-xl border border-[#ECE9F7] bg-white mb-6">
         Continue as guest
       </button>
 
       <p className="text-center text-[13px] text-[#6B6483] mt-auto">
         {mode === "login" ? "New to FindIt?" : "Already have an account?"}{" "}
-        <button onClick={() => setMode((m) => (m === "login" ? "signup" : "login"))} className="font-semibold text-[#7C3AED]">
+        <button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} className="font-semibold text-[#7C3AED]">
           {mode === "login" ? "Create account" : "Log in"}
         </button>
       </p>
