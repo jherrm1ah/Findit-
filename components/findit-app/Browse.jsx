@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star } from "lucide-react";
-import { GROUPS, PRODUCTS, naira } from "./data";
+import { GROUPS, naira } from "./data";
 import { ArtBlock } from "./shared";
 
-export default function Browse({ initialGroup, openProduct }) {
+export default function Browse({ initialGroup, openProduct, products }) {
   const [group, setGroup] = useState(initialGroup || "all");
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -18,20 +18,20 @@ export default function Browse({ initialGroup, openProduct }) {
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return PRODUCTS.filter((p) => {
-      if (group !== "all" && p.group !== group) return false;
+    return products.filter((p) => {
+      if (group !== "all" && p.category !== group) return false;
       if (verifiedOnly && !p.verified) return false;
       if (testOnly && !p.testBatch) return false;
       if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [group, query, verifiedOnly, testOnly]);
+  }, [products, group, query, verifiedOnly, testOnly]);
 
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center justify-between mb-1">
         <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Browse products</h1>
-        <span className="text-[11px] text-[#8A8372]">{list.length} of {PRODUCTS.length}</span>
+        <span className="text-[11px] text-[#8A8372]">{list.length} of {products.length}</span>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-4">Every product from the FindIt idea bank — search, filter by category.</p>
 
@@ -95,7 +95,7 @@ export default function Browse({ initialGroup, openProduct }) {
         {list.map((p) => (
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={p.icon} art={p.art} className="h-32 w-full" />
+              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} className="h-32 w-full" />
               <span onClick={(e) => toggleWishlist(p.id, e)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
                 <Heart size={14} className={wishlist[p.id] ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
               </span>

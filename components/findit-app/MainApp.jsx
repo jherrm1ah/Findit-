@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Home as HomeIcon, Search, ShoppingCart, MessageCircle, User,
 } from "lucide-react";
-import { MY_ORDERS_SEED } from "./data";
 import { Logo, Wordmark } from "./shared";
+import { api } from "./api";
 import Home from "./Home";
 import Browse from "./Browse";
 import RequestForm from "./RequestForm";
@@ -29,29 +29,114 @@ export default function MainApp() {
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
-  const [orders, setOrders] = useState(MY_ORDERS_SEED);
   const [checkoutOrder, setCheckoutOrder] = useState(null);
+
+  const [loaded, setLoaded] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [sellers, setSellers] = useState([]);
+  const [requests, setRequests] = useState([]);
+
+  useEffect(() => {
+    Promise.all([
+      api.getProducts(),
+      api.getOrders(),
+      api.getNotifications(),
+      api.getSellers(),
+      api.getOpenRequests(),
+    ])
+      .then(([p, o, n, s, r]) => {
+        setProducts(p);
+        setOrders(o);
+        setNotifications(n);
+        setSellers(s);
+        setRequests(r);
+      })
+      .finally(() => setLoaded(true));
+  }, []);
 
   const go = (s, group) => {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
     window.scrollTo?.(0, 0);
+    if (s === "seller" || s === "admin") {
+      api.getOpenRequests().then(setRequests).catch(() => {});
+    }
   };
 
-  const addOrder = (partial) => {
-    const newOrder = { id: "ORD-" + Math.floor(1000 + Math.random() * 9000), date: "Today", ...partial };
-    setOrders((os) => [newOrder, ...os]);
-    return newOrder;
+  const handleOrderCreated = (order) => {
+    setOrders((os) => [order, ...os]);
+    api.getOpenRequests().then(setRequests).catch(() => {});
   };
 
-  const buyNow = (prod, qty, condition) => {
-    addOrder({ item: prod.name, seller: prod.seller, price: prod.price * qty, status: "Awaiting payment", canReview: false, reviewed: false });
-    setCheckoutOrder({ product: prod, qty, condition });
-    setProduct(null);
-    setScreen("checkout");
-    window.scrollTo?.(0, 0);
+  const buyNow = async (prod, qty, condition) => {
+    try {
+      const order = await api.createOrder({
+        item: prod.name,
+        seller: prod.seller,
+        price: prod.price * qty,
+        status: "Awaiting payment",
+      });
+      setOrders((os) => [order, ...os]);
+      setCheckoutOrder({ product: prod, qty, condition });
+      setProduct(null);
+      setScreen("checkout");
+      window.scrollTo?.(0, 0);
+    } catch (err) {
+      alert(err.message || "Couldn't place that order — try again.");
+    }
   };
+
+  const handleReview = async (orderId, rating, comment) => {
+    const order = await api.submitOrderReview(orderId, { rating, comment: comment || null });
+    setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+  };
+
+  const handleMarkNotificationRead = async (id) => {
+    setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, unread: false } : n)));
+    try {
+      await api.markNotificationRead(id);
+    } catch {
+      // best-effort: local state already reflects the read state
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    setNotifications((ns) => ns.map((n) => ({ ...n, unread: false })));
+    try {
+      await api.markAllNotificationsRead();
+    } catch {
+      // best-effort
+    }
+  };
+
+  const handleSellerStatusChange = async (id, status) => {
+    setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status } : s)));
+    try {
+      await api.setSellerStatus(id, status);
+    } catch {
+      // best-effort
+    }
+  };
+
+  const handleSendOffer = async (requestId) => {
+    try {
+      await api.sendSellerOffer(requestId);
+      setRequests(await api.getOpenRequests());
+    } catch (err) {
+      alert(err.message || "Couldn't send that offer — try again.");
+    }
+  };
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#FAFAFF]">
+        <p className="text-[13px] text-[#6B6483]">Loading FindIt…</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
@@ -66,14 +151,24 @@ export default function MainApp() {
       )}
 
       <main className="pb-24">
-        {screen === "home" && <Home go={go} openProduct={setProduct} />}
-        {screen === "browse" && <Browse initialGroup={browseGroup} openProduct={setProduct} />}
-        {screen === "request" && <RequestForm go={go} addOrder={addOrder} />}
-        {screen === "seller" && <SellerDashboard />}
-        {screen === "admin" && <AdminQueue />}
+        {screen === "home" && <Home go={go} openProduct={setProduct} products={products} />}
+        {screen === "browse" && <Browse initialGroup={browseGroup} openProduct={setProduct} products={products} />}
+        {screen === "request" && <RequestForm go={go} onOrderCreated={handleOrderCreated} />}
+        {screen === "seller" && <SellerDashboard requests={requests} onSendOffer={handleSendOffer} />}
+        {screen === "admin" && (
+          <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} />
+        )}
         {screen === "profile" && <Profile go={go} />}
-        {screen === "account" && <Account go={go} openProduct={setProduct} orders={orders} setOrders={setOrders} />}
-        {screen === "notifications" && <Notifications />}
+        {screen === "account" && (
+          <Account openProduct={setProduct} orders={orders} products={products} onReview={handleReview} />
+        )}
+        {screen === "notifications" && (
+          <Notifications
+            notifications={notifications}
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllRead}
+          />
+        )}
         {screen === "checkout" && checkoutOrder && (
           <Checkout product={checkoutOrder.product} qty={checkoutOrder.qty} condition={checkoutOrder.condition} go={go} />
         )}

@@ -16,7 +16,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow }) {
   const [qty, setQty] = useState(1);
   const [contacted, setContacted] = useState(false);
   if (!product) return null;
-  const Icon = product.icon;
+  const Icon = GROUPS[product.category].icon;
   const total = product.price * qty;
 
   return (
@@ -38,7 +38,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow }) {
         </div>
 
         <div className="flex items-start justify-between mb-1">
-          <p className="text-[12px] text-[#8A8372]">{GROUPS[product.group].label}</p>
+          <p className="text-[12px] text-[#8A8372]">{GROUPS[product.category].label}</p>
           <button onClick={() => setSaved((s) => !s)} className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1">
             <Heart size={14} className={saved ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
           </button>

@@ -7,7 +7,7 @@ import {
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
   LayoutDashboard,
 } from "lucide-react";
-import { GROUPS, PRODUCTS, naira } from "./data";
+import { GROUPS, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
 
 const BANNERS = [
@@ -15,12 +15,12 @@ const BANNERS = [
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
-export default function Home({ go, openProduct }) {
+export default function Home({ go, openProduct, products }) {
   const [banner, setBanner] = useState(0);
   const [wishlist, setWishlist] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
   const toggleWishlist = (id, e) => { e.stopPropagation(); setWishlist((w) => ({ ...w, [id]: !w[id] })); };
-  const trending = PRODUCTS.filter((p) => p.marketingCat).slice(0, 8);
+  const trending = products.filter((p) => p.marketingCat).slice(0, 8);
 
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },
@@ -125,7 +125,7 @@ export default function Home({ go, openProduct }) {
         {trending.map((p) => (
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={p.icon} art={p.art} className="h-32 w-full" />
+              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} className="h-32 w-full" />
               <span onClick={(e) => toggleWishlist(p.id, e)} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
                 <Heart size={14} className={wishlist[p.id] ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
               </span>
@@ -139,7 +139,7 @@ export default function Home({ go, openProduct }) {
       <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-7">
         <div>
           <p className="text-[13px] font-semibold text-[#1E1B4B]">See the full catalogue</p>
-          <p className="text-[11px] text-[#6B6483]">All {PRODUCTS.length} products across {Object.keys(GROUPS).length} categories</p>
+          <p className="text-[11px] text-[#6B6483]">All {products.length} products across {Object.keys(GROUPS).length} categories</p>
         </div>
         <ChevronRight size={18} className="text-[#7C3AED]" />
       </button>

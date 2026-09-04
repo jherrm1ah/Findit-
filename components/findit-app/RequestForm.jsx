@@ -1,34 +1,58 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import {
   Search, CheckCircle2, ArrowRight, Camera, Mic, Link2, Star, BadgeCheck,
 } from "lucide-react";
-import { STEPS, MOCK_OFFERS, naira } from "./data";
+import { STEPS, naira } from "./data";
 import { Pill, Field } from "./shared";
+import { api } from "./api";
 
-export default function RequestForm({ go, addOrder }) {
+export default function RequestForm({ go, onOrderCreated }) {
   const [stage, setStage] = useState("form");
   const [form, setForm] = useState({ title: "", desc: "", budgetMin: "", budgetMax: "", qty: 1, location: "Jos", condition: "New", deadline: "" });
   const [request, setRequest] = useState(null);
+  const [offers, setOffers] = useState([]);
   const [selectedOffer, setSelectedOffer] = useState(null);
-  const timerRef = useRef(null);
+  const [error, setError] = useState(null);
 
-  useEffect(() => () => clearTimeout(timerRef.current), []);
-
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
     if (!form.title.trim()) return;
-    const req = {
-      id: "REQ-" + Math.floor(1000 + Math.random() * 9000),
-      title: form.title,
-      budget: form.budgetMin || form.budgetMax ? `${naira(form.budgetMin || 0)} – ${naira(form.budgetMax || 0)}` : "Open",
-      location: form.location,
-      qty: form.qty,
-    };
-    setRequest(req);
     setStage("searching");
-    timerRef.current = setTimeout(() => setStage("offers"), 2200);
+    setError(null);
+    const searchDelay = new Promise((resolve) => setTimeout(resolve, 2200));
+    try {
+      const [result] = await Promise.all([
+        api.createRequest({
+          title: form.title,
+          description: form.desc,
+          budgetMin: form.budgetMin,
+          budgetMax: form.budgetMax,
+          qty: form.qty,
+          location: form.location,
+          condition: form.condition,
+        }),
+        searchDelay,
+      ]);
+      setRequest(result.request);
+      setOffers(result.offers);
+      setStage("offers");
+    } catch (err) {
+      setError(err.message || "Couldn't submit that request — try again.");
+      setStage("form");
+    }
+  };
+
+  const acceptOffer = async (offer) => {
+    try {
+      const order = await api.acceptOffer(request.id, offer.id);
+      onOrderCreated?.(order);
+      setSelectedOffer(offer);
+      setStage("accepted");
+    } catch (err) {
+      setError(err.message || "Couldn't accept that offer — try again.");
+    }
   };
 
   if (stage === "accepted" && selectedOffer) {
@@ -68,9 +92,10 @@ export default function RequestForm({ go, addOrder }) {
       <div className="px-5 pt-6 pb-10">
         <p className="text-[11px] uppercase tracking-widest text-[#7C3AED] font-semibold mb-1">{request.id}</p>
         <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>{request.title}</h1>
-        <p className="text-[13px] text-[#514B67] mb-5">3 sellers responded. Compare and choose.</p>
+        <p className="text-[13px] text-[#514B67] mb-5">{offers.length} sellers responded. Compare and choose.</p>
+        {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
         <div className="space-y-3">
-          {MOCK_OFFERS.map((o) => (
+          {offers.map((o) => (
             <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-start justify-between mb-2">
                 <div>
@@ -91,11 +116,7 @@ export default function RequestForm({ go, addOrder }) {
               </div>
               <p className="text-[11px] text-[#6B6483] italic mb-3">"{o.note}"</p>
               <button
-                onClick={() => {
-                  addOrder?.({ item: request.title, seller: o.seller, price: o.price, status: "Seller preparing", canReview: false, reviewed: false });
-                  setSelectedOffer(o);
-                  setStage("accepted");
-                }}
+                onClick={() => acceptOffer(o)}
                 className="w-full text-white text-[12px] font-semibold py-2.5 rounded-xl"
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
@@ -126,6 +147,7 @@ export default function RequestForm({ go, addOrder }) {
     <div className="px-5 pt-6 pb-10">
       <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>Request an item</h1>
       <p className="text-[13px] text-[#514B67] mb-5">Don't know the exact name? Just describe the problem — we'll help classify it.</p>
+      {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
       <form onSubmit={submit} className="space-y-4">
         <Field label="What are you looking for?">
           <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Mini UPS for my router" className="input" required />

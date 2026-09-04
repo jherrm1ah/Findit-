@@ -1,12 +1,13 @@
 # FindIt Naija
 
-A request-first marketplace prototype connecting buyers in Jos, Nigeria to verified sellers:
-tell FindIt what you need (or browse the catalogue directly), sellers send offers, you pay into
-escrow and confirm on delivery.
+A request-first marketplace connecting buyers in Jos, Nigeria to verified sellers: tell FindIt
+what you need (or browse the catalogue directly), sellers send offers, you pay into escrow and
+confirm on delivery.
 
-This is a faithful Next.js port of a mobile-first React prototype. It runs entirely on in-memory
-mock data — no real backend, auth, or payments yet — so every flow below is fully clickable but
-nothing persists across a page reload.
+This is a Next.js port of a mobile-first React prototype, now backed by a real SQLite database:
+products, orders, requests/offers, notifications, and seller verification all persist across a
+reload. Auth and payments are still stubs (login accepts a guest pass-through; checkout shows the
+escrow-held-funds UI as a simulated state) — see "Next steps" below.
 
 ## Flows
 
@@ -14,19 +15,23 @@ nothing persists across a page reload.
 - **Home** — promo banner, category shortcuts, trending discoveries.
 - **Browse** — all 300 products across 15 categories from the FindIt idea bank; search, filter
   by category/verified/first-20 test batch.
-- **Product detail → Buy now → Checkout** — simulated escrow hold with a delivery-status tracker.
-- **Request an item** — describe what you need, "sellers" respond with mock offers, accept one to
-  pay and track delivery.
-- **Seller dashboard** — respond to matching customer requests.
-- **Admin queue** — approve/reject pending sellers, view unmatched requests.
-- **Account** — order history, delivery tracking, reviews, saved items.
-- **Notifications**.
+- **Product detail → Buy now → Checkout** — creates a real order, with a simulated escrow hold
+  and a delivery-status tracker.
+- **Request an item** — submits a real request; the server auto-generates offers from three
+  sellers (simulating instant matching), compare and accept one to pay and track delivery.
+- **Seller dashboard** — respond to open customer requests with a real offer.
+- **Admin queue** — approve/reject pending sellers; requests with zero offers show as unmatched.
+- **Account** — real order history, delivery tracking, reviews, saved items.
+- **Notifications** — mark one or all as read, persisted.
 
 ## Stack
 
-Next.js (App Router) + Tailwind CSS + lucide-react icons. The whole app is one client component
-tree mounted at `app/page.tsx`; screen navigation is in-memory state (`components/findit-app/App.jsx`
-→ `MainApp.jsx`), not URL routing, matching the original prototype's design.
+Next.js (App Router) + Tailwind CSS + lucide-react icons, with SQLite (`better-sqlite3`) for
+storage via API routes under `app/api/`. The screen shell is one client component tree mounted at
+`app/page.tsx`; screen navigation is in-memory state (`components/findit-app/App.jsx` →
+`MainApp.jsx`), not URL routing, matching the original prototype's design. `MainApp.jsx` owns all
+server-backed state (products, orders, notifications, sellers, open requests) and passes it down
+as props, with handlers that call the API and update local state.
 
 ## Running locally
 
@@ -35,20 +40,28 @@ npm install
 npm run dev
 ```
 
-Then open http://localhost:3000.
+Then open http://localhost:3000. The SQLite database (`data/findit.db`, gitignored) is created
+and seeded automatically on first run.
 
 ## Code layout
 
-- `components/findit-app/data.js` — the product catalogue (300 items / 15 categories) and all
-  other mock data (offers, orders, notifications, sellers).
+- `lib/catalogue.js` — the category → product-name lists and deterministic listing generator
+  (price/seller/rating/etc), used only for seeding.
+- `lib/db.ts` — schema + seeding (products, sellers, requests, offers, orders, notifications).
+- `lib/repo.ts` — typed query/mutation functions used by the API routes.
+- `app/api/**/route.ts` — REST endpoints for products, orders, requests/offers, notifications,
+  sellers.
+- `components/findit-app/data.js` — client-only presentation data: category labels/icons,
+  notification-type icons, gradient swatches, static copy.
+- `components/findit-app/api.js` — small fetch wrapper used by the client components.
 - `components/findit-app/shared.jsx` — small shared UI primitives (Pill, ArtBlock, Logo, etc).
 - `components/findit-app/*.jsx` — one file per screen (Home, Browse, ProductDetail, Checkout,
   RequestForm, SellerDashboard, AdminQueue, Account, Notifications, Profile, Splash, Onboarding,
-  Login), plus `MainApp.jsx` (tab bar + screen router) and `App.jsx` (splash/onboarding/login/main
-  phase machine).
+  Login), plus `MainApp.jsx` (tab bar + screen router + data fetching) and `App.jsx`
+  (splash/onboarding/login/main phase machine).
 
 ## Next steps toward a real product
 
-Real auth (phone/password accounts), a persisted database for products/requests/orders/sellers,
-a real seller-offer/notification pipeline, and a real Nigerian payment processor (e.g. Paystack
-or Flutterwave) for the escrow flow.
+Real auth (phone/password accounts, sessions), a real seller-offer/notification pipeline tied to
+actual seller accounts, and a real Nigerian payment processor (e.g. Paystack or Flutterwave) for
+the escrow flow.

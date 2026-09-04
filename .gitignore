@@ -145,3 +145,5 @@ vite.config.ts.timestamp-*
 # SQLite database (generated from data/products.json on first run)
 data/*.db
 data/*.db-journal
+data/*.db-wal
+data/*.db-shm
