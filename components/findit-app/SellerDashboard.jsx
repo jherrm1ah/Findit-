@@ -316,12 +316,13 @@ export default function SellerDashboard({
                   <p className="text-[11px] text-[#6B6483]">{GROUPS[p.category]?.label} · {naira(p.price)}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <button onClick={() => setEditingId(p.id)} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
+                  <button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
                     <Pencil size={13} className="text-[#7C3AED]" />
                   </button>
                   <button
                     onClick={() => remove(p.id)}
                     disabled={deletingId !== null}
+                    aria-label={`Delete ${p.name}`}
                     className="w-8 h-8 rounded-lg bg-[#FDF0F4] flex items-center justify-center disabled:opacity-50"
                   >
                     <Trash2 size={13} className="text-[#E64980]" />

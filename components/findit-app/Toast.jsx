@@ -22,7 +22,7 @@ export default function ToastHost({ toasts, onDismiss }) {
           >
             <Icon size={16} style={{ color: tone.iconColor }} className="shrink-0" />
             <span className="flex-1">{t.message}</span>
-            <button onClick={() => onDismiss(t.id)} className="shrink-0 text-white/60 hover:text-white">
+            <button onClick={() => onDismiss(t.id)} aria-label="Dismiss notification" className="shrink-0 text-white/60 hover:text-white">
               <X size={14} />
             </button>
           </div>

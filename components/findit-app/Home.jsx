@@ -48,7 +48,7 @@ export default function Home({
     <div className="px-5 pt-4 pb-10">
       {/* floating icon header */}
       <div className="flex items-center justify-between mb-5 relative">
-        <IconButton onClick={() => setMenuOpen((m) => !m)}>
+        <IconButton onClick={() => setMenuOpen((m) => !m)} aria-label={menuOpen ? "Close menu" : "Open menu"}>
           {menuOpen ? <X size={18} className="text-[#1E1B4B]" /> : <Menu size={18} className="text-[#1E1B4B]" />}
         </IconButton>
         <div className="flex items-center gap-1.5">
@@ -58,8 +58,8 @@ export default function Home({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined}><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
-          <IconButton onClick={() => go("request")}><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
+          <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined} aria-label="Notifications"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
+          <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
         </div>
 
         {menuOpen && (
@@ -84,7 +84,7 @@ export default function Home({
       <div className="flex items-center gap-2 bg-white rounded-full pl-4 pr-1.5 py-1.5 shadow-md shadow-[#4C1D95]/10 mb-5">
         <Search size={17} className="text-[#8A8372]" />
         <button onClick={() => go("browse")} className="flex-1 text-left text-[13px] text-[#8A8372] py-1.5">what are you looking for?</button>
-        <button onClick={() => go("browse")} className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+        <button onClick={() => go("browse")} aria-label="Search and filter" className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           <SlidersHorizontal size={14} className="text-white" />
         </button>
       </div>
@@ -106,7 +106,7 @@ export default function Home({
           >
             {locationStatus === "requesting" ? "…" : "Allow"}
           </button>
-          <button onClick={() => setBannerDismissed(true)} className="shrink-0">
+          <button onClick={() => setBannerDismissed(true)} aria-label="Dismiss" className="shrink-0">
             <X size={14} className="text-[#8A8372]" />
           </button>
         </div>
@@ -132,7 +132,13 @@ export default function Home({
         </span>
         <div className="absolute bottom-4 right-6 flex gap-1.5">
           {BANNERS.map((_, i) => (
-            <span key={i} onClick={(e) => { e.stopPropagation(); setBanner(i); }} className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`} />
+            <button
+              key={i}
+              onClick={(e) => { e.stopPropagation(); setBanner(i); }}
+              aria-label={`Show promo ${i + 1} of ${BANNERS.length}`}
+              aria-current={i === banner}
+              className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`}
+            />
           ))}
         </div>
       </div>
@@ -160,16 +166,23 @@ export default function Home({
       </div>
       <div className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7">
         {trending.map((p) => (
-          <button key={p.id} onClick={() => openProduct(p)} className="text-left">
-            <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
-              <span onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
-                <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
-              </span>
-            </div>
-            <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
-            <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-          </button>
+          <div key={p.id} className="relative text-left">
+            <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
+              <div className="relative rounded-[20px] overflow-hidden mb-2">
+                <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+              </div>
+              <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
+              <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
+              aria-label={savedIds.includes(p.id) ? "Remove from saved items" : "Save item"}
+              aria-pressed={savedIds.includes(p.id)}
+              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+            >
+              <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
+            </button>
+          </div>
         ))}
         {trending.length === 0 && (
           <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-8">

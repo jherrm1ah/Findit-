@@ -45,10 +45,12 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
             placeholder="Search products…"
             className="flex-1 text-[13px] outline-none text-[#1E1B4B] placeholder:text-[#8A8372]"
           />
-          {query && <button onClick={() => setQuery("")}><X size={14} className="text-[#8A8372]" /></button>}
+          {query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={14} className="text-[#8A8372]" /></button>}
         </div>
         <button
           onClick={() => setShowFilters((s) => !s)}
+          aria-label={showFilters ? "Hide filters" : "Show filters"}
+          aria-pressed={showFilters}
           className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 ${showFilters ? "bg-[#7C3AED] border-[#7C3AED]" : "bg-white border-[#ECE9F7]"}`}
         >
           <SlidersHorizontal size={16} className={showFilters ? "text-white" : "text-[#7C3AED]"} />
@@ -88,29 +90,36 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
 
       <div className="grid grid-cols-2 gap-x-3 gap-y-5">
         {list.map((p) => (
-          <button key={p.id} onClick={() => openProduct(p)} className="text-left">
-            <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
-              <span onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }} className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
-                <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
-              </span>
-              {p.verified && (
-                <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
-                  <BadgeCheck size={12} className="text-[#7C3AED]" />
-                </span>
+          <div key={p.id} className="relative text-left">
+            <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
+              <div className="relative rounded-[20px] overflow-hidden mb-2">
+                <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+                {p.verified && (
+                  <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
+                    <BadgeCheck size={12} className="text-[#7C3AED]" />
+                  </span>
+                )}
+              </div>
+              <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
+              <div className="flex items-center justify-between">
+                <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
+                {p.rating != null && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
+                )}
+              </div>
+              {Number.isFinite(p._km) && (
+                <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372] mt-0.5"><MapPin size={9} /> {formatDistanceKm(p._km)}</span>
               )}
-            </div>
-            <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
-            <div className="flex items-center justify-between">
-              <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-              {p.rating != null && (
-                <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
-              )}
-            </div>
-            {Number.isFinite(p._km) && (
-              <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372] mt-0.5"><MapPin size={9} /> {formatDistanceKm(p._km)}</span>
-            )}
-          </button>
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
+              aria-label={savedIds.includes(p.id) ? "Remove from saved items" : "Save item"}
+              aria-pressed={savedIds.includes(p.id)}
+              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+            >
+              <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
+            </button>
+          </div>
         ))}
         {list.length === 0 && (
           <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">No matches — try requesting this item instead.</p>

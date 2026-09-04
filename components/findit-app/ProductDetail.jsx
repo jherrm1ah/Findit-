@@ -26,9 +26,9 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28">
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/90 backdrop-blur px-5 pt-4 pb-3 flex items-center justify-between">
-        <IconButton onClick={onClose}><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <IconButton onClick={onClose} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         <p className="text-[15px] font-bold text-[#1E1B4B]">Details</p>
-        <IconButton onClick={() => go("request")}><ShoppingBag size={17} className="text-[#1E1B4B]" /></IconButton>
+        <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={17} className="text-[#1E1B4B]" /></IconButton>
       </div>
 
       <div className="px-5">
@@ -43,7 +43,12 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
         <div className="flex items-start justify-between mb-1">
           <p className="text-[12px] text-[#8A8372]">{GROUPS[product.category].label}</p>
-          <button onClick={() => onToggleSaved(product.id)} className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1">
+          <button
+            onClick={() => onToggleSaved(product.id)}
+            aria-label={savedIds.includes(product.id) ? "Remove from saved items" : "Save item"}
+            aria-pressed={savedIds.includes(product.id)}
+            className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1"
+          >
             <Heart size={14} className={savedIds.includes(product.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
           </button>
         </div>

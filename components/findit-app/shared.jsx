@@ -48,9 +48,13 @@ export function Wordmark({ size = "text-[16px]" }) {
   );
 }
 
-export function IconButton({ children, onClick, badge }) {
+export function IconButton({ children, onClick, badge, "aria-label": ariaLabel }) {
   return (
-    <button onClick={onClick} className="relative w-11 h-11 rounded-full bg-white shadow-md shadow-[#4C1D95]/10 flex items-center justify-center shrink-0">
+    <button
+      onClick={onClick}
+      aria-label={ariaLabel}
+      className="relative w-11 h-11 rounded-full bg-white shadow-md shadow-[#4C1D95]/10 flex items-center justify-center shrink-0"
+    >
       {children}
       {badge && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
     </button>

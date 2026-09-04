@@ -25,7 +25,7 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10">
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
-        <IconButton onClick={onBack}><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
       </div>
 
