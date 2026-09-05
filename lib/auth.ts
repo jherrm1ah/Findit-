@@ -19,6 +19,7 @@ export type User = {
   // client skip re-prompting a returning user who already granted it.
   lat: number | null;
   lng: number | null;
+  phoneVerified: boolean;
 };
 
 type Row = Record<string, unknown>;
@@ -32,6 +33,7 @@ function rowToUser(row: Row): User {
     businessName: (row.business_name as string | null) ?? null,
     lat: (row.lat as number | null) ?? null,
     lng: (row.lng as number | null) ?? null,
+    phoneVerified: (row.phone_verified as boolean | null) ?? true,
   };
 }
 
@@ -49,6 +51,7 @@ export async function createUser(input: {
   name: string;
   role: Role;
   businessName: string | null;
+  phoneVerified: boolean;
 }): Promise<User> {
   const db = getDb();
   const phone = normalizePhone(input.phone);
@@ -71,6 +74,7 @@ export async function createUser(input: {
     name: input.name,
     role: input.role,
     business_name: input.businessName,
+    phone_verified: input.phoneVerified,
   });
   assertNoError(insertResult, "creating account");
 

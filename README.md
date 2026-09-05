@@ -164,10 +164,16 @@ listing's/order's own seller (matched by business name) or an admin. Messaging r
 session and check the caller is a participant in the conversation. Notification and review actions
 check the row actually belongs to the calling user.
 
-`POST /api/auth/login`, `POST /api/auth/signup`, and `POST /api/ai/classify-request` are rate-
-limited — a 429 with a friendly error is returned once the limit is hit. This doesn't cover phone
-verification (OTP) at signup, since that needs a real SMS provider — same "needs external setup"
-category as payments below.
+`POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/send-otp`,
+`POST /api/auth/verify-otp`, and `POST /api/ai/classify-request` are rate-limited — a 429 with a
+friendly error is returned once the limit is hit.
+
+**Phone verification (OTP) at signup** is optional and off by default. Set `TERMII_API_KEY` (see
+`.env.example`) to turn it on — signup then sends a real SMS code via [Termii](https://termii.com)
+and requires it to be verified before the account is created. With no key set, signup works exactly
+as before (no OTP step). The verification ticket itself lives in an in-memory store
+(`lib/otpStore.ts`, same single-process caveat as `lib/rateLimit.ts` below) — Termii holds the
+actual code, we only ever hold an opaque reference to it.
 
 **On Row Level Security:** this app doesn't use Supabase Auth, so Postgres RLS can't be tied to a
 logged-in user's identity the way it would with a Supabase-Auth-based app. RLS is enabled on every
@@ -237,6 +243,8 @@ Supabase project, the same way you'd test any app whose database lives outside y
 ## Next steps toward a real product
 
 A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
-deployment (see the note in "Testing" — this repo has never been deployed to a live host), phone
-number verification (OTP) at signup, and a real seller ID/document verification system (currently
-admin approval is a judgment call, not a document check).
+deployment (see the note in "Testing" — this repo has never been deployed to a live host), and a
+real seller ID/document verification system (currently admin approval is a judgment call, not a
+document check). Phone verification (OTP) at signup is built (see "Security" above) but needs a
+real `TERMII_API_KEY` to turn on and has not been tested against Termii's live API from this
+environment (no network access here to termii.com) — verify it end-to-end once a key is added.

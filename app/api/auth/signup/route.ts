@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUser, createSession, setSessionCookie } from "@/lib/auth";
+import { createUser, createSession, setSessionCookie, normalizePhone } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
+import { isSmsConfigured } from "@/lib/sms";
+import { isRecentlyVerified, clearOtp } from "@/lib/otpStore";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -49,6 +51,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Enter your business name." }, { status: 400 });
   }
 
+  const normalizedPhone = normalizePhone(phone);
+  const phoneVerified = isSmsConfigured() ? isRecentlyVerified(normalizedPhone) : true;
+  if (isSmsConfigured() && !phoneVerified) {
+    return NextResponse.json(
+      { error: "Verify your phone number first." },
+      { status: 400 }
+    );
+  }
+
   try {
     const user = await createUser({
       phone,
@@ -56,7 +67,9 @@ export async function POST(req: NextRequest) {
       name: name.trim(),
       role,
       businessName: role === "seller" ? businessName!.trim() : null,
+      phoneVerified,
     });
+    if (isSmsConfigured()) clearOtp(normalizedPhone);
     const token = await createSession(user.id);
     const res = NextResponse.json({ user });
     setSessionCookie(res, token);

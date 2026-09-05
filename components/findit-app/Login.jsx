@@ -7,12 +7,15 @@ import { api } from "./api";
 
 export default function Login({ onDone, showToast }) {
   const [mode, setMode] = useState("login"); // login | signup
+  const [step, setStep] = useState("form"); // form | code (signup phone verification)
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [name, setName] = useState("");
   const [role, setRole] = useState("buyer");
   const [businessName, setBusinessName] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -21,22 +24,121 @@ export default function Login({ onDone, showToast }) {
     password.length >= 4 &&
     (mode === "login" || (name.trim() && (role === "buyer" || businessName.trim())));
 
+  const doSignup = () => api.signup({ phone, password, name, role, businessName });
+
   const submit = async () => {
     if (!valid || loading) return;
     setLoading(true);
     setError(null);
     try {
-      const user =
-        mode === "login"
-          ? await api.login({ phone, password })
-          : await api.signup({ phone, password, name, role, businessName });
-      onDone(user);
+      if (mode === "login") {
+        onDone(await api.login({ phone, password }));
+        return;
+      }
+      // Signup: try to send a verification code first. If phone
+      // verification isn't enabled yet, this returns { enabled: false }
+      // and we fall straight through to creating the account as before.
+      const otpResult = await api.sendOtp(phone);
+      if (otpResult.enabled === false) {
+        onDone(await doSignup());
+        return;
+      }
+      setStep("code");
     } catch (err) {
       setError(err.message || "Something went wrong — try again.");
     } finally {
       setLoading(false);
     }
   };
+
+  const verifyAndCreateAccount = async () => {
+    if (otpCode.trim().length < 4 || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.verifyOtp(phone, otpCode.trim());
+      onDone(await doSignup());
+    } catch (err) {
+      setError(err.message || "Something went wrong — try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendCode = async () => {
+    if (resending) return;
+    setResending(true);
+    setError(null);
+    try {
+      await api.sendOtp(phone);
+      showToast?.("Code resent.", "success");
+    } catch (err) {
+      setError(err.message || "Couldn't resend the code — try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  if (step === "code") {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+        <div className="flex flex-col items-center mb-8">
+          <Logo size={44} />
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+            Verify your phone
+          </h1>
+          <p className="text-[13px] text-[#6B6483] mt-1 text-center">
+            Enter the code we sent to {phone}.
+          </p>
+        </div>
+
+        <Field label="Verification code">
+          <input
+            type="tel"
+            inputMode="numeric"
+            maxLength={6}
+            value={otpCode}
+            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="123456"
+            className="input tracking-[0.3em] text-center"
+          />
+        </Field>
+
+        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+
+        <button
+          type="button"
+          onClick={resendCode}
+          disabled={resending}
+          className="text-[12px] font-medium text-[#7C3AED] text-right mt-3 mb-6 self-end disabled:opacity-40"
+        >
+          {resending ? "Resending…" : "Resend code"}
+        </button>
+
+        <button
+          onClick={verifyAndCreateAccount}
+          disabled={otpCode.trim().length < 4 || loading}
+          className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${
+            otpCode.trim().length < 4 || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
+          }`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {loading ? "Verifying…" : "Verify & create account"}
+          {!loading && <ArrowRight size={16} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setStep("form"); setOtpCode(""); setError(null); }}
+          className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
+        >
+          ← Change phone number
+        </button>
+
+        <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">

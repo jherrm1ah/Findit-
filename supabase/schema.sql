@@ -27,6 +27,10 @@ create extension if not exists pgcrypto;
 create table if not exists users (
   id text primary key,
   phone text not null unique,
+  -- True only for accounts that passed OTP phone verification at signup
+  -- (see lib/sms.ts). Defaults true so existing/pre-OTP accounts aren't
+  -- retroactively locked out of anything that later checks this flag.
+  phone_verified boolean not null default true,
   password_hash text not null,
   password_salt text not null,
   name text not null,
