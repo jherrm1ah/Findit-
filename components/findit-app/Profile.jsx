@@ -1,6 +1,6 @@
 "use client";
 
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, LogIn, MessageCircle, PackageSearch } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch } from "lucide-react";
 
 export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
   const CARDS = [
@@ -8,18 +8,18 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       key: "admin",
       icon: ShieldCheck,
       label: "Admin queue",
-      subtitle: user?.role === "admin" ? "Seller verification & unmatched requests" : "Staff only",
-      primary: user?.role === "admin",
+      subtitle: user.role === "admin" ? "Seller verification & unmatched requests" : "Staff only",
+      primary: user.role === "admin",
     },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
-    { key: "myRequests", icon: PackageSearch, label: "My requests", subtitle: user ? "See offers from real sellers" : "Log in to track requests" },
-    { key: "messages", icon: MessageCircle, label: "Messages", subtitle: user ? "Chat with sellers" : "Log in to message sellers" },
+    { key: "myRequests", icon: PackageSearch, label: "My requests", subtitle: "See offers from real sellers" },
+    { key: "messages", icon: MessageCircle, label: "Messages", subtitle: "Chat with sellers" },
     { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
     {
       key: "seller",
       icon: LayoutDashboard,
       label: "Seller dashboard",
-      subtitle: user?.role === "seller" ? user.businessName : "Requires a seller account",
+      subtitle: user.role === "seller" ? user.businessName : "Requires a seller account",
     },
   ];
   const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About FindIt"];
@@ -32,17 +32,17 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
         </div>
         <div className="flex-1">
           <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
-            {user ? user.name : "Browsing as guest"}
+            {user.name}
           </p>
           <p className="text-[12px] text-[#6B6483]">
-            {user ? `${user.phone} · ${user.role === "seller" ? "Seller account" : "Buyer account"}` : "Log in to save requests and track orders"}
+            {user.phone} · {user.role === "seller" ? "Seller account" : "Buyer account"}
           </p>
         </div>
         <button
           onClick={onLogout}
           className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] px-3 py-2 rounded-full border border-[#ECE9F7] shrink-0"
         >
-          {user ? <><LogOut size={12} /> Log out</> : <><LogIn size={12} /> Log in</>}
+          <LogOut size={12} /> Log out
         </button>
       </div>
 
