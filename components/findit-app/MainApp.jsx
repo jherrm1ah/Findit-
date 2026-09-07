@@ -134,6 +134,11 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
+      // Fetched here too (not just on navigating to the Messages screen) so
+      // Profile's "Messages" card can show an unread count up front, the
+      // same way its "Notifications" card already does — otherwise you'd
+      // have to open Messages blind to find out you have unread chats.
+      api.getConversations().then(setConversations).catch(() => {});
     } else {
       setSavedIds([]);
     }
@@ -526,6 +531,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             user={user}
             onLogout={onLogout}
             unreadCount={notifications.filter((n) => n.unread).length}
+            messageUnreadCount={conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0)}
             onUploadAvatar={handleUploadAvatar}
             sellerStatus={mySellerStatus}
           />

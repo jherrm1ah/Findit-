@@ -11,7 +11,7 @@ const SELLER_STATUS_META = {
   rejected: { label: "Application rejected", tone: "red", icon: XCircle },
 };
 
-export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadAvatar, sellerStatus }) {
+export default function Profile({ go, user, onLogout, unreadCount = 0, messageUnreadCount = 0, onUploadAvatar, sellerStatus }) {
   const fileInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const sellerStatusMeta = user.role === "seller" ? SELLER_STATUS_META[sellerStatus] : null;
@@ -40,7 +40,12 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadA
     },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
     { key: "myRequests", icon: PackageSearch, label: "My requests", subtitle: "See offers from real sellers" },
-    { key: "messages", icon: MessageCircle, label: "Messages", subtitle: "Chat with sellers" },
+    {
+      key: "messages",
+      icon: MessageCircle,
+      label: "Messages",
+      subtitle: messageUnreadCount > 0 ? `${messageUnreadCount} unread` : "Chat with sellers",
+    },
     { key: "notifications", icon: Bell, label: "Notifications", subtitle: unreadCount > 0 ? `${unreadCount} unread` : "Order updates & offers" },
     {
       key: "seller",
