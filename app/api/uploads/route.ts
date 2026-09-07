@@ -12,8 +12,8 @@ const WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   const user = await getSessionUser(req);
-  if (!user || (user.role !== "seller" && user.role !== "admin")) {
-    return NextResponse.json({ error: "Seller access required." }, { status: 403 });
+  if (!user) {
+    return NextResponse.json({ error: "Log in first." }, { status: 401 });
   }
 
   if (user.role === "seller") {

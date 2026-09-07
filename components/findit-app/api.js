@@ -133,6 +133,36 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone, code }),
     }),
+  updateName: (name) =>
+    request("/api/auth/name", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }).then((d) => d.user),
+  updatePhone: (newPhone, currentPassword) =>
+    request("/api/auth/phone", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ newPhone, currentPassword }),
+    }).then((d) => d.user),
+  updatePassword: (currentPassword, newPassword) =>
+    request("/api/auth/password", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+  updateAvatar: (avatarUrl) =>
+    request("/api/auth/avatar", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ avatarUrl }),
+    }).then((d) => d.user),
+  updateNotificationPref: (enabled) =>
+    request("/api/auth/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled }),
+    }).then((d) => d.user),
 
   getConversations: () => request("/api/messages").then((d) => d.conversations),
   startConversation: (sellerBusinessName) =>

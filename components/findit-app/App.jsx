@@ -63,7 +63,14 @@ export default function App() {
       />
     );
   } else {
-    content = <MainApp user={user} onLogout={handleLogout} showToast={showToast} />;
+    content = (
+      <MainApp
+        user={user}
+        onLogout={handleLogout}
+        showToast={showToast}
+        onUserUpdate={(updatedUser) => setUser(updatedUser)}
+      />
+    );
   }
 
   return (

@@ -13,6 +13,10 @@ import RequestForm from "./RequestForm";
 import SellerDashboard from "./SellerDashboard";
 import AdminQueue from "./AdminQueue";
 import Profile from "./Profile";
+import AccountDetails from "./AccountDetails";
+import NotificationPreferences from "./NotificationPreferences";
+import HelpSupport from "./HelpSupport";
+import About from "./About";
 import Account from "./Account";
 import Notifications from "./Notifications";
 import Checkout from "./Checkout";
@@ -36,7 +40,7 @@ function tabsFor(role) {
   ];
 }
 
-export default function MainApp({ user, onLogout, showToast }) {
+export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const isSeller = user?.role === "seller";
   const isAdmin = user?.role === "admin";
   const TABS = tabsFor(user?.role);
@@ -218,6 +222,36 @@ export default function MainApp({ user, onLogout, showToast }) {
       showToast(err.message || "Couldn't upload that image — try again.", "error");
       throw err;
     }
+  };
+
+  const handleUploadAvatar = async (file) => {
+    try {
+      const url = await api.uploadImage(file);
+      const updated = await api.updateAvatar(url);
+      onUserUpdate(updated);
+    } catch (err) {
+      showToast(err.message || "Couldn't update your profile photo — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleUpdateName = async (name) => {
+    const updated = await api.updateName(name);
+    onUserUpdate(updated);
+  };
+
+  const handleUpdatePhone = async (newPhone, currentPassword) => {
+    const updated = await api.updatePhone(newPhone, currentPassword);
+    onUserUpdate(updated);
+  };
+
+  const handleUpdatePassword = async (currentPassword, newPassword) => {
+    await api.updatePassword(currentPassword, newPassword);
+  };
+
+  const handleUpdateNotificationPref = async (enabled) => {
+    const updated = await api.updateNotificationPref(enabled);
+    onUserUpdate(updated);
   };
 
   const handleCreateProduct = async (input) => {
@@ -451,8 +485,28 @@ export default function MainApp({ user, onLogout, showToast }) {
           )
         )}
         {screen === "profile" && (
-          <Profile go={go} user={user} onLogout={onLogout} unreadCount={notifications.filter((n) => n.unread).length} />
+          <Profile
+            go={go}
+            user={user}
+            onLogout={onLogout}
+            unreadCount={notifications.filter((n) => n.unread).length}
+            onUploadAvatar={handleUploadAvatar}
+          />
         )}
+        {screen === "accountDetails" && (
+          <AccountDetails
+            user={user}
+            onUpdateName={handleUpdateName}
+            onUpdatePhone={handleUpdatePhone}
+            onUpdatePassword={handleUpdatePassword}
+            showToast={showToast}
+          />
+        )}
+        {screen === "notifPrefs" && (
+          <NotificationPreferences user={user} onToggle={handleUpdateNotificationPref} showToast={showToast} />
+        )}
+        {screen === "help" && <HelpSupport />}
+        {screen === "about" && <About />}
         {screen === "messages" && (
           <Messages conversations={conversations} onOpenThread={handleOpenThread} />
         )}
@@ -519,7 +573,9 @@ export default function MainApp({ user, onLogout, showToast }) {
           style={{ background: "linear-gradient(135deg,#1E1B4B,#3B1874)" }}
         >
           {TABS.map((t) => {
-            const activeKey = ["account", "notifications"].includes(screen) ? "profile" : screen;
+            const activeKey = ["account", "notifications", "accountDetails", "notifPrefs", "help", "about"].includes(screen)
+              ? "profile"
+              : screen;
             const active = activeKey === t.key;
             return (
               <button

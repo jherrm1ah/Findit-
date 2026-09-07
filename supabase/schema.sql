@@ -43,6 +43,8 @@ create table if not exists users (
   lat double precision,
   lng double precision,
   location_updated_at timestamptz,
+  avatar_url text,
+  notifications_enabled boolean not null default true,
   created_at timestamptz not null default now()
 );
 

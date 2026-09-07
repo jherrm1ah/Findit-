@@ -1,8 +1,26 @@
 "use client";
 
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch } from "lucide-react";
+import { useRef, useState } from "react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera } from "lucide-react";
 
-export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
+export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadAvatar }) {
+  const fileInputRef = useRef(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // allow picking the same file again later
+    if (!file || !onUploadAvatar) return;
+    setUploadingAvatar(true);
+    try {
+      await onUploadAvatar(file);
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const CARDS = [
     {
       key: "admin",
@@ -22,14 +40,44 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
       subtitle: user.role === "seller" ? user.businessName : "Requires a seller account",
     },
   ];
-  const SETTINGS_ROWS = ["Account details", "Notification preferences", "Help & support", "About FindIt"];
+  const SETTINGS_ROWS = [
+    { key: "accountDetails", label: "Account details" },
+    { key: "notifPrefs", label: "Notification preferences" },
+    { key: "help", label: "Help & support" },
+    { key: "about", label: "About FindIt" },
+  ];
 
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-3 mb-6">
-        <div className="w-14 h-14 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-          <User size={24} className="text-white" />
-        </div>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingAvatar}
+          aria-label="Change profile photo"
+          className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {user.avatarUrl ? (
+            <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+          ) : (
+            <User size={24} className="text-white" />
+          )}
+          <span className="absolute inset-0 bg-black/30 flex items-center justify-center">
+            {uploadingAvatar ? (
+              <span className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+            ) : (
+              <Camera size={14} className="text-white" />
+            )}
+          </span>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          onChange={handleAvatarChange}
+          className="hidden"
+        />
         <div className="flex-1">
           <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
             {user.name}
@@ -69,11 +117,15 @@ export default function Profile({ go, user, onLogout, unreadCount = 0 }) {
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Settings</p>
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] overflow-hidden">
-        {SETTINGS_ROWS.map((label, i) => (
-          <div key={label} className={`flex items-center justify-between px-4 py-3.5 ${i !== SETTINGS_ROWS.length - 1 ? "border-b border-[#ECE9F7]" : ""}`}>
-            <p className="text-[13px] text-[#1E1B4B]">{label}</p>
+        {SETTINGS_ROWS.map((row, i) => (
+          <button
+            key={row.key}
+            onClick={() => go(row.key)}
+            className={`w-full flex items-center justify-between px-4 py-3.5 text-left ${i !== SETTINGS_ROWS.length - 1 ? "border-b border-[#ECE9F7]" : ""}`}
+          >
+            <p className="text-[13px] text-[#1E1B4B]">{row.label}</p>
             <ChevronRight size={15} className="text-[#B7AFD6]" />
-          </div>
+          </button>
         ))}
       </div>
     </div>

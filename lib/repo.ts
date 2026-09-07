@@ -599,6 +599,14 @@ async function notifyBestEffort(input: {
   body: string;
 }): Promise<void> {
   try {
+    const db = getDb();
+    const prefResult = await db
+      .from("users")
+      .select("notifications_enabled")
+      .eq("id", input.userId)
+      .maybeSingle();
+    const pref = assertNoError(prefResult, "checking notification preference") as Row | null;
+    if (pref && pref.notifications_enabled === false) return;
     await createNotification(input);
   } catch (err) {
     console.error("[notify] failed to create notification:", err);

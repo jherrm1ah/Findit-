@@ -20,6 +20,8 @@ export type User = {
   lat: number | null;
   lng: number | null;
   phoneVerified: boolean;
+  avatarUrl: string | null;
+  notificationsEnabled: boolean;
 };
 
 type Row = Record<string, unknown>;
@@ -34,6 +36,8 @@ function rowToUser(row: Row): User {
     lat: (row.lat as number | null) ?? null,
     lng: (row.lng as number | null) ?? null,
     phoneVerified: (row.phone_verified as boolean | null) ?? true,
+    avatarUrl: (row.avatar_url as string | null) ?? null,
+    notificationsEnabled: (row.notifications_enabled as boolean | null) ?? true,
   };
 }
 
@@ -114,6 +118,99 @@ export async function verifyLogin(phone: string, password: string): Promise<User
   ) {
     return null;
   }
+  return rowToUser(row);
+}
+
+async function verifyPasswordForUserId(userId: string, password: string): Promise<Row> {
+  const db = getDb();
+  const result = await db.from("users").select("*").eq("id", userId).maybeSingle();
+  const row = assertNoError(result, "loading account") as Row | null;
+  if (!row) throw new ValidationError("Account not found.");
+  const candidateHash = hashPassword(password, row.password_salt as string);
+  const actualHash = Buffer.from(row.password_hash as string, "hex");
+  const candidateBuf = Buffer.from(candidateHash, "hex");
+  if (
+    actualHash.length !== candidateBuf.length ||
+    !crypto.timingSafeEqual(actualHash, candidateBuf)
+  ) {
+    throw new ValidationError("Current password is incorrect.");
+  }
+  return row;
+}
+
+export async function updateUserName(userId: string, name: string): Promise<User> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new ValidationError("Enter your name.");
+  const db = getDb();
+  const result = await db.from("users").update({ name: trimmed }).eq("id", userId).select().single();
+  const row = assertNoError(result, "updating name") as Row;
+  return rowToUser(row);
+}
+
+export async function updateUserPhone(
+  userId: string,
+  newPhone: string,
+  currentPassword: string
+): Promise<User> {
+  if (!newPhone || newPhone.trim().length < 10) {
+    throw new ValidationError("Enter a valid phone number.");
+  }
+  await verifyPasswordForUserId(userId, currentPassword);
+  const phone = normalizePhone(newPhone);
+
+  const db = getDb();
+  const existingResult = await db.from("users").select("id").eq("phone", phone).maybeSingle();
+  const existing = assertNoError(existingResult, "checking for an existing account") as Row | null;
+  if (existing && existing.id !== userId) {
+    throw new ValidationError("Another account already uses this phone number.");
+  }
+
+  const result = await db.from("users").update({ phone }).eq("id", userId).select().single();
+  const row = assertNoError(result, "updating phone number") as Row;
+  return rowToUser(row);
+}
+
+export async function changeUserPassword(
+  userId: string,
+  currentPassword: string,
+  newPassword: string
+): Promise<void> {
+  if (!newPassword || newPassword.length < 4) {
+    throw new ValidationError("New password must be at least 4 characters.");
+  }
+  await verifyPasswordForUserId(userId, currentPassword);
+
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = hashPassword(newPassword, salt);
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ password_hash: passwordHash, password_salt: salt })
+    .eq("id", userId);
+  assertNoError(result, "updating password");
+}
+
+export async function updateUserAvatar(userId: string, avatarUrl: string): Promise<User> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ avatar_url: avatarUrl })
+    .eq("id", userId)
+    .select()
+    .single();
+  const row = assertNoError(result, "updating profile photo") as Row;
+  return rowToUser(row);
+}
+
+export async function updateNotificationPref(userId: string, enabled: boolean): Promise<User> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ notifications_enabled: enabled })
+    .eq("id", userId)
+    .select()
+    .single();
+  const row = assertNoError(result, "updating notification preference") as Row;
   return rowToUser(row);
 }
 
