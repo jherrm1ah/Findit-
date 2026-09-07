@@ -141,6 +141,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     }).then((d) => d.user),
+  updateBusinessName: (businessName) =>
+    request("/api/auth/business-name", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessName }),
+    }).then((d) => d.user),
   updatePhone: (newPhone, currentPassword) =>
     request("/api/auth/phone", {
       method: "PATCH",

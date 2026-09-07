@@ -147,6 +147,59 @@ export async function updateUserName(userId: string, name: string): Promise<User
   return rowToUser(row);
 }
 
+export async function updateSellerBusinessName(userId: string, newName: string): Promise<User> {
+  const trimmed = newName.trim();
+  if (!trimmed) throw new ValidationError("Enter a business name.");
+
+  const db = getDb();
+  const currentResult = await db
+    .from("users")
+    .select("business_name, role")
+    .eq("id", userId)
+    .maybeSingle();
+  const current = assertNoError(currentResult, "loading account") as Row | null;
+  if (!current || current.role !== "seller") {
+    throw new ValidationError("Only seller accounts have a business name.");
+  }
+  const oldName = current.business_name as string | null;
+
+  const updateResult = await db
+    .from("users")
+    .update({ business_name: trimmed })
+    .eq("id", userId)
+    .select()
+    .single();
+  const row = assertNoError(updateResult, "updating business name") as Row;
+
+  // Products, orders, and offers all store the seller's business name as a
+  // plain string rather than a foreign key to this user (see the comments
+  // on those tables in supabase/schema.sql) — that's the same assumption
+  // SellerDashboard's own filtering relies on. So a rename has to be
+  // propagated everywhere the old name was copied, or this seller's
+  // existing listings/orders would silently stop matching their own
+  // dashboard.
+  if (oldName && oldName !== trimmed) {
+    assertNoError(
+      await db.from("sellers").update({ name: trimmed }).eq("user_id", userId),
+      "updating seller record"
+    );
+    assertNoError(
+      await db.from("products").update({ seller: trimmed }).eq("seller", oldName),
+      "updating product listings"
+    );
+    assertNoError(
+      await db.from("orders").update({ seller: trimmed }).eq("seller", oldName),
+      "updating orders"
+    );
+    assertNoError(
+      await db.from("offers").update({ seller: trimmed }).eq("seller", oldName),
+      "updating offers"
+    );
+  }
+
+  return rowToUser(row);
+}
+
 export async function updateUserPhone(
   userId: string,
   newPhone: string,

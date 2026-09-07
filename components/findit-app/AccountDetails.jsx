@@ -3,10 +3,21 @@
 import { useEffect, useState } from "react";
 import { Field } from "./shared";
 
-export default function AccountDetails({ user, onUpdateName, onUpdatePhone, onUpdatePassword, showToast }) {
+export default function AccountDetails({
+  user,
+  onUpdateName,
+  onUpdateBusinessName,
+  onUpdatePhone,
+  onUpdatePassword,
+  showToast,
+}) {
   const [name, setName] = useState(user.name);
   const [savingName, setSavingName] = useState(false);
   useEffect(() => setName(user.name), [user.name]);
+
+  const [businessName, setBusinessName] = useState(user.businessName || "");
+  const [savingBusinessName, setSavingBusinessName] = useState(false);
+  useEffect(() => setBusinessName(user.businessName || ""), [user.businessName]);
 
   const [newPhone, setNewPhone] = useState(user.phone);
   const [phonePassword, setPhonePassword] = useState("");
@@ -29,6 +40,19 @@ export default function AccountDetails({ user, onUpdateName, onUpdatePhone, onUp
       showToast?.(err.message || "Couldn't update your name.", "error");
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const saveBusinessName = async () => {
+    if (!businessName.trim() || savingBusinessName) return;
+    setSavingBusinessName(true);
+    try {
+      await onUpdateBusinessName(businessName.trim());
+      showToast?.("Business name updated.", "success");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update your business name.", "error");
+    } finally {
+      setSavingBusinessName(false);
     }
   };
 
@@ -68,7 +92,9 @@ export default function AccountDetails({ user, onUpdateName, onUpdatePhone, onUp
       <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>
         Account details
       </h1>
-      <p className="text-[12px] text-[#6B6483] mb-6">Update your name, phone number, and password.</p>
+      <p className="text-[12px] text-[#6B6483] mb-6">
+        Update your name{user.role === "seller" ? ", business name" : ""}, phone number, and password.
+      </p>
 
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Name</p>
@@ -84,6 +110,26 @@ export default function AccountDetails({ user, onUpdateName, onUpdatePhone, onUp
           {savingName ? "Saving…" : "Save name"}
         </button>
       </div>
+
+      {user.role === "seller" && (
+        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Business name</p>
+          <Field label="Business name">
+            <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input" />
+          </Field>
+          <p className="text-[11px] text-[#8A8372] mt-2">
+            This is what buyers see on your listings, orders, and offers.
+          </p>
+          <button
+            onClick={saveBusinessName}
+            disabled={!businessName.trim() || businessName.trim() === user.businessName || savingBusinessName}
+            className="mt-3 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl disabled:opacity-40"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            {savingBusinessName ? "Saving…" : "Save business name"}
+          </button>
+        </div>
+      )}
 
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Phone number</p>

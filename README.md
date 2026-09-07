@@ -50,8 +50,10 @@ funds UI as a simulated state) — see "Next steps" below.
   seller's application is approved or rejected. Mark one or all as read.
 - **Profile** — shows your real name/phone/role with a working log out, plus entry points into
   your orders, requests, messages, and notifications. Tap the avatar to upload a real profile
-  photo. Settings rows are real screens: **Account details** (edit name; change phone number or
-  password, both requiring your current password to confirm), **Notification preferences** (a
+  photo. Settings rows are real screens: **Account details** (edit name; sellers can also rename
+  their business — propagated to their existing listings/orders/offers, see the note in
+  `lib/auth.ts#updateSellerBusinessName`; change phone number or password, both requiring your
+  current password to confirm), **Notification preferences** (a
   toggle to turn in-app notifications on/off — `notifyBestEffort` in `lib/repo.ts` checks it before
   writing any notification), **Help & support** (FAQ + a real support email), and **About FindIt**.
 - **Product photos** — sellers can attach a real photo to a listing (add or edit), stored in

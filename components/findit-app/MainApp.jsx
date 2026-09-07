@@ -247,6 +247,16 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     onUserUpdate(updated);
   };
 
+  const handleUpdateBusinessName = async (businessName) => {
+    const updated = await api.updateBusinessName(businessName);
+    onUserUpdate(updated);
+    // The rename is propagated server-side to every product/order/offer row
+    // that carried the old name — refetch so this seller's own dashboard
+    // doesn't keep filtering by the stale name still cached client-side.
+    api.getProducts().then(setProducts).catch(() => {});
+    api.getOrders().then(setOrders).catch(() => {});
+  };
+
   const handleUpdatePhone = async (newPhone, currentPassword) => {
     const updated = await api.updatePhone(newPhone, currentPassword);
     onUserUpdate(updated);
@@ -505,6 +515,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           <AccountDetails
             user={user}
             onUpdateName={handleUpdateName}
+            onUpdateBusinessName={handleUpdateBusinessName}
             onUpdatePhone={handleUpdatePhone}
             onUpdatePassword={handleUpdatePassword}
             showToast={showToast}
