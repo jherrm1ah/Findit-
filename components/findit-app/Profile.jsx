@@ -56,10 +56,13 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
           ? sellerStatus === "pending" || sellerStatus === "rejected"
             ? sellerStatusMeta.label
             : user.businessName
-          : "Requires a seller account",
+          : "Tap \u201cStart selling on FindIt\u201d below to set one up",
     },
   ];
   const SETTINGS_ROWS = [
+    // A buyer can turn this same account into a seller account — phone numbers
+    // are unique, so without this they'd need a second phone number to sell.
+    ...(user.role === "buyer" ? [{ key: "becomeSeller", label: "Start selling on FindIt" }] : []),
     { key: "accountDetails", label: "Account details" },
     { key: "notifPrefs", label: "Notification preferences" },
     { key: "help", label: "Help & support" },

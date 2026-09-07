@@ -1,8 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin } from "lucide-react";
-import { naira, STEPS, GROUPS } from "./data";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock } from "lucide-react";
+import { naira, STEPS, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
@@ -215,8 +215,10 @@ export default function SellerDashboard({
   };
 
   const advance = async (order) => {
-    const nextIdx = STEPS.indexOf(order.status) + 1;
-    const nextStatus = STEPS[nextIdx];
+    // SELLER_STEPS stops at "Out for delivery" — only the buyer can mark an
+    // order delivered, which is what releases the payment.
+    const nextIdx = SELLER_STEPS.indexOf(order.status) + 1;
+    const nextStatus = SELLER_STEPS[nextIdx];
     if (!nextStatus) return;
     setAdvancingId(order.id);
     try {
@@ -340,7 +342,8 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No orders under your business name yet.</p>
         )}
         {myOrders.map((o) => {
-          const nextStatus = STEPS[STEPS.indexOf(o.status) + 1];
+          const nextStatus = SELLER_STEPS[SELLER_STEPS.indexOf(o.status) + 1];
+          const awaitingBuyer = !nextStatus && o.status !== "Delivered";
           return (
             <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-start justify-between mb-1">
@@ -360,8 +363,21 @@ export default function SellerDashboard({
                 >
                   {advancingId === o.id ? "Updating…" : <>Mark as {nextStatus} <ArrowRight size={12} /></>}
                 </button>
+              ) : awaitingBuyer ? (
+                <div>
+                  <Pill tone="gold"><Clock size={11} /> Waiting for buyer to confirm</Pill>
+                  <p className="text-[11px] text-[#6B6483] mt-2">
+                    {o.escrowStatus === "disputed"
+                      ? "The buyer reported a problem — FindIt is reviewing it before releasing your payment."
+                      : "Your payment is released as soon as the buyer confirms the order arrived."}
+                  </p>
+                </div>
+              ) : o.escrowStatus === "refunded" ? (
+                <Pill tone="stone">Refunded to buyer</Pill>
               ) : (
-                <Pill tone="green"><CheckCircle2 size={11} /> Fulfilled</Pill>
+                <div>
+                  <Pill tone="green"><CheckCircle2 size={11} /> Delivered — payment released</Pill>
+                </div>
               )}
             </div>
           );

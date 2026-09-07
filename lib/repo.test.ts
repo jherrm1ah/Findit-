@@ -3,6 +3,8 @@ import {
   validateProductInput,
   validateOfferInput,
   validateStatusTransition,
+  assertSellerCanSetStatus,
+  SELLER_SETTABLE_STATUSES,
   computeSellerStatsMap,
   isValidProductImageUrl,
   ORDER_STATUSES,
@@ -83,6 +85,27 @@ describe("validateStatusTransition", () => {
     for (let i = 1; i < ORDER_STATUSES.length; i++) {
       expect(() => validateStatusTransition(ORDER_STATUSES[i - 1], ORDER_STATUSES[i])).not.toThrow();
     }
+  });
+});
+
+// The escrow promise the app makes to buyers ("payment is released once YOU
+// confirm delivery") only holds if a seller cannot declare their own order
+// delivered. This is the rule that enforces it.
+describe("assertSellerCanSetStatus", () => {
+  it("stops a seller marking their own order delivered", () => {
+    expect(() => assertSellerCanSetStatus("Delivered")).toThrow(ValidationError);
+    expect(() => assertSellerCanSetStatus("Delivered")).toThrow(/only the buyer/i);
+  });
+
+  it("allows every step the seller genuinely controls", () => {
+    for (const status of SELLER_SETTABLE_STATUSES) {
+      expect(() => assertSellerCanSetStatus(status)).not.toThrow();
+    }
+  });
+
+  it("leaves exactly one status to the buyer", () => {
+    expect(SELLER_SETTABLE_STATUSES).not.toContain("Delivered");
+    expect(SELLER_SETTABLE_STATUSES).toHaveLength(ORDER_STATUSES.length - 1);
   });
 });
 

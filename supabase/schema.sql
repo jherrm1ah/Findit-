@@ -184,10 +184,22 @@ create table if not exists orders (
   my_rating integer check (my_rating between 1 and 5),
   review_comment text,
   request_id text references requests(id),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Delivery is confirmed by the BUYER, never the seller: "Delivered" means
+  -- the person who paid said the item arrived. See migration 008.
+  buyer_confirmed_at timestamptz,
+  -- held | released | disputed | refunded — where the money stands. No payment
+  -- provider is wired up yet; this is the record a provider hook reads later,
+  -- and what the buyer and admin see today.
+  escrow_status text not null default 'held'
+    check (escrow_status in ('held', 'released', 'disputed', 'refunded')),
+  issue_reported_at timestamptz,
+  issue_note text
 );
 create index if not exists orders_user_id_idx on orders(user_id);
 create index if not exists orders_seller_idx on orders(seller);
+create index if not exists orders_escrow_status_idx on orders(escrow_status)
+  where escrow_status = 'disputed';
 
 -- ---------------------------------------------------------------------------
 -- notifications — also now always owned by a real user (no more shared

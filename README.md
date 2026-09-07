@@ -132,9 +132,13 @@ no admin and no in-app way to create another one).
 
 - `supabase/schema.sql` — the full Postgres schema (every table, no seed data). Run this once
   against a fresh Supabase project before starting the app.
-- `supabase/migrations/002_add_location.sql` — adds `lat`/`lng` columns for location awareness;
-  only needed if you set up your Supabase project before that feature existed (`schema.sql` already
-  includes them for a fresh install).
+- `supabase/migrations/` — incremental scripts for a project set up before a feature existed.
+  A fresh install only needs `schema.sql`, which already includes all of them. Run them in
+  numeric order in the Supabase SQL Editor:
+  `002_add_location.sql` (lat/lng), `003_security_hardening.sql`, `004_phone_verification.sql`,
+  `005_profile.sql` (avatar + notification preference), `006_otp_verifications.sql`,
+  `007_admin_demote.sql`, `008_delivery_confirmation.sql` (buyer delivery confirmation and
+  escrow state — see "Escrow and delivery confirmation" below).
 - `scripts/create-admin.mjs` — one-time script to create an admin account directly in Supabase.
 - `lib/categories.js` — the fixed category id → label taxonomy (15 categories). Shared by
   `lib/repo.ts` (server-side validation) and `components/findit-app/data.js` (client labels/icons).
@@ -178,7 +182,8 @@ other guest's orders, since there was no way to tell two anonymous sessions apar
 needs a real, identifiable buyer, so that path was removed.
 
 Product listing management, order status advances, and sending an offer are restricted to the
-listing's/order's own seller (matched by business name) or an admin. Messaging routes require a
+listing's/order's own seller (matched by business name) or an admin. A seller can advance an order
+only as far as "Out for delivery" — see "Escrow and delivery confirmation" below. Messaging routes require a
 session and check the caller is a participant in the conversation. Notification and review actions
 check the row actually belongs to the calling user.
 
@@ -186,6 +191,36 @@ check the row actually belongs to the calling user.
 `POST /api/auth/resend-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, and
 `POST /api/ai/classify-request` are rate-limited — a 429 with a friendly error is returned once the
 limit is hit.
+
+## Escrow and delivery confirmation
+
+The app tells buyers, in onboarding, on every product page and at checkout, that their payment is
+held by FindIt and only released once **they** confirm the order arrived. Three rules make that
+true rather than just copy:
+
+1. **A seller cannot mark their own order delivered.** `SELLER_SETTABLE_STATUSES` (`lib/repo.ts`)
+   stops the seller's ladder at "Out for delivery", and `assertSellerCanSetStatus` enforces it in
+   `PATCH /api/orders/[id]`. The client mirrors it with `SELLER_STEPS` in
+   `components/findit-app/data.js`, but the server is what decides.
+2. **Only the buyer reaches "Delivered."** `POST /api/orders/[id]/confirm` → `confirmDelivery()`
+   sets the status, stamps `buyer_confirmed_at`, moves `escrow_status` to `released`, and is the
+   only thing that unlocks reviewing. The update is conditional on `buyer_confirmed_at` still
+   being null, so a double tap can't release the same order twice.
+3. **A buyer can stop the clock.** `POST /api/orders/[id]/issue` → `reportOrderIssue()` moves
+   `escrow_status` to `disputed` and puts the order in the admin queue instead of completing it.
+   An admin resolves it through `POST /api/admin/disputes` — `released` (pay the seller) or
+   `refunded` (return the buyer's money) — and both outcomes are written to the admin audit log.
+
+`escrow_status` is `held | released | disputed | refunded`. **No payment provider is wired up
+yet**, so this column is the *record* of what should happen to the money — the hook a provider
+integration reads later, and what buyers, sellers and admins see in the app today. Nothing here
+moves real funds on its own.
+
+**Becoming a seller.** Phone numbers are unique per account, so a buyer who later wants to sell
+can't just sign up again. `POST /api/auth/become-seller` → `becomeSeller()` converts the existing
+account: it creates (or reopens) the `sellers` verification row as `pending` first, then flips the
+user's role, so a failure leaves a buyer rather than an unreviewable seller. Admin accounts are
+refused — an admin approves sellers, so self-approval is kept off the table.
 
 **Phone verification (OTP)** is optional and off by default. Set `TERMII_API_KEY` (see
 `.env.example`) to turn it on — signup and "Forgot password?" then send a real SMS code via

@@ -150,6 +150,65 @@ export async function updateUserName(userId: string, name: string): Promise<User
   return rowToUser(row);
 }
 
+// A buyer who decides to start selling. Phone numbers are unique per account,
+// so without this the only route was to sign up again with a SECOND phone
+// number — which shut out exactly the people most likely to sell: the ones
+// already using the app. Lands in the same pending state a seller signup
+// does, so an admin still reviews them before they can trade.
+export async function becomeSeller(userId: string, businessName: string): Promise<User> {
+  const trimmed = businessName.trim();
+  if (trimmed.length < 2) {
+    throw new ValidationError("Enter the name your customers will see.");
+  }
+  if (trimmed.length > 80) {
+    throw new ValidationError("Please keep the business name under 80 characters.");
+  }
+
+  const db = getDb();
+  const currentResult = await db.from("users").select("role").eq("id", userId).maybeSingle();
+  const current = assertNoError(currentResult, "loading account") as Row | null;
+  if (!current) throw new ValidationError("Account not found.");
+  if (current.role === "seller") {
+    throw new ValidationError("You already have a seller account.");
+  }
+  if (current.role === "admin") {
+    // An admin approves sellers; letting them self-approve muddies that.
+    throw new ValidationError("Admin accounts can't also sell — use a separate account for selling.");
+  }
+
+  // The verification record comes first: if this insert fails the account
+  // keeps its buyer role rather than becoming a seller nobody can review.
+  const existingSellerResult = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
+  const existingSeller = assertNoError(existingSellerResult, "checking seller record") as Row | null;
+  if (existingSeller) {
+    assertNoError(
+      await db.from("sellers").update({ name: trimmed, status: "pending" }).eq("user_id", userId),
+      "updating seller verification record"
+    );
+  } else {
+    assertNoError(
+      await db.from("sellers").insert({
+        id: "seller_" + userId,
+        user_id: userId,
+        name: trimmed,
+        status: "pending",
+      }),
+      "creating seller verification record"
+    );
+  }
+
+  assertNoError(
+    await db.from("users").update({ role: "seller", business_name: trimmed }).eq("id", userId),
+    "switching account to a seller account"
+  );
+
+  const row = assertNoError(
+    await db.from("users").select("*").eq("id", userId).single(),
+    "loading the updated account"
+  ) as Row;
+  return rowToUser(row);
+}
+
 export async function updateSellerBusinessName(userId: string, newName: string): Promise<User> {
   const trimmed = newName.trim();
   if (!trimmed) throw new ValidationError("Enter a business name.");

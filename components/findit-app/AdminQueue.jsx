@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX } from "lucide-react";
 import { Pill } from "./shared";
+import { naira } from "./data";
 
 function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
   if (a.action === "seller.rejected") return `Rejected seller "${a.detail?.sellerName ?? a.targetId}"`;
   if (a.action === "user.promoted_admin") return `Made "${a.detail?.name ?? a.targetId}" an admin`;
   if (a.action === "user.demoted_admin") return `Removed "${a.detail?.name ?? a.targetId}"'s admin access`;
+  if (a.action === "order.refunded") return `Refunded the buyer for "${a.detail?.item ?? a.targetId}"`;
+  if (a.action === "order.payment_released") return `Released payment to ${a.detail?.seller ?? "the seller"} for "${a.detail?.item ?? a.targetId}"`;
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
@@ -133,6 +136,64 @@ function TeamAccess({ onLookupUser, onPromoteToAdmin, onDemoteFromAdmin, current
   );
 }
 
+// Orders where a buyer said something went wrong. FindIt is holding their
+// money until someone here decides, so this sits above everything else.
+function ReportedProblems({ orders, onResolve }) {
+  const [acting, setActing] = useState(null);
+
+  const resolve = async (orderId, outcome) => {
+    setActing(orderId);
+    try {
+      await onResolve(orderId, outcome);
+    } catch {
+      // MainApp surfaced a toast
+    } finally {
+      setActing(null);
+    }
+  };
+
+  if (orders.length === 0) {
+    return <p className="text-[12px] text-[#6B6483] mb-7">No reported problems — every payment is either held or settled.</p>;
+  }
+
+  return (
+    <div className="space-y-3 mb-7">
+      {orders.map((o) => (
+        <div key={o.id} className="bg-white border border-[#F5D9A8] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{o.item}</p>
+              <p className="text-[11px] text-[#6B6483]">{o.seller} · {naira(o.price)} · {o.id}</p>
+            </div>
+            <Pill tone="gold"><AlertTriangle size={11} /> Payment held</Pill>
+          </div>
+          <p className="text-[12px] text-[#514B67] bg-[#FDF6EC] rounded-xl px-3 py-2 my-2.5">“{o.issueNote}”</p>
+          <p className="text-[11px] text-[#6B6483] mb-3">
+            Reported {o.issueReportedAt ? new Date(o.issueReportedAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" }) : "recently"}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => resolve(o.id, "refunded")}
+              disabled={acting !== null}
+              className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+              style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}
+            >
+              {acting === o.id ? "Working…" : "Refund the buyer"}
+            </button>
+            <button
+              onClick={() => resolve(o.id, "released")}
+              disabled={acting !== null}
+              className={`flex-1 bg-white border border-[#ECE9F7] text-[#6B6483] text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+            >
+              Pay the seller
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -142,6 +203,8 @@ export default function AdminQueue({
   onLookupUser,
   onPromoteToAdmin,
   onDemoteFromAdmin,
+  reportedOrders = [],
+  onResolveOrderIssue,
   currentAdminId,
   showToast,
 }) {
@@ -153,6 +216,16 @@ export default function AdminQueue({
         <ClipboardList size={17} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Admin queue</h1>
       </div>
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+        <PackageX size={13} className="text-[#D97706]" /> Reported problems
+        {reportedOrders.length > 0 && (
+          <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#D97706] text-white text-[10px] font-bold flex items-center justify-center">
+            {reportedOrders.length}
+          </span>
+        )}
+      </p>
+      <ReportedProblems orders={reportedOrders} onResolve={onResolveOrderIssue} />
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Seller verification</p>
       <div className="space-y-3 mb-7">

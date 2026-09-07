@@ -48,4 +48,11 @@ export const NOTIFICATION_ICONS = {
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
 
+// How far a seller can move an order on their own. The last step belongs to
+// the buyer: "Delivered" means the person who paid confirmed it arrived, and
+// that confirmation is what releases the payment. Mirrors
+// SELLER_SETTABLE_STATUSES in lib/repo.ts, which enforces the same rule
+// server-side.
+export const SELLER_STEPS = STEPS.filter((s) => s !== "Delivered");
+
 export const naira = (n) => `₦${Number(n).toLocaleString("en-NG")}`;

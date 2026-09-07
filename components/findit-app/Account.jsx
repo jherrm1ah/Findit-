@@ -1,15 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { Heart, Star as StarFilled } from "lucide-react";
+import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 
-export default function Account({ openProduct, orders, products, onReview, savedIds }) {
+export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, savedIds }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [confirming, setConfirming] = useState(null); // order id being confirmed
+  const [reporting, setReporting] = useState(null);   // order id being reported
+  const [issueNote, setIssueNote] = useState("");
   const saved = products.filter((p) => savedIds.includes(p.id));
 
   const submitReview = async (orderId) => {
@@ -26,7 +29,45 @@ export default function Account({ openProduct, orders, products, onReview, saved
     }
   };
 
+  const confirmDelivery = async (orderId) => {
+    setConfirming(orderId);
+    try {
+      await onConfirmDelivery(orderId);
+    } catch {
+      // MainApp surfaced a toast already
+    } finally {
+      setConfirming(null);
+    }
+  };
+
+  const submitIssue = async (orderId) => {
+    setSubmitting(true);
+    try {
+      await onReportIssue(orderId, issueNote);
+      setReporting(null);
+      setIssueNote("");
+    } catch {
+      // Keep the form open so they can adjust and retry
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" ? "stone" : "gold");
+
+  // Where the buyer's money stands, in their words rather than ours.
+  const ESCROW_COPY = {
+    held: { icon: ShieldCheck, tone: "text-[#7C3AED]", text: "Payment held by FindIt" },
+    released: { icon: ShieldCheck, tone: "text-[#16A34A]", text: "Payment released to the seller" },
+    disputed: { icon: AlertTriangle, tone: "text-[#D97706]", text: "Problem reported — FindIt is reviewing it" },
+    refunded: { icon: ShieldCheck, tone: "text-[#16A34A]", text: "Refunded to you" },
+  };
+
+  // The seller has handed it over, so the buyer can now say whether it arrived.
+  const awaitingConfirmation = (o) =>
+    !o.buyerConfirmedAt &&
+    o.escrowStatus !== "refunded" &&
+    (o.status === "Dispatched" || o.status === "Out for delivery");
 
   return (
     <div className="px-5 pt-6 pb-10">
@@ -48,6 +89,83 @@ export default function Account({ openProduct, orders, products, onReview, saved
               <Pill tone={statusTone(o.status)}>{o.status}</Pill>
             </div>
             <p className="text-[14px] font-bold text-[#7C3AED] mt-2 mb-2">{naira(o.price)}</p>
+
+            {/* Where the money stands — the app promises this on every product
+                page and at checkout, so it has to be visible on the order too. */}
+            {(() => {
+              const escrow = ESCROW_COPY[o.escrowStatus] ?? ESCROW_COPY.held;
+              const EscrowIcon = escrow.icon;
+              return (
+                <div className={`flex items-center gap-1.5 text-[11px] mb-2.5 ${escrow.tone}`}>
+                  <EscrowIcon size={13} className="shrink-0" />
+                  <span>{escrow.text}</span>
+                </div>
+              );
+            })()}
+
+            {/* Only the buyer can end an order. Until they tap this, the money
+                stays with FindIt no matter what the seller marked. */}
+            {awaitingConfirmation(o) && reporting !== o.id && (
+              <div className="mb-2">
+                <p className="text-[11px] text-[#6B6483] mb-2">
+                  {o.escrowStatus === "disputed"
+                    ? "We're reviewing your report. If it turns out fine, you can still confirm you received it."
+                    : "Has it arrived? Your payment only reaches the seller once you confirm."}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => confirmDelivery(o.id)}
+                    disabled={confirming === o.id}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${confirming === o.id ? "opacity-60" : ""}`}
+                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                  >
+                    <PackageCheck size={14} />
+                    {confirming === o.id ? "Confirming…" : "I received this"}
+                  </button>
+                  {o.escrowStatus !== "disputed" && (
+                    <button
+                      onClick={() => { setReporting(o.id); setIssueNote(""); }}
+                      className="px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl"
+                    >
+                      Report a problem
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {reporting === o.id && (
+              <div className="mt-2 pt-3 border-t border-[#ECE9F7]">
+                <p className="text-[11px] text-[#6B6483] mb-2">
+                  What went wrong? FindIt keeps holding your payment while we look into it.
+                </p>
+                <textarea
+                  value={issueNote}
+                  onChange={(e) => setIssueNote(e.target.value)}
+                  rows={3}
+                  placeholder="e.g. It never arrived, or it isn't what was described"
+                  className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
+                />
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => submitIssue(o.id)}
+                    disabled={submitting || issueNote.trim().length < 5}
+                    className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting || issueNote.trim().length < 5 ? "opacity-40" : ""}`}
+                    style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}
+                  >
+                    <AlertTriangle size={14} />
+                    {submitting ? "Sending…" : "Report problem"}
+                  </button>
+                  <button
+                    onClick={() => setReporting(null)}
+                    disabled={submitting}
+                    className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
 
             {o.reviewed && (
               <div className="flex items-center gap-1 text-[12px] text-[#6B6483]">

@@ -6,7 +6,7 @@ import Onboarding from "./Onboarding";
 import Login from "./Login";
 import MainApp from "./MainApp";
 import ToastHost from "./Toast";
-import { api } from "./api";
+import { api, setSessionExpiredHandler } from "./api";
 
 export default function App() {
   const [phase, setPhase] = useState("splash"); // splash → onboarding → login → main
@@ -24,6 +24,28 @@ export default function App() {
 
   useEffect(() => {
     sessionRef.current = api.me().catch(() => null);
+  }, []);
+
+  // A session can lapse while someone is mid-way through the app. Without
+  // this they'd just see a generic failure on every tap and keep looking at
+  // data they can no longer act on, with no idea they'd been signed out.
+  const userRef = useRef(null);
+  useEffect(() => {
+    userRef.current = user;
+  }, [user]);
+
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      // Several in-flight requests can each come back 401 at once — react to
+      // the first and ignore the rest, so this bounces to login once.
+      if (!userRef.current) return;
+      userRef.current = null;
+      sessionRef.current = Promise.resolve(null);
+      setUser(null);
+      setPhase("login");
+      showToast("Your session expired — please log in again.", "error");
+    });
+    return () => setSessionExpiredHandler(null);
   }, []);
 
   // A returning user with a live session skips straight past the login screen.

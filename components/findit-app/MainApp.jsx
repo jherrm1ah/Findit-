@@ -12,6 +12,7 @@ import Browse from "./Browse";
 import RequestForm from "./RequestForm";
 import SellerDashboard from "./SellerDashboard";
 import AdminQueue from "./AdminQueue";
+import BecomeSeller from "./BecomeSeller";
 import Profile from "./Profile";
 import AccountDetails from "./AccountDetails";
 import NotificationPreferences from "./NotificationPreferences";
@@ -65,6 +66,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [myRequests, setMyRequests] = useState([]);
   const [adminActions, setAdminActions] = useState([]);
   const [otpStats, setOtpStats] = useState(null);
+  const [reportedOrders, setReportedOrders] = useState([]);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
 
   // Real device/account location — set only once the user explicitly grants
@@ -131,6 +133,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getSellers().then(setSellers).catch(() => {});
       api.getAdminActions().then(setAdminActions).catch(() => {});
       api.getOtpStats().then(setOtpStats).catch(() => {});
+      api.getReportedOrders().then(setReportedOrders).catch(() => {});
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
@@ -219,6 +222,41 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleConfirmDelivery = async (orderId) => {
+    try {
+      const order = await api.confirmDelivery(orderId);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Delivery confirmed — the payment has been released to the seller.");
+    } catch (err) {
+      showToast(err.message || "Couldn't confirm that order — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleReportIssue = async (orderId, note) => {
+    try {
+      const order = await api.reportOrderIssue(orderId, note);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Reported — FindIt is holding your payment while we review it.");
+    } catch (err) {
+      showToast(err.message || "Couldn't report that problem — try again.", "error");
+      throw err; // keep the form open so they can retry
+    }
+  };
+
+  const handleResolveOrderIssue = async (orderId, outcome) => {
+    try {
+      await api.resolveOrderIssue(orderId, outcome);
+      // Drop it from the queue — it's no longer an open problem.
+      setReportedOrders((os) => os.filter((o) => o.id !== orderId));
+      showToast(outcome === "refunded" ? "Buyer refunded." : "Payment released to the seller.");
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+    } catch (err) {
+      showToast(err.message || "Couldn't resolve that report — try again.", "error");
+      throw err;
+    }
+  };
+
   const handleAdvanceOrderStatus = async (orderId, status) => {
     try {
       const order = await api.updateOrderStatus(orderId, status);
@@ -262,6 +300,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     // doesn't keep filtering by the stale name still cached client-side.
     api.getProducts().then(setProducts).catch(() => {});
     api.getOrders().then(setOrders).catch(() => {});
+  };
+
+  const handleBecomeSeller = async (businessName) => {
+    const updated = await api.becomeSeller(businessName);
+    onUserUpdate(updated);
+    // They're a pending seller now, so the dashboard should show that state
+    // rather than whatever (nothing) was cached for a buyer.
+    api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    showToast("Submitted — an admin will review your seller account shortly.");
   };
 
   const handleUpdatePhone = async (newPhone, currentPassword) => {
@@ -518,6 +565,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onSellerStatusChange={handleSellerStatusChange}
               adminActions={adminActions}
               otpStats={otpStats}
+              reportedOrders={reportedOrders}
+              onResolveOrderIssue={handleResolveOrderIssue}
               onLookupUser={handleLookupUser}
               onPromoteToAdmin={handlePromoteToAdmin}
               onDemoteFromAdmin={handleDemoteFromAdmin}
@@ -554,6 +603,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             showToast={showToast}
           />
         )}
+        {screen === "becomeSeller" && (
+          <BecomeSeller user={user} onBecomeSeller={handleBecomeSeller} go={go} />
+        )}
         {screen === "notifPrefs" && (
           <NotificationPreferences user={user} onToggle={handleUpdateNotificationPref} showToast={showToast} />
         )}
@@ -568,6 +620,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             orders={orders}
             products={products}
             onReview={handleReview}
+            onConfirmDelivery={handleConfirmDelivery}
+            onReportIssue={handleReportIssue}
             savedIds={savedIds}
           />
         )}
@@ -625,7 +679,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           style={{ background: "linear-gradient(135deg,#1E1B4B,#3B1874)" }}
         >
           {TABS.map((t) => {
-            const activeKey = ["account", "notifications", "accountDetails", "notifPrefs", "help", "about"].includes(screen)
+            const activeKey = ["account", "notifications", "accountDetails", "notifPrefs", "help", "about", "becomeSeller"].includes(screen)
               ? "profile"
               : screen;
             const active = activeKey === t.key;

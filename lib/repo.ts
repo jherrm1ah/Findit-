@@ -53,7 +53,13 @@ export type Order = {
   reviewComment: string | null;
   requestId: string | null;
   createdAt: string;
+  buyerConfirmedAt: string | null;
+  escrowStatus: EscrowStatus;
+  issueReportedAt: string | null;
+  issueNote: string | null;
 };
+
+export type EscrowStatus = "held" | "released" | "disputed" | "refunded";
 
 export type Notification = {
   id: string;
@@ -343,6 +349,10 @@ function rowToOrder(row: Row): Order {
     reviewComment: (row.review_comment as string | null) ?? null,
     requestId: (row.request_id as string | null) ?? null,
     createdAt: row.created_at as string,
+    buyerConfirmedAt: (row.buyer_confirmed_at as string | null) ?? null,
+    escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "held"),
+    issueReportedAt: (row.issue_reported_at as string | null) ?? null,
+    issueNote: (row.issue_note as string | null) ?? null,
   };
 }
 
@@ -455,7 +465,7 @@ export async function submitOrderReview(
   const existing = await getOrder(id);
   if (!existing || existing.userId !== userId) return null;
   if (!existing.canReview) {
-    throw new ValidationError("This order can't be reviewed until it's delivered.");
+    throw new ValidationError("You can review this order once you confirm it arrived.");
   }
 
   const db = getDb();
@@ -507,11 +517,26 @@ export function validateStatusTransition(currentStatus: string, nextStatus: stri
   }
 }
 
+// The last step belongs to the buyer. A seller can carry an order as far as
+// "Out for delivery"; only the person who paid can say it actually arrived,
+// which is what confirmDelivery does. Without this a seller could mark an
+// undelivered item "Delivered" and release their own escrow.
+export const SELLER_SETTABLE_STATUSES = ORDER_STATUSES.filter((s) => s !== "Delivered");
+
+export function assertSellerCanSetStatus(nextStatus: string): void {
+  if (nextStatus === "Delivered") {
+    throw new ValidationError(
+      "Only the buyer can mark an order delivered — they confirm it in the app once it arrives."
+    );
+  }
+}
+
 const STATUS_NOTIFICATION_COPY: Record<string, { title: string; body: (item: string) => string }> = {
   "Seller preparing": { title: "Order update", body: (item) => `"${item}" is now being prepared by the seller.` },
   "Dispatched": { title: "Your order has shipped", body: (item) => `"${item}" was dispatched — it's on its way.` },
   "Out for delivery": { title: "Out for delivery", body: (item) => `"${item}" is out for delivery today.` },
-  "Delivered": { title: "Order delivered", body: (item) => `"${item}" has been delivered — you can now leave a review.` },
+  // "Delivered" is reached through confirmDelivery (the buyer's own action),
+  // so there is no buyer notification to send for it.
 };
 
 export async function updateOrderStatus(id: string, status: string): Promise<Order | null> {
@@ -523,7 +548,7 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   const db = getDb();
   const result = await db
     .from("orders")
-    .update({ status, can_review: status === "Delivered" ? true : existing.canReview })
+    .update({ status })
     .eq("id", id)
     .select()
     .single();
@@ -539,6 +564,193 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
       type: "delivery",
       title: copy.title,
       body: copy.body(order.item),
+    });
+  }
+
+  return order;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Delivery confirmation and escrow                                     */
+/* ------------------------------------------------------------------ */
+
+// The buyer says the order arrived. This is the step the whole escrow promise
+// rests on: it is the only path to "Delivered", the only thing that releases
+// the money, and the only thing that unlocks a review.
+export async function confirmDelivery(id: string, userId: string): Promise<Order | null> {
+  const existing = await getOrder(id);
+  if (!existing || existing.userId !== userId) return null;
+  if (existing.buyerConfirmedAt) {
+    throw new ValidationError("You've already confirmed this order.");
+  }
+  if (existing.status === "Awaiting payment" || existing.status === "Seller preparing") {
+    throw new ValidationError("Wait until the seller has dispatched your order before confirming it arrived.");
+  }
+  if (existing.escrowStatus === "refunded") {
+    throw new ValidationError("This order was refunded, so it can't be confirmed as delivered.");
+  }
+
+  const now = new Date().toISOString();
+  const db = getDb();
+  // Conditional on buyer_confirmed_at still being null, so two taps in quick
+  // succession can't both release the same order's funds.
+  const result = await db
+    .from("orders")
+    .update({
+      status: "Delivered",
+      buyer_confirmed_at: now,
+      escrow_status: "released",
+      can_review: true,
+      // Confirming receipt settles any problem the buyer had raised earlier.
+      issue_reported_at: null,
+      issue_note: null,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .is("buyer_confirmed_at", null)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "confirming delivery") as Row | null;
+  if (!row) throw new ValidationError("You've already confirmed this order.");
+  const order = rowToOrder(row);
+
+  const seller = await findUserByBusinessName(order.seller);
+  if (seller) {
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "delivery",
+      title: "Delivery confirmed",
+      body: `The buyer confirmed they received "${order.item}". Your payment has been released.`,
+    });
+  }
+
+  return order;
+}
+
+// The buyer says something is wrong. This deliberately does NOT complete the
+// order or release anything — it parks the money and puts the order in front
+// of an admin, which is the whole point of holding it in the first place.
+export async function reportOrderIssue(
+  id: string,
+  userId: string,
+  note: string
+): Promise<Order | null> {
+  const trimmed = note.trim();
+  if (trimmed.length < 5) {
+    throw new ValidationError("Tell us briefly what went wrong so we can help.");
+  }
+  if (trimmed.length > 1000) {
+    throw new ValidationError("Please keep the description under 1000 characters.");
+  }
+
+  const existing = await getOrder(id);
+  if (!existing || existing.userId !== userId) return null;
+  if (existing.escrowStatus === "released") {
+    throw new ValidationError("You've already confirmed this order as delivered — message the seller or contact support.");
+  }
+  if (existing.escrowStatus === "refunded") {
+    throw new ValidationError("This order has already been refunded.");
+  }
+  if (existing.issueReportedAt) {
+    throw new ValidationError("You've already reported a problem with this order — we're looking into it.");
+  }
+
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({
+      escrow_status: "disputed",
+      issue_reported_at: new Date().toISOString(),
+      issue_note: trimmed,
+    })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .is("issue_reported_at", null)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "reporting an order problem") as Row | null;
+  if (!row) throw new ValidationError("You've already reported a problem with this order.");
+  const order = rowToOrder(row);
+
+  const seller = await findUserByBusinessName(order.seller);
+  if (seller) {
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "delivery",
+      title: "A buyer reported a problem",
+      body: `The buyer raised an issue with "${order.item}". FindIt is holding the payment while we review it.`,
+    });
+  }
+
+  return order;
+}
+
+// Every order with an open problem, newest first — this is the admin queue.
+export async function listDisputedOrders(): Promise<Order[]> {
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .select("*")
+    .eq("escrow_status", "disputed")
+    .order("issue_reported_at", { ascending: false });
+  const rows = assertNoError(result, "listing reported orders") as Row[];
+  return rows.map(rowToOrder);
+}
+
+// An admin decides who was right. "released" pays the seller, "refunded"
+// returns the money to the buyer; both close the report either way.
+export async function resolveOrderIssue(
+  id: string,
+  outcome: "released" | "refunded"
+): Promise<Order | null> {
+  if (outcome !== "released" && outcome !== "refunded") {
+    throw new ValidationError("Resolution must be either released or refunded.");
+  }
+  const existing = await getOrder(id);
+  if (!existing) return null;
+  if (existing.escrowStatus !== "disputed") {
+    throw new ValidationError("There's no open problem on that order.");
+  }
+
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({
+      escrow_status: outcome,
+      issue_reported_at: null,
+      // The buyer's description is kept so the decision stays explainable.
+      ...(outcome === "released"
+        ? { status: "Delivered", buyer_confirmed_at: existing.buyerConfirmedAt ?? new Date().toISOString(), can_review: true }
+        : {}),
+    })
+    .eq("id", id)
+    .eq("escrow_status", "disputed")
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "resolving an order problem") as Row | null;
+  if (!row) throw new ValidationError("That problem has already been resolved.");
+  const order = rowToOrder(row);
+
+  await notifyBestEffort({
+    userId: order.userId,
+    type: "delivery",
+    title: outcome === "refunded" ? "Your refund was approved" : "Your reported problem was reviewed",
+    body:
+      outcome === "refunded"
+        ? `FindIt reviewed your report on "${order.item}" and approved a refund.`
+        : `FindIt reviewed your report on "${order.item}" and released the payment to the seller.`,
+  });
+
+  const seller = await findUserByBusinessName(order.seller);
+  if (seller) {
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "delivery",
+      title: outcome === "refunded" ? "An order was refunded" : "A reported problem was resolved",
+      body:
+        outcome === "refunded"
+          ? `FindIt refunded the buyer for "${order.item}".`
+          : `FindIt released your payment for "${order.item}".`,
     });
   }
 

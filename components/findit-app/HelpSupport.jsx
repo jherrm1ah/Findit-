@@ -11,12 +11,12 @@ const FAQS = [
   {
     icon: ShoppingBag,
     q: "How does payment work?",
-    a: "When you order, FindIt holds your payment until the seller confirms delivery — so you're never paying a stranger with no way to get your money back.",
+    a: "When you order, FindIt holds your payment until YOU confirm the item arrived — the seller isn't paid before that. If something goes wrong, tap \u201cReport a problem\u201d on the order in My orders and we'll hold the money while we look into it.",
   },
   {
     icon: Store,
     q: "How do I become a seller?",
-    a: "Sign up with a seller account and add your business name. An admin reviews your account before you can respond to requests or list products.",
+    a: "If you already have a FindIt account, open Profile and tap \u201cStart selling on FindIt\u201d \u2014 same account, same phone number. Add your business name and an admin reviews it, usually the same day, before you can list products or answer requests.",
   },
 ];
 

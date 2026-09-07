@@ -1,3 +1,24 @@
+// Routes that legitimately answer 401 to someone who is NOT logged in — a
+// wrong password on the login screen is not an expired session, and must not
+// bounce anyone anywhere.
+const PUBLIC_AUTH_ROUTES = [
+  "/api/auth/login",
+  "/api/auth/signup",
+  "/api/auth/logout",
+  "/api/auth/send-otp",
+  "/api/auth/verify-otp",
+  "/api/auth/resend-otp",
+  "/api/auth/reset-password",
+];
+
+// The app shell registers a handler here at startup. Without it, a session
+// that expires mid-use turns every tap into a generic error while the person
+// keeps staring at stale data, never told they've been signed out.
+let sessionExpiredHandler = null;
+export function setSessionExpiredHandler(fn) {
+  sessionExpiredHandler = fn;
+}
+
 async function request(url, options) {
   const res = await fetch(url, options);
   if (!res.ok) {
@@ -7,6 +28,10 @@ async function request(url, options) {
     // (e.g. retryAfter on a 429) so callers can react to them, not just
     // show the message.
     Object.assign(err, body);
+    if (res.status === 401 && !PUBLIC_AUTH_ROUTES.some((route) => url.startsWith(route))) {
+      err.sessionExpired = true;
+      sessionExpiredHandler?.();
+    }
     throw err;
   }
   return res.json();
@@ -63,6 +88,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     }).then((d) => d.order),
+  // Buyer-only: this is what marks an order delivered and releases the payment.
+  confirmDelivery: (orderId) =>
+    request(`/api/orders/${orderId}/confirm`, { method: "POST" }).then((d) => d.order),
+  reportOrderIssue: (orderId, note) =>
+    request(`/api/orders/${orderId}/issue`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    }).then((d) => d.order),
+
+  becomeSeller: (businessName) =>
+    request("/api/auth/become-seller", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ businessName }),
+    }).then((d) => d.user),
 
   getNotifications: () => request("/api/notifications").then((d) => d.notifications),
   markNotificationRead: (id) =>
@@ -72,6 +113,13 @@ export const api = {
 
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
+  getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
+  resolveOrderIssue: (orderId, outcome) =>
+    request("/api/admin/disputes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId, outcome }),
+    }).then((d) => d.order),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
   lookupUserByPhone: (phone) =>
     request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),

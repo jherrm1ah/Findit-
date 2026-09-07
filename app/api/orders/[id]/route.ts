@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { submitOrderReview, updateOrderStatus, getOrder } from "@/lib/repo";
+import { submitOrderReview, updateOrderStatus, getOrder, assertSellerCanSetStatus } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 
@@ -32,6 +32,9 @@ export async function PATCH(
       );
     }
     try {
+      // "Delivered" is the buyer's word, not the seller's — it goes through
+      // POST /api/orders/[id]/confirm, which is what releases the payment.
+      assertSellerCanSetStatus(body.status);
       const order = await updateOrderStatus(params.id, body.status);
       return NextResponse.json({ order });
     } catch (err) {
