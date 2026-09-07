@@ -1,15 +1,116 @@
 "use client";
 
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText } from "lucide-react";
+import { useState } from "react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus } from "lucide-react";
 import { Pill } from "./shared";
 
 function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
   if (a.action === "seller.rejected") return `Rejected seller "${a.detail?.sellerName ?? a.targetId}"`;
+  if (a.action === "user.promoted_admin") return `Made "${a.detail?.name ?? a.targetId}" an admin`;
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
-export default function AdminQueue({ sellers, requests, onSellerStatusChange, adminActions = [], otpStats = null }) {
+function TeamAccess({ onLookupUser, onPromoteToAdmin, showToast }) {
+  const [phone, setPhone] = useState("");
+  const [result, setResult] = useState(undefined); // undefined = not searched, null = not found, user = found
+  const [looking, setLooking] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [error, setError] = useState(null);
+
+  const findAccount = async () => {
+    if (phone.trim().length < 8 || looking) return;
+    setLooking(true);
+    setError(null);
+    setResult(undefined);
+    try {
+      setResult((await onLookupUser(phone.trim())) ?? null);
+    } catch (err) {
+      setError(err.message || "Couldn't look that up — try again.");
+    } finally {
+      setLooking(false);
+    }
+  };
+
+  const promote = async () => {
+    if (!result || promoting) return;
+    setPromoting(true);
+    setError(null);
+    try {
+      const updated = await onPromoteToAdmin(phone.trim());
+      setResult(updated);
+      showToast?.(`${updated.name} is now an admin.`, "success");
+    } catch (err) {
+      setError(err.message || "Couldn't promote that account.");
+    } finally {
+      setPromoting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4">
+      <div className="flex gap-2">
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => { setPhone(e.target.value); setResult(undefined); setError(null); }}
+          placeholder="Teammate's phone number"
+          className="flex-1 min-w-0 border border-[#ECE9F7] rounded-xl px-3 py-2.5 text-[13px] outline-none focus:border-[#7C3AED]"
+        />
+        <button
+          onClick={findAccount}
+          disabled={phone.trim().length < 8 || looking}
+          className="text-[12.5px] font-semibold text-white px-4 rounded-xl disabled:opacity-40 shrink-0"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {looking ? "Searching…" : "Find account"}
+        </button>
+      </div>
+
+      {error && <p className="text-[12px] text-[#E64980] mt-2">{error}</p>}
+
+      {result === null && (
+        <p className="text-[12px] text-[#6B6483] mt-2">
+          No FindIt account with that phone number yet — they need to sign up first.
+        </p>
+      )}
+
+      {result && (
+        <div className="flex items-center justify-between mt-3 bg-[#F5F2FC] rounded-xl px-3 py-2.5">
+          <div>
+            <p className="text-[13px] font-semibold text-[#1E1B4B]">{result.name}</p>
+            <p className="text-[11px] text-[#6B6483]">
+              {result.role === "admin" ? "Already an admin" : result.role === "seller" ? "Seller account" : "Buyer account"}
+            </p>
+          </div>
+          {result.role === "admin" ? (
+            <ShieldCheck size={16} className="text-[#7C3AED] shrink-0" />
+          ) : (
+            <button
+              onClick={promote}
+              disabled={promoting}
+              className="text-[12px] font-semibold text-white px-3.5 py-2 rounded-full disabled:opacity-40 shrink-0"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              {promoting ? "Promoting…" : "Promote to admin"}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function AdminQueue({
+  sellers,
+  requests,
+  onSellerStatusChange,
+  adminActions = [],
+  otpStats = null,
+  onLookupUser,
+  onPromoteToAdmin,
+  showToast,
+}) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
 
   return (
@@ -55,6 +156,11 @@ export default function AdminQueue({ sellers, requests, onSellerStatusChange, ad
           </div>
         ))}
       </div>
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+        <UserPlus size={13} className="text-[#7C3AED]" /> Team & admin access
+      </p>
+      <TeamAccess onLookupUser={onLookupUser} onPromoteToAdmin={onPromoteToAdmin} showToast={showToast} />
 
       {otpStats && (
         <>

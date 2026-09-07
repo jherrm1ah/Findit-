@@ -107,7 +107,7 @@ Then open http://localhost:3000.
 
 ### Creating an admin account
 
-There's no self-service admin signup (on purpose). Create the first one with:
+There's no self-service admin signup (on purpose). Create the *first* admin — yourself — with:
 
 ```bash
 node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --password "a real password" --name "Your Name"
@@ -115,6 +115,13 @@ node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --passwo
 
 (On Node < 20.6, export `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` yourself instead of using
 `--env-file`.) Log in with that phone number and password to reach the Admin Queue.
+
+**Every admin after that never needs the terminal.** Once you're in the Admin Queue, its "Team &
+admin access" section lets you promote any existing FindIt account to admin by phone number — the
+teammate signs up normally (as a buyer, in the app) and you promote that account from there
+(`POST /api/admin/promote`). There's deliberately no extra gate above this: any admin can promote
+any account, the same trust level `create-admin.mjs` already had — this just moves it into the app
+so only the very first admin ever needs to touch a terminal.
 
 ## Code layout
 

@@ -344,6 +344,14 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleLookupUser = (phone) => api.lookupUserByPhone(phone);
+
+  const handlePromoteToAdmin = async (phone) => {
+    const promoted = await api.promoteToAdmin(phone);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return promoted;
+  };
+
   const handleSendOffer = async (requestId, offerInput) => {
     try {
       await api.sendSellerOffer(requestId, offerInput);
@@ -493,7 +501,16 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
         )}
         {screen === "admin" && (
           isAdmin ? (
-            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} adminActions={adminActions} otpStats={otpStats} />
+            <AdminQueue
+              sellers={sellers}
+              requests={requests}
+              onSellerStatusChange={handleSellerStatusChange}
+              adminActions={adminActions}
+              otpStats={otpStats}
+              onLookupUser={handleLookupUser}
+              onPromoteToAdmin={handlePromoteToAdmin}
+              showToast={showToast}
+            />
           ) : (
             <RoleGate
               title="Admin access needed"

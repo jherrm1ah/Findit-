@@ -73,6 +73,14 @@ export const api = {
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
+  lookupUserByPhone: (phone) =>
+    request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),
+  promoteToAdmin: (phone) =>
+    request("/api/admin/promote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    }).then((d) => d.user),
   setSellerStatus: (id, status) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",

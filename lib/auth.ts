@@ -296,6 +296,45 @@ export async function updateNotificationPref(userId: string, enabled: boolean): 
   return rowToUser(row);
 }
 
+// Admin-facing lookup, e.g. for the "promote a teammate to admin" flow —
+// find the account behind a phone number before granting anything.
+export async function getUserByPhone(phone: string): Promise<User | null> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .select("*")
+    .eq("phone", normalizePhone(phone))
+    .maybeSingle();
+  const row = assertNoError(result, "looking up account") as Row | null;
+  return row ? rowToUser(row) : null;
+}
+
+// Grants full admin access to an existing account. Deliberately no
+// "super-admin" gate above this — any admin can promote any other real
+// account, the same trust model scripts/create-admin.mjs already used
+// (whoever can run it can create an admin); this just moves that into the
+// app so a non-technical founder's team doesn't need the terminal for
+// every teammate after the very first admin exists.
+export async function promoteToAdmin(phone: string): Promise<User> {
+  const user = await getUserByPhone(phone);
+  if (!user) {
+    throw new ValidationError("No FindIt account exists for that phone number yet.");
+  }
+  if (user.role === "admin") {
+    throw new ValidationError(`${user.name} is already an admin.`);
+  }
+
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ role: "admin" })
+    .eq("id", user.id)
+    .select()
+    .single();
+  const row = assertNoError(result, "promoting account to admin") as Row;
+  return rowToUser(row);
+}
+
 export async function createSession(userId: string): Promise<string> {
   const db = getDb();
   const token = crypto.randomBytes(32).toString("hex");
