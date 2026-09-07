@@ -1,11 +1,19 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle } from "lucide-react";
+import { Pill } from "./shared";
 
-export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadAvatar }) {
+const SELLER_STATUS_META = {
+  pending: { label: "Pending review", tone: "gold", icon: Clock },
+  approved: { label: "Verified seller", tone: "green", icon: CheckCircle2 },
+  rejected: { label: "Application rejected", tone: "red", icon: XCircle },
+};
+
+export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadAvatar, sellerStatus }) {
   const fileInputRef = useRef(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const sellerStatusMeta = user.role === "seller" ? SELLER_STATUS_META[sellerStatus] : null;
 
   const handleAvatarChange = async (e) => {
     const file = e.target.files?.[0];
@@ -37,7 +45,12 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadA
       key: "seller",
       icon: LayoutDashboard,
       label: "Seller dashboard",
-      subtitle: user.role === "seller" ? user.businessName : "Requires a seller account",
+      subtitle:
+        user.role === "seller"
+          ? sellerStatus === "pending" || sellerStatus === "rejected"
+            ? sellerStatusMeta.label
+            : user.businessName
+          : "Requires a seller account",
     },
   ];
   const SETTINGS_ROWS = [
@@ -78,13 +91,21 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadA
           onChange={handleAvatarChange}
           className="hidden"
         />
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
             {user.name}
           </p>
           <p className="text-[12px] text-[#6B6483]">
             {user.phone} · {user.role === "seller" ? "Seller account" : "Buyer account"}
           </p>
+          {sellerStatusMeta && (
+            <div className="mt-1.5">
+              <Pill tone={sellerStatusMeta.tone}>
+                <sellerStatusMeta.icon size={11} />
+                {sellerStatusMeta.label}
+              </Pill>
+            </div>
+          )}
         </div>
         <button
           onClick={onLogout}

@@ -28,6 +28,8 @@ export const api = {
     return request("/api/uploads", { method: "POST", body: fd }).then((d) => d.url);
   },
 
+  getMySellerStatus: () => request("/api/sellers/me").then((d) => d.status),
+
   getSavedIds: () => request("/api/saved").then((d) => d.productIds),
   saveItem: (productId) =>
     request("/api/saved", {

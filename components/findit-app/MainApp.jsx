@@ -64,6 +64,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [savedIds, setSavedIds] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [adminActions, setAdminActions] = useState([]);
+  const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -122,6 +123,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     if (isSeller || isAdmin) {
       api.getOpenRequests().then(setRequests).catch(() => {});
     }
+    if (isSeller) {
+      api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
       api.getAdminActions().then(setAdminActions).catch(() => {});
@@ -141,6 +145,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     window.scrollTo?.(0, 0);
     if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
+    }
+    if (s === "profile" && isSeller) {
+      api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
     }
     if (s === "messages" && user) {
       api.getConversations().then(setConversations).catch(() => {});
@@ -491,6 +498,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             onLogout={onLogout}
             unreadCount={notifications.filter((n) => n.unread).length}
             onUploadAvatar={handleUploadAvatar}
+            sellerStatus={mySellerStatus}
           />
         )}
         {screen === "accountDetails" && (
