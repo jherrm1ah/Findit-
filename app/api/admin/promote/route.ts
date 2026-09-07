@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, promoteToAdmin } from "@/lib/auth";
-import { logAdminAction } from "@/lib/repo";
+import { logAdminAction, notifyBestEffort } from "@/lib/repo";
 import { errorResponse } from "@/lib/errors";
 
 export async function POST(req: NextRequest) {
@@ -29,6 +29,16 @@ export async function POST(req: NextRequest) {
       targetType: "user",
       targetId: promoted.id,
       detail: { name: promoted.name },
+    });
+    // Let the promoted account know — otherwise the only way they'd find
+    // out is stumbling onto the Admin queue tab next time they open the
+    // app. notifyBestEffort already handles failures gracefully and skips
+    // the write if this user has notifications turned off.
+    await notifyBestEffort({
+      userId: promoted.id,
+      type: "admin",
+      title: "You're now a FindIt admin",
+      body: "You've been granted admin access — you can verify sellers and review unmatched requests from the Admin queue.",
     });
     return NextResponse.json({ user: promoted });
   } catch (err) {

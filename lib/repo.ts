@@ -592,7 +592,7 @@ export async function createNotification(input: {
 // of some other action succeeding (a new order landed, a status changed) —
 // the primary action has already committed, so a notification failure here
 // should be logged, not surfaced as a failure of that action.
-async function notifyBestEffort(input: {
+export async function notifyBestEffort(input: {
   userId: string;
   type: string;
   title: string;

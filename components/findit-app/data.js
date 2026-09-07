@@ -1,7 +1,7 @@
 import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
-  Send, ShieldCheck, Star, Truck, BadgeCheck,
+  Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -43,6 +43,7 @@ export const NOTIFICATION_ICONS = {
   payment: ShieldCheck,
   review: Star,
   seller: BadgeCheck,
+  admin: ShieldPlus,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
