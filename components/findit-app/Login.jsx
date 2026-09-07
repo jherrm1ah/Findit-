@@ -83,11 +83,20 @@ export default function Login({ onDone, showToast }) {
   };
 
   const verifyCode = async () => {
-    if (otpCode.trim().length !== 6 || loading || codeExpired) return;
+    if (!/^\d{6}$/.test(otpCode) || loading || codeExpired) return;
     setLoading(true);
     setError(null);
     try {
-      await api.verifyOtp(phone, otpCode.trim(), mode === "reset" ? "reset" : "signup");
+      try {
+        await api.verifyOtp(phone, otpCode.trim(), mode === "reset" ? "reset" : "signup");
+      } catch (err) {
+        // Clear the boxes so the next attempt starts from a clean field rather
+        // than leaving the rejected digits in place for the user to delete.
+        // Only on a rejected code: if the code was accepted and signup then
+        // failed, wiping it would leave the user unable to retry.
+        setOtpCode("");
+        throw err;
+      }
       if (mode === "reset") {
         setStep("newPassword");
       } else {
@@ -305,9 +314,9 @@ export default function Login({ onDone, showToast }) {
 
         <button
           onClick={verifyCode}
-          disabled={otpCode.trim().length !== 6 || loading || codeExpired}
+          disabled={!/^\d{6}$/.test(otpCode) || loading || codeExpired}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${
-            otpCode.trim().length !== 6 || loading || codeExpired ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
+            !/^\d{6}$/.test(otpCode) || loading || codeExpired ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >

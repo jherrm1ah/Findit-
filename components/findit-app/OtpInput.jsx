@@ -15,9 +15,19 @@ export default function OtpInput({ value, onChange, length = 6, disabled, autoFo
     if (autoFocus) refs.current[0]?.focus();
   }, [autoFocus]);
 
+  // When the code is cleared from outside (a rejected or resent code), put the
+  // caret back in the first box so the next attempt can just be typed.
+  const previousValue = useRef(value);
+  useEffect(() => {
+    if (previousValue.current !== "" && value === "") refs.current[0]?.focus();
+    previousValue.current = value;
+  }, [value]);
+
   const setDigitAt = (index, char) => {
-    const chars = value.padEnd(length, "").split("");
-    chars[index] = char;
+    // Pad with spaces (not "", which pads nothing) so a digit typed into a
+    // later box keeps its position instead of collapsing to the front.
+    const chars = value.padEnd(length, " ").split("");
+    chars[index] = char || " ";
     onChange(chars.join("").slice(0, length).replace(/\s+$/, ""));
   };
 
@@ -42,6 +52,15 @@ export default function OtpInput({ value, onChange, length = 6, disabled, autoFo
   const handleKeyDown = (index, e) => {
     if (e.key === "Backspace" && !value[index] && index > 0) {
       refs.current[index - 1]?.focus();
+      return;
+    }
+    // maxLength={1} makes the browser silently swallow a keystroke aimed at a
+    // box that already holds a digit, so onChange never fires and retyping a
+    // code after a wrong attempt does nothing. Handle digits here instead.
+    if (/^\d$/.test(e.key) && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      setDigitAt(index, e.key);
+      if (index < length - 1) refs.current[index + 1]?.focus();
     }
   };
 
@@ -66,6 +85,7 @@ export default function OtpInput({ value, onChange, length = 6, disabled, autoFo
           value={value[i] || ""}
           onChange={(e) => handleChange(i, e)}
           onKeyDown={(e) => handleKeyDown(i, e)}
+          onFocus={(e) => e.target.select()}
           disabled={disabled}
           aria-label={`Digit ${i + 1} of ${length}`}
           className="w-11 h-[52px] text-center text-[18px] font-semibold rounded-xl border border-[#ECE9F7] text-[#1E1B4B] outline-none focus:border-[#7C3AED] disabled:opacity-50"
