@@ -2,7 +2,12 @@ async function request(url, options) {
   const res = await fetch(url, options);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `Request failed: ${res.status}`);
+    const err = new Error(body.error || `Request failed: ${res.status}`);
+    // Carry through any extra fields a route attaches to an error response
+    // (e.g. retryAfter on a 429) so callers can react to them, not just
+    // show the message.
+    Object.assign(err, body);
+    throw err;
   }
   return res.json();
 }
@@ -67,6 +72,7 @@ export const api = {
 
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
+  getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
   setSellerStatus: (id, status) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",
@@ -129,11 +135,17 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone, purpose }),
     }),
-  verifyOtp: (phone, code) =>
+  resendOtp: (phone, purpose = "signup") =>
+    request("/api/auth/resend-otp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, purpose }),
+    }),
+  verifyOtp: (phone, code, purpose = "signup") =>
     request("/api/auth/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone, code }),
+      body: JSON.stringify({ phone, code, purpose }),
     }),
   resetPassword: (phone, newPassword) =>
     request("/api/auth/reset-password", {

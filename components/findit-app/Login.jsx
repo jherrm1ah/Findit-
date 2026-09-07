@@ -1,9 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, User, Store } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { api } from "./api";
+import OtpInput from "./OtpInput";
+
+function formatMMSS(totalSeconds) {
+  const s = Math.max(0, totalSeconds);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+}
 
 export default function Login({ onDone, showToast }) {
   const [mode, setMode] = useState("login"); // login | signup | reset
@@ -20,6 +28,26 @@ export default function Login({ onDone, showToast }) {
   const [error, setError] = useState(null);
   const [newPassword, setNewPassword] = useState("");
   const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [expiresAt, setExpiresAt] = useState(null);
+  const [resendAvailableAt, setResendAvailableAt] = useState(null);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    if (step !== "code") return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [step]);
+
+  const secondsLeft = expiresAt ? Math.max(0, Math.round((expiresAt - now) / 1000)) : 0;
+  const resendSecondsLeft = resendAvailableAt ? Math.max(0, Math.round((resendAvailableAt - now) / 1000)) : 0;
+  const codeExpired = step === "code" && expiresAt !== null && secondsLeft <= 0;
+
+  const applyOtpTimers = (otpResult) => {
+    const expiresIn = otpResult?.expiresIn ?? 600;
+    const resendIn = otpResult?.resendAvailableIn ?? 60;
+    setExpiresAt(Date.now() + expiresIn * 1000);
+    setResendAvailableAt(Date.now() + resendIn * 1000);
+  };
 
   const valid =
     phone.trim().length >= 10 &&
@@ -45,6 +73,7 @@ export default function Login({ onDone, showToast }) {
         onDone(await doSignup());
         return;
       }
+      applyOtpTimers(otpResult);
       setStep("code");
     } catch (err) {
       setError(err.message || "Something went wrong — try again.");
@@ -54,11 +83,11 @@ export default function Login({ onDone, showToast }) {
   };
 
   const verifyCode = async () => {
-    if (otpCode.trim().length < 4 || loading) return;
+    if (otpCode.trim().length !== 6 || loading || codeExpired) return;
     setLoading(true);
     setError(null);
     try {
-      await api.verifyOtp(phone, otpCode.trim());
+      await api.verifyOtp(phone, otpCode.trim(), mode === "reset" ? "reset" : "signup");
       if (mode === "reset") {
         setStep("newPassword");
       } else {
@@ -72,13 +101,21 @@ export default function Login({ onDone, showToast }) {
   };
 
   const resendCode = async () => {
-    if (resending) return;
+    if (resending || resendSecondsLeft > 0) return;
     setResending(true);
     setError(null);
     try {
-      await api.sendOtp(phone, mode === "reset" ? "reset" : "signup");
+      const otpResult = await api.resendOtp(phone, mode === "reset" ? "reset" : "signup");
+      applyOtpTimers(otpResult);
+      setOtpCode("");
       showToast?.("Code resent.", "success");
     } catch (err) {
+      // A cooldown rejection carries retryAfter — sync the timer to it
+      // rather than just showing an error, so the button reflects reality
+      // even if the client's own countdown drifted from the server's.
+      if (typeof err.retryAfter === "number") {
+        setResendAvailableAt(Date.now() + err.retryAfter * 1000);
+      }
       setError(err.message || "Couldn't resend the code — try again.");
     } finally {
       setResending(false);
@@ -96,6 +133,7 @@ export default function Login({ onDone, showToast }) {
         setMode("login");
         return;
       }
+      applyOtpTimers(otpResult);
       setStep("code");
     } catch (err) {
       setError(err.message || "Something went wrong — try again.");
@@ -229,6 +267,7 @@ export default function Login({ onDone, showToast }) {
   }
 
   if (step === "code") {
+    const maskedPhone = phone.length > 4 ? `${phone.slice(0, -4).replace(/./g, "•")}${phone.slice(-4)}` : phone;
     return (
       <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
         <div className="flex flex-col items-center mb-8">
@@ -237,38 +276,38 @@ export default function Login({ onDone, showToast }) {
             Verify your phone
           </h1>
           <p className="text-[13px] text-[#6B6483] mt-1 text-center">
-            Enter the code we sent to {phone}.
+            We sent a 6-digit code to {maskedPhone}.
           </p>
         </div>
 
-        <Field label="Verification code">
-          <input
-            type="tel"
-            inputMode="numeric"
-            maxLength={6}
-            value={otpCode}
-            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-            placeholder="123456"
-            className="input tracking-[0.3em] text-center"
-          />
-        </Field>
+        <OtpInput value={otpCode} onChange={setOtpCode} disabled={loading || codeExpired} />
 
-        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+        <p className={`text-center text-[12px] mt-4 ${codeExpired ? "text-[#E64980] font-medium" : "text-[#8A8372]"}`}>
+          {codeExpired ? "This code has expired. Please request a new one." : `Code expires in ${formatMMSS(secondsLeft)}`}
+        </p>
 
-        <button
-          type="button"
-          onClick={resendCode}
-          disabled={resending}
-          className="text-[12px] font-medium text-[#7C3AED] text-right mt-3 mb-6 self-end disabled:opacity-40"
-        >
-          {resending ? "Resending…" : "Resend code"}
-        </button>
+        {error && <p className="text-[12px] text-[#E64980] text-center mt-3">{error}</p>}
+
+        <div className="text-center mt-3 mb-6">
+          {resendSecondsLeft > 0 ? (
+            <span className="text-[12px] text-[#8A8372]">Resend available in {formatMMSS(resendSecondsLeft)}</span>
+          ) : (
+            <button
+              type="button"
+              onClick={resendCode}
+              disabled={resending}
+              className="text-[12px] font-semibold text-[#7C3AED] disabled:opacity-40"
+            >
+              {resending ? "Resending…" : "Resend code"}
+            </button>
+          )}
+        </div>
 
         <button
           onClick={verifyCode}
-          disabled={otpCode.trim().length < 4 || loading}
+          disabled={otpCode.trim().length !== 6 || loading || codeExpired}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${
-            otpCode.trim().length < 4 || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
+            otpCode.trim().length !== 6 || loading || codeExpired ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
@@ -278,7 +317,7 @@ export default function Login({ onDone, showToast }) {
 
         <button
           type="button"
-          onClick={() => { setStep("form"); setOtpCode(""); setError(null); }}
+          onClick={() => { setStep("form"); setOtpCode(""); setError(null); setExpiresAt(null); setResendAvailableAt(null); }}
           className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
         >
           ← Change phone number

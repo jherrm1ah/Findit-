@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle } from "lucide-react";
 import { Pill } from "./shared";
+import { formatPhoneLocal } from "@/lib/phone";
 
 const SELLER_STATUS_META = {
   pending: { label: "Pending review", tone: "gold", icon: Clock },
@@ -96,7 +97,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, onUploadA
             {user.name}
           </p>
           <p className="text-[12px] text-[#6B6483]">
-            {user.phone} · {user.role === "seller" ? "Seller account" : "Buyer account"}
+            {formatPhoneLocal(user.phone)} · {user.role === "seller" ? "Seller account" : "Buyer account"}
           </p>
           {sellerStatusMeta && (
             <div className="mt-1.5">

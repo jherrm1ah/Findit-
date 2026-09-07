@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText } from "lucide-react";
 import { Pill } from "./shared";
 
 function describeAction(a) {
@@ -9,7 +9,7 @@ function describeAction(a) {
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
-export default function AdminQueue({ sellers, requests, onSellerStatusChange, adminActions = [] }) {
+export default function AdminQueue({ sellers, requests, onSellerStatusChange, adminActions = [], otpStats = null }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
 
   return (
@@ -55,6 +55,29 @@ export default function AdminQueue({ sellers, requests, onSellerStatusChange, ad
           </div>
         ))}
       </div>
+
+      {otpStats && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+            <MessageSquareText size={13} className="text-[#7C3AED]" /> OTP activity (last {otpStats.windowDays} days)
+          </p>
+          <div className="grid grid-cols-3 gap-2.5 mb-2">
+            {[
+              ["Codes sent", otpStats.totalRequested],
+              ["Verified", otpStats.totalVerified],
+              ["Expired unused", otpStats.totalExpiredUnverified],
+              ["Wrong attempts", otpStats.totalFailedAttempts],
+              ["Resends", otpStats.totalResends],
+              ["Signup / Reset", `${otpStats.signupRequests} / ${otpStats.resetRequests}`],
+            ].map(([label, value]) => (
+              <div key={label} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
+                <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+                <p className="text-[10.5px] text-[#6B6483]">{label}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
         <ShieldCheck size={13} className="text-[#7C3AED]" /> Admin activity log

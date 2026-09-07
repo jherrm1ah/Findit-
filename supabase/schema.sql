@@ -254,6 +254,32 @@ create table if not exists admin_actions (
 create index if not exists admin_actions_created_at_idx on admin_actions(created_at desc);
 
 -- ---------------------------------------------------------------------------
+-- otp_verifications — self-managed phone-verification codes (see lib/otp.ts
+-- and lib/sms.ts). FindIt generates and hashes the code itself and sends it
+-- as a plain SMS through Termii — Termii never sees or manages the code.
+-- ---------------------------------------------------------------------------
+
+create table if not exists otp_verifications (
+  id text primary key,
+  phone text not null,
+  purpose text not null check (purpose in ('signup', 'reset')),
+  otp_hash text not null,
+  otp_salt text not null,
+  expires_at timestamptz not null,
+  created_at timestamptz not null default now(),
+  verified_at timestamptz,
+  attempts integer not null default 0,
+  max_attempts integer not null default 5,
+  resend_count integer not null default 0,
+  last_sent_at timestamptz not null default now(),
+  used boolean not null default false,
+  request_ip text
+);
+create index if not exists otp_verifications_phone_purpose_idx on otp_verifications(phone, purpose);
+create index if not exists otp_verifications_expires_at_idx on otp_verifications(expires_at);
+create index if not exists otp_verifications_created_at_idx on otp_verifications(created_at);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
 -- the note at the top of this file). All real access control lives in the
 -- Next.js API layer.
@@ -271,3 +297,4 @@ alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table saved_items enable row level security;
 alter table admin_actions enable row level security;
+alter table otp_verifications enable row level security;

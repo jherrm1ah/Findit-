@@ -3,7 +3,7 @@ import { createUser, createSession, setSessionCookie, normalizePhone } from "@/l
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
 import { isSmsConfigured } from "@/lib/sms";
-import { isRecentlyVerified, clearOtp } from "@/lib/otpStore";
+import { isRecentlyVerified, clearOtp } from "@/lib/otp";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   const normalizedPhone = normalizePhone(phone);
-  const phoneVerified = isSmsConfigured() ? isRecentlyVerified(normalizedPhone) : true;
+  const phoneVerified = isSmsConfigured() ? await isRecentlyVerified(normalizedPhone, "signup") : true;
   if (isSmsConfigured() && !phoneVerified) {
     return NextResponse.json(
       { error: "Verify your phone number first." },
@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
       businessName: role === "seller" ? businessName!.trim() : null,
       phoneVerified,
     });
-    if (isSmsConfigured()) clearOtp(normalizedPhone);
+    if (isSmsConfigured()) await clearOtp(normalizedPhone, "signup");
     const token = await createSession(user.id);
     const res = NextResponse.json({ user });
     setSessionCookie(res, token);

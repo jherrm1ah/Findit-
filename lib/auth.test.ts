@@ -9,9 +9,25 @@ import { hashPassword, normalizePhone } from "./auth";
 // Supabase project (see README.md).
 
 describe("normalizePhone", () => {
-  it("strips spaces and punctuation but keeps a leading +", () => {
-    expect(normalizePhone("080 123 4567")).toBe("0801234567");
-    expect(normalizePhone("+234 803 000 0000")).toBe("+2348030000000");
+  it("normalizes Nigerian local format to E.164", () => {
+    expect(normalizePhone("0801 234 5678")).toBe("+2348012345678");
+  });
+
+  it("collapses every common format for the same number to one value", () => {
+    // This is the actual bug the E.164 rewrite fixes: these three used to
+    // normalize to three different strings, meaning the same real phone
+    // number could register three different accounts, or an OTP sent for
+    // one format would never match a login attempt typed in another.
+    const local = normalizePhone("08012345678");
+    const withCountryCode = normalizePhone("2348012345678");
+    const e164 = normalizePhone("+2348012345678");
+    expect(local).toBe("+2348012345678");
+    expect(withCountryCode).toBe("+2348012345678");
+    expect(e164).toBe("+2348012345678");
+  });
+
+  it("passes through an already-E.164 number from another country untouched", () => {
+    expect(normalizePhone("+14155552671")).toBe("+14155552671");
   });
 });
 

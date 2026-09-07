@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Field } from "./shared";
+import { formatPhoneLocal } from "@/lib/phone";
 
 export default function AccountDetails({
   user,
@@ -19,11 +20,11 @@ export default function AccountDetails({
   const [savingBusinessName, setSavingBusinessName] = useState(false);
   useEffect(() => setBusinessName(user.businessName || ""), [user.businessName]);
 
-  const [newPhone, setNewPhone] = useState(user.phone);
+  const [newPhone, setNewPhone] = useState(formatPhoneLocal(user.phone));
   const [phonePassword, setPhonePassword] = useState("");
   const [savingPhone, setSavingPhone] = useState(false);
   const [phoneError, setPhoneError] = useState(null);
-  useEffect(() => setNewPhone(user.phone), [user.phone]);
+  useEffect(() => setNewPhone(formatPhoneLocal(user.phone)), [user.phone]);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");

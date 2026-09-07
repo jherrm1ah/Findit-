@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
+import { normalizeE164 } from "./phone";
 
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
@@ -45,9 +46,11 @@ export function hashPassword(password: string, salt: string): string {
   return crypto.scryptSync(password, salt, 64).toString("hex");
 }
 
-export function normalizePhone(phone: string): string {
-  return phone.replace(/[^\d+]/g, "");
-}
+// Canonical phone normalization for the whole app — see lib/phone.ts for
+// the actual rules (E.164, Nigeria-first). Every login/signup/OTP/phone-
+// change path goes through this so "08012345678", "2348012345678", and
+// "+2348012345678" are always the same account, never three different ones.
+export const normalizePhone = normalizeE164;
 
 export async function createUser(input: {
   phone: string;

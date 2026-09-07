@@ -171,23 +171,38 @@ session and check the caller is a participant in the conversation. Notification 
 check the row actually belongs to the calling user.
 
 `POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/send-otp`,
-`POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, and `POST /api/ai/classify-request`
-are rate-limited — a 429 with a friendly error is returned once the limit is hit.
+`POST /api/auth/resend-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, and
+`POST /api/ai/classify-request` are rate-limited — a 429 with a friendly error is returned once the
+limit is hit.
 
 **Phone verification (OTP)** is optional and off by default. Set `TERMII_API_KEY` (see
-`.env.example`) to turn it on — signup then sends a real SMS code via [Termii](https://termii.com)
-and requires it to be verified before the account is created. With no key set, signup works exactly
-as before (no OTP step). The verification ticket itself lives in an in-memory store
-(`lib/otpStore.ts`, same single-process caveat as `lib/rateLimit.ts` below) — Termii holds the
-actual code, we only ever hold an opaque reference to it.
+`.env.example`) to turn it on — signup and "Forgot password?" then send a real SMS code via
+[Termii](https://termii.com) and require it to be verified before the account is created / the
+password is reset. With no key set, both flows work exactly as before (no OTP step; "Forgot
+password?" shows the original "contact support" message).
 
-The same OTP machinery backs **"Forgot password?"** on the login screen: enter your phone, verify
-the code, choose a new password — no session or old password needed, since the whole point is
-recovering an account you're locked out of. `POST /api/auth/send-otp` takes a `purpose` of
-`"signup"` (default; errors if the phone is already registered) or `"reset"` (silently no-ops for
-an unregistered phone instead of erroring, so the endpoint can't be used to enumerate which phone
-numbers have accounts). With no `TERMII_API_KEY` set, "Forgot password?" falls back to the original
-"contact support" message — same fail-open pattern as signup.
+FindIt owns the OTP itself end to end — Termii is only ever the SMS delivery channel
+(`lib/sms.ts#sendSms`, a plain transactional SMS via Termii's `dnd` route), never a party that
+generates, stores, or verifies the code:
+
+- `lib/otp.ts` generates a cryptographically random 6-digit code (`crypto.randomInt`), stores only
+  a salted HMAC-SHA256 hash of it (`otp_verifications.otp_hash`/`otp_salt` — see
+  `supabase/migrations/006_otp_verifications.sql`), and never logs or returns the plaintext code.
+- Every code is scoped to a `purpose` (`"signup"` or `"reset"`) — a code issued for one can't verify
+  the other, and `POST /api/auth/send-otp`'s `purpose: "reset"` path never reveals whether a phone
+  number has an account (identical response either way; an SMS is only actually sent when one does).
+- Expiry, resend cooldown, max resends per code, and max verify attempts per code are all enforced
+  server-side against the database record (never trust a client-side countdown) and are
+  configurable via `OTP_EXPIRY_MINUTES` / `OTP_RESEND_COOLDOWN_SECONDS` / `OTP_MAX_RESENDS` /
+  `OTP_MAX_ATTEMPTS` / `OTP_MAX_REQUESTS_PER_HOUR` (see `.env.example`) — defaults match what's
+  described above. Verifying a code atomically marks it used (conditioned on `used = false` in the
+  same `UPDATE`), so two concurrent requests with the same correct code can't both succeed.
+- Phone numbers are canonicalized to E.164 everywhere (`lib/phone.ts`) — `08012345678`,
+  `2348012345678`, and `+2348012345678` all resolve to the same account and the same OTP record,
+  Nigeria-first but built to extend to other countries later.
+- Admins get an aggregate, non-identifying view of recent OTP activity (codes sent, verified,
+  expired unused, wrong attempts, resends) at the bottom of the Admin queue screen
+  (`GET /api/admin/otp-stats`) — never plaintext codes, never which phone numbers were involved.
 
 **On Row Level Security:** this app doesn't use Supabase Auth, so Postgres RLS can't be tied to a
 logged-in user's identity the way it would with a Supabase-Auth-based app. RLS is enabled on every
@@ -248,17 +263,23 @@ Runs the Vitest suite (`lib/**/*.test.ts`). Since the database is now a real Sup
 project rather than a local SQLite file, and this environment may not have network access to
 Supabase, the automated tests cover the real business logic that doesn't require a live database —
 input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
-math, password hashing, phone normalization, and the real-world distance math behind "near you" —
-extracted into pure, directly-testable functions in `lib/repo.ts`/`lib/auth.ts`/`lib/geo.ts`. The
-database-touching paths (signup/login, creating orders, accepting offers, messaging, saving a
-product's/request's location, etc.) need to be verified by actually running the app against a real
-Supabase project, the same way you'd test any app whose database lives outside your own machine.
+math, password hashing, phone normalization (`lib/phone.ts`), OTP code generation/hashing/config
+(`lib/otp.ts`), and the real-world distance math behind "near you" — extracted into pure,
+directly-testable functions in `lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`.
+The database-touching paths (signup/login, creating orders, accepting offers, messaging, the full
+OTP send/verify/resend cycle against `otp_verifications`, saving a product's/request's location,
+etc.) need to be verified by actually running the app against a real Supabase project, the same way
+you'd test any app whose database lives outside your own machine. The OTP UI flow (6-digit entry,
+countdown, resend, error states) was verified end-to-end with mocked API responses via Playwright,
+the same way the rest of this app's UI has been throughout this project.
 
 ## Next steps toward a real product
 
 A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
 deployment (see the note in "Testing" — this repo has never been deployed to a live host), and a
 real seller ID/document verification system (currently admin approval is a judgment call, not a
-document check). Phone verification (OTP) at signup is built (see "Security" above) but needs a
-real `TERMII_API_KEY` to turn on and has not been tested against Termii's live API from this
-environment (no network access here to termii.com) — verify it end-to-end once a key is added.
+document check). Phone verification (OTP) at signup and password reset is fully built (see
+"Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
+path has not been tested against Termii's live API from this environment (no network access here to
+termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
+documentation, not tested against a live account) — verify it end-to-end once a key is added.

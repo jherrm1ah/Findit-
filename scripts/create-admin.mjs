@@ -29,8 +29,17 @@ function parseArgs(argv) {
   return args;
 }
 
+// Mirrors lib/phone.ts#normalizeE164 (kept in sync by hand — this script
+// runs standalone via node --env-file, not through the Next.js build, so it
+// can't import a .ts module directly).
 function normalizePhone(phone) {
-  return phone.replace(/[^\d+]/g, "");
+  const digitsAndPlus = phone.trim().replace(/[^\d+]/g, "");
+  if (/^\+\d{8,15}$/.test(digitsAndPlus)) return digitsAndPlus;
+  const digitsOnly = digitsAndPlus.replace(/\+/g, "");
+  if (/^0\d{10}$/.test(digitsOnly)) return `+234${digitsOnly.slice(1)}`;
+  if (digitsOnly.startsWith("234") && digitsOnly.length === 13) return `+${digitsOnly}`;
+  if (/^\d{10}$/.test(digitsOnly)) return `+234${digitsOnly}`;
+  return `+${digitsOnly}`;
 }
 
 function hashPassword(password, salt) {

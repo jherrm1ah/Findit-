@@ -64,6 +64,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [savedIds, setSavedIds] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [adminActions, setAdminActions] = useState([]);
+  const [otpStats, setOtpStats] = useState(null);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
 
   // Real device/account location — set only once the user explicitly grants
@@ -129,6 +130,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
       api.getAdminActions().then(setAdminActions).catch(() => {});
+      api.getOtpStats().then(setOtpStats).catch(() => {});
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
@@ -491,7 +493,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
         )}
         {screen === "admin" && (
           isAdmin ? (
-            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} adminActions={adminActions} />
+            <AdminQueue sellers={sellers} requests={requests} onSellerStatusChange={handleSellerStatusChange} adminActions={adminActions} otpStats={otpStats} />
           ) : (
             <RoleGate
               title="Admin access needed"

@@ -3,15 +3,15 @@ import { normalizePhone, resetPasswordForPhone } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
 import { isSmsConfigured } from "@/lib/sms";
-import { isRecentlyVerified, clearOtp } from "@/lib/otpStore";
+import { isRecentlyVerified, clearOtp } from "@/lib/otp";
 
 const MAX_ATTEMPTS = 5;
 const WINDOW_MS = 15 * 60 * 1000;
 
 // Unauthenticated by design — this IS the "I can't log in" recovery path.
 // Safety instead comes from requiring a phone that was just OTP-verified
-// (see lib/otpStore.ts#isRecentlyVerified), the same proof-of-phone-
-// ownership gate signup uses.
+// (see lib/otp.ts#isRecentlyVerified), the same proof-of-phone-ownership
+// gate signup uses.
 export async function POST(req: NextRequest) {
   if (!isSmsConfigured()) {
     return NextResponse.json(
@@ -40,13 +40,13 @@ export async function POST(req: NextRequest) {
   }
 
   const phone = normalizePhone(body.phone);
-  if (!isRecentlyVerified(phone)) {
+  if (!(await isRecentlyVerified(phone, "reset"))) {
     return NextResponse.json({ error: "Verify your phone number first." }, { status: 400 });
   }
 
   try {
     await resetPasswordForPhone(phone, body.newPassword);
-    clearOtp(phone);
+    await clearOtp(phone, "reset");
     return NextResponse.json({ ok: true });
   } catch (err) {
     return errorResponse(err, "Couldn't reset your password.");
