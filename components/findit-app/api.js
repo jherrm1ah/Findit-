@@ -123,17 +123,23 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.user),
   logout: () => request("/api/auth/logout", { method: "POST" }),
-  sendOtp: (phone) =>
+  sendOtp: (phone, purpose = "signup") =>
     request("/api/auth/send-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, purpose }),
     }),
   verifyOtp: (phone, code) =>
     request("/api/auth/verify-otp", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone, code }),
+    }),
+  resetPassword: (phone, newPassword) =>
+    request("/api/auth/reset-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, newPassword }),
     }),
   updateName: (name) =>
     request("/api/auth/name", {

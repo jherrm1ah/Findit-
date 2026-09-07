@@ -11,7 +11,7 @@ const MAX_ATTEMPTS_PER_PHONE = 3;
 const WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
-  let body: { phone?: string };
+  let body: { phone?: string; purpose?: string };
   try {
     body = await req.json();
   } catch {
@@ -20,6 +20,7 @@ export async function POST(req: NextRequest) {
   if (!body.phone || body.phone.trim().length < 10) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
+  const purpose = body.purpose === "reset" ? "reset" : "signup";
 
   // Not configured yet (no TERMII_API_KEY) — tell the client to skip
   // straight to signup instead of erroring, so this feature can ship
@@ -44,11 +45,21 @@ export async function POST(req: NextRequest) {
     await getDb().from("users").select("id").eq("phone", phone).maybeSingle(),
     "checking for an existing account"
   );
-  if (existing) {
-    return NextResponse.json(
-      { error: "An account with this phone number already exists." },
-      { status: 400 }
-    );
+
+  if (purpose === "signup") {
+    if (existing) {
+      return NextResponse.json(
+        { error: "An account with this phone number already exists." },
+        { status: 400 }
+      );
+    }
+  } else {
+    // purpose === "reset": never reveal whether an account exists for this
+    // phone — respond identically either way, and only actually spend an
+    // SMS (and create a pending OTP) when there's a real account behind it.
+    if (!existing) {
+      return NextResponse.json({ enabled: true, sent: true });
+    }
   }
 
   try {

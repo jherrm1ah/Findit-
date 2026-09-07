@@ -6,8 +6,8 @@ import { Logo, Field } from "./shared";
 import { api } from "./api";
 
 export default function Login({ onDone, showToast }) {
-  const [mode, setMode] = useState("login"); // login | signup
-  const [step, setStep] = useState("form"); // form | code (signup phone verification)
+  const [mode, setMode] = useState("login"); // login | signup | reset
+  const [step, setStep] = useState("form"); // form | code | newPassword
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -18,6 +18,8 @@ export default function Login({ onDone, showToast }) {
   const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
 
   const valid =
     phone.trim().length >= 10 &&
@@ -51,13 +53,17 @@ export default function Login({ onDone, showToast }) {
     }
   };
 
-  const verifyAndCreateAccount = async () => {
+  const verifyCode = async () => {
     if (otpCode.trim().length < 4 || loading) return;
     setLoading(true);
     setError(null);
     try {
       await api.verifyOtp(phone, otpCode.trim());
-      onDone(await doSignup());
+      if (mode === "reset") {
+        setStep("newPassword");
+      } else {
+        onDone(await doSignup());
+      }
     } catch (err) {
       setError(err.message || "Something went wrong — try again.");
     } finally {
@@ -70,7 +76,7 @@ export default function Login({ onDone, showToast }) {
     setResending(true);
     setError(null);
     try {
-      await api.sendOtp(phone);
+      await api.sendOtp(phone, mode === "reset" ? "reset" : "signup");
       showToast?.("Code resent.", "success");
     } catch (err) {
       setError(err.message || "Couldn't resend the code — try again.");
@@ -78,6 +84,149 @@ export default function Login({ onDone, showToast }) {
       setResending(false);
     }
   };
+
+  const sendResetCode = async () => {
+    if (phone.trim().length < 10 || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const otpResult = await api.sendOtp(phone, "reset");
+      if (otpResult.enabled === false) {
+        showToast?.("Password reset isn't available yet — contact support.", "error");
+        setMode("login");
+        return;
+      }
+      setStep("code");
+    } catch (err) {
+      setError(err.message || "Something went wrong — try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const submitNewPassword = async () => {
+    if (newPassword.length < 4 || newPassword !== newPasswordConfirm || loading) return;
+    setLoading(true);
+    setError(null);
+    try {
+      await api.resetPassword(phone, newPassword);
+      showToast?.("Password updated — log in with your new password.", "success");
+      setMode("login");
+      setStep("form");
+      setPassword("");
+      setNewPassword("");
+      setNewPasswordConfirm("");
+      setOtpCode("");
+    } catch (err) {
+      setError(err.message || "Something went wrong — try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (mode === "reset" && step === "form") {
+    return (
+      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+        <div className="flex flex-col items-center mb-8">
+          <Logo size={44} />
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+            Reset your password
+          </h1>
+          <p className="text-[13px] text-[#6B6483] mt-1 text-center">
+            Enter your phone number and we'll send you a code.
+          </p>
+        </div>
+
+        <Field label="Phone number">
+          <input
+            type="tel"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+            placeholder="080X XXX XXXX"
+            className="input"
+          />
+        </Field>
+
+        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+
+        <button
+          onClick={sendResetCode}
+          disabled={phone.trim().length < 10 || loading}
+          className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-6 mb-4 ${
+            phone.trim().length < 10 || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
+          }`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {loading ? "Sending…" : "Send code"}
+          {!loading && <ArrowRight size={16} />}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => { setMode("login"); setError(null); }}
+          className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
+        >
+          ← Back to log in
+        </button>
+
+        <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
+      </div>
+    );
+  }
+
+  if (mode === "reset" && step === "newPassword") {
+    const validNewPassword = newPassword.length >= 4 && newPassword === newPasswordConfirm;
+    return (
+      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+        <div className="flex flex-col items-center mb-8">
+          <Logo size={44} />
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+            Choose a new password
+          </h1>
+          <p className="text-[13px] text-[#6B6483] mt-1 text-center">Your phone number is verified.</p>
+        </div>
+
+        <div className="space-y-4">
+          <Field label="New password">
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="At least 4 characters"
+              className="input"
+            />
+          </Field>
+          <Field label="Confirm new password">
+            <input
+              type="password"
+              value={newPasswordConfirm}
+              onChange={(e) => setNewPasswordConfirm(e.target.value)}
+              className="input"
+            />
+          </Field>
+        </div>
+
+        {newPassword && newPasswordConfirm && newPassword !== newPasswordConfirm && (
+          <p className="text-[12px] text-[#E64980] mt-3">Passwords don't match.</p>
+        )}
+        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+
+        <button
+          onClick={submitNewPassword}
+          disabled={!validNewPassword || loading}
+          className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-6 ${
+            !validNewPassword || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
+          }`}
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {loading ? "Saving…" : "Reset password"}
+          {!loading && <ArrowRight size={16} />}
+        </button>
+
+        <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
+      </div>
+    );
+  }
 
   if (step === "code") {
     return (
@@ -116,14 +265,14 @@ export default function Login({ onDone, showToast }) {
         </button>
 
         <button
-          onClick={verifyAndCreateAccount}
+          onClick={verifyCode}
           disabled={otpCode.trim().length < 4 || loading}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${
             otpCode.trim().length < 4 || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
-          {loading ? "Verifying…" : "Verify & create account"}
+          {loading ? "Verifying…" : mode === "reset" ? "Verify code" : "Verify & create account"}
           {!loading && <ArrowRight size={16} />}
         </button>
 
@@ -213,7 +362,7 @@ export default function Login({ onDone, showToast }) {
       {mode === "login" && (
         <button
           type="button"
-          onClick={() => showToast?.("Password reset isn't available yet — contact support.", "error")}
+          onClick={() => { setMode("reset"); setStep("form"); setError(null); }}
           className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end"
         >
           Forgot password?

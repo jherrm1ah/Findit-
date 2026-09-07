@@ -243,6 +243,32 @@ export async function changeUserPassword(
   assertNoError(result, "updating password");
 }
 
+// Only ever called after the caller has proven phone ownership via OTP
+// (see app/api/auth/reset-password/route.ts) — there is no session/current
+// password here by design, since the whole point is recovering an account
+// whose password was forgotten.
+export async function resetPasswordForPhone(phone: string, newPassword: string): Promise<void> {
+  if (!newPassword || newPassword.length < 4) {
+    throw new ValidationError("New password must be at least 4 characters.");
+  }
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .select("id")
+    .eq("phone", normalizePhone(phone))
+    .maybeSingle();
+  const row = assertNoError(result, "loading account") as Row | null;
+  if (!row) throw new ValidationError("Account not found.");
+
+  const salt = crypto.randomBytes(16).toString("hex");
+  const passwordHash = hashPassword(newPassword, salt);
+  const updateResult = await db
+    .from("users")
+    .update({ password_hash: passwordHash, password_salt: salt })
+    .eq("id", row.id as string);
+  assertNoError(updateResult, "updating password");
+}
+
 export async function updateUserAvatar(userId: string, avatarUrl: string): Promise<User> {
   const db = getDb();
   const result = await db

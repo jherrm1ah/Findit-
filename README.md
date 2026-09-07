@@ -171,15 +171,23 @@ session and check the caller is a participant in the conversation. Notification 
 check the row actually belongs to the calling user.
 
 `POST /api/auth/login`, `POST /api/auth/signup`, `POST /api/auth/send-otp`,
-`POST /api/auth/verify-otp`, and `POST /api/ai/classify-request` are rate-limited — a 429 with a
-friendly error is returned once the limit is hit.
+`POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, and `POST /api/ai/classify-request`
+are rate-limited — a 429 with a friendly error is returned once the limit is hit.
 
-**Phone verification (OTP) at signup** is optional and off by default. Set `TERMII_API_KEY` (see
+**Phone verification (OTP)** is optional and off by default. Set `TERMII_API_KEY` (see
 `.env.example`) to turn it on — signup then sends a real SMS code via [Termii](https://termii.com)
 and requires it to be verified before the account is created. With no key set, signup works exactly
 as before (no OTP step). The verification ticket itself lives in an in-memory store
 (`lib/otpStore.ts`, same single-process caveat as `lib/rateLimit.ts` below) — Termii holds the
 actual code, we only ever hold an opaque reference to it.
+
+The same OTP machinery backs **"Forgot password?"** on the login screen: enter your phone, verify
+the code, choose a new password — no session or old password needed, since the whole point is
+recovering an account you're locked out of. `POST /api/auth/send-otp` takes a `purpose` of
+`"signup"` (default; errors if the phone is already registered) or `"reset"` (silently no-ops for
+an unregistered phone instead of erroring, so the endpoint can't be used to enumerate which phone
+numbers have accounts). With no `TERMII_API_KEY` set, "Forgot password?" falls back to the original
+"contact support" message — same fail-open pattern as signup.
 
 **On Row Level Security:** this app doesn't use Supabase Auth, so Postgres RLS can't be tied to a
 logged-in user's identity the way it would with a Supabase-Auth-based app. RLS is enabled on every
