@@ -8,14 +8,15 @@ function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
   if (a.action === "seller.rejected") return `Rejected seller "${a.detail?.sellerName ?? a.targetId}"`;
   if (a.action === "user.promoted_admin") return `Made "${a.detail?.name ?? a.targetId}" an admin`;
+  if (a.action === "user.demoted_admin") return `Removed "${a.detail?.name ?? a.targetId}"'s admin access`;
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
-function TeamAccess({ onLookupUser, onPromoteToAdmin, showToast }) {
+function TeamAccess({ onLookupUser, onPromoteToAdmin, onDemoteFromAdmin, currentAdminId, showToast }) {
   const [phone, setPhone] = useState("");
   const [result, setResult] = useState(undefined); // undefined = not searched, null = not found, user = found
   const [looking, setLooking] = useState(false);
-  const [promoting, setPromoting] = useState(false);
+  const [acting, setActing] = useState(false);
   const [error, setError] = useState(null);
 
   const findAccount = async () => {
@@ -33,8 +34,8 @@ function TeamAccess({ onLookupUser, onPromoteToAdmin, showToast }) {
   };
 
   const promote = async () => {
-    if (!result || promoting) return;
-    setPromoting(true);
+    if (!result || acting) return;
+    setActing(true);
     setError(null);
     try {
       const updated = await onPromoteToAdmin(phone.trim());
@@ -43,9 +44,26 @@ function TeamAccess({ onLookupUser, onPromoteToAdmin, showToast }) {
     } catch (err) {
       setError(err.message || "Couldn't promote that account.");
     } finally {
-      setPromoting(false);
+      setActing(false);
     }
   };
+
+  const demote = async () => {
+    if (!result || acting) return;
+    setActing(true);
+    setError(null);
+    try {
+      const updated = await onDemoteFromAdmin(phone.trim());
+      setResult(updated);
+      showToast?.(`${updated.name}'s admin access was removed.`, "success");
+    } catch (err) {
+      setError(err.message || "Couldn't remove that account's admin access.");
+    } finally {
+      setActing(false);
+    }
+  };
+
+  const isSelf = result && result.id === currentAdminId;
 
   return (
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4">
@@ -76,24 +94,38 @@ function TeamAccess({ onLookupUser, onPromoteToAdmin, showToast }) {
       )}
 
       {result && (
-        <div className="flex items-center justify-between mt-3 bg-[#F5F2FC] rounded-xl px-3 py-2.5">
-          <div>
-            <p className="text-[13px] font-semibold text-[#1E1B4B]">{result.name}</p>
-            <p className="text-[11px] text-[#6B6483]">
-              {result.role === "admin" ? "Already an admin" : result.role === "seller" ? "Seller account" : "Buyer account"}
-            </p>
+        <div className="mt-3 bg-[#F5F2FC] rounded-xl px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{result.name}</p>
+              <p className="text-[11px] text-[#6B6483]">
+                {result.role === "admin" ? "Admin" : result.role === "seller" ? "Seller account" : "Buyer account"}
+              </p>
+            </div>
+            {result.role !== "admin" && (
+              <button
+                onClick={promote}
+                disabled={acting}
+                className="text-[12px] font-semibold text-white px-3.5 py-2 rounded-full disabled:opacity-40 shrink-0"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                {acting ? "Promoting…" : "Promote to admin"}
+              </button>
+            )}
+            {result.role === "admin" && !isSelf && (
+              <button
+                onClick={demote}
+                disabled={acting}
+                className="text-[12px] font-semibold text-[#E64980] bg-white border border-[#ECE9F7] px-3.5 py-2 rounded-full disabled:opacity-40 shrink-0"
+              >
+                {acting ? "Removing…" : "Remove admin access"}
+              </button>
+            )}
           </div>
-          {result.role === "admin" ? (
-            <ShieldCheck size={16} className="text-[#7C3AED] shrink-0" />
-          ) : (
-            <button
-              onClick={promote}
-              disabled={promoting}
-              className="text-[12px] font-semibold text-white px-3.5 py-2 rounded-full disabled:opacity-40 shrink-0"
-              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-            >
-              {promoting ? "Promoting…" : "Promote to admin"}
-            </button>
+          {result.role === "admin" && isSelf && (
+            <p className="text-[11px] text-[#8A8372] mt-2">
+              This is your own account — ask another admin to remove your access.
+            </p>
           )}
         </div>
       )}
@@ -109,6 +141,8 @@ export default function AdminQueue({
   otpStats = null,
   onLookupUser,
   onPromoteToAdmin,
+  onDemoteFromAdmin,
+  currentAdminId,
   showToast,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
@@ -160,7 +194,13 @@ export default function AdminQueue({
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
         <UserPlus size={13} className="text-[#7C3AED]" /> Team & admin access
       </p>
-      <TeamAccess onLookupUser={onLookupUser} onPromoteToAdmin={onPromoteToAdmin} showToast={showToast} />
+      <TeamAccess
+        onLookupUser={onLookupUser}
+        onPromoteToAdmin={onPromoteToAdmin}
+        onDemoteFromAdmin={onDemoteFromAdmin}
+        currentAdminId={currentAdminId}
+        showToast={showToast}
+      />
 
       {otpStats && (
         <>

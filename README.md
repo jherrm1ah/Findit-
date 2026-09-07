@@ -119,9 +119,14 @@ node --env-file=.env.local scripts/create-admin.mjs --phone 08012345678 --passwo
 **Every admin after that never needs the terminal.** Once you're in the Admin Queue, its "Team &
 admin access" section lets you promote any existing FindIt account to admin by phone number — the
 teammate signs up normally (as a buyer, in the app) and you promote that account from there
-(`POST /api/admin/promote`). There's deliberately no extra gate above this: any admin can promote
-any account, the same trust level `create-admin.mjs` already had — this just moves it into the app
-so only the very first admin ever needs to touch a terminal.
+(`POST /api/admin/promote`), or remove an admin's access again the same way
+(`POST /api/admin/demote` — restores whatever role they actually had before being promoted, via
+`users.previous_role`). There's deliberately no extra gate above this: any admin can promote or
+demote any other account, the same trust level `create-admin.mjs` already had — this just moves it
+into the app so only the very first admin ever needs to touch a terminal. Two guards exist because
+they protect the platform, not just one action: you can't remove your own admin access (always
+needs a second admin), and the last remaining admin can never be demoted (would leave FindIt with
+no admin and no in-app way to create another one).
 
 ## Code layout
 

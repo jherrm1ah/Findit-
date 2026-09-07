@@ -81,6 +81,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone }),
     }).then((d) => d.user),
+  demoteFromAdmin: (phone) =>
+    request("/api/admin/demote", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone }),
+    }).then((d) => d.user),
   setSellerStatus: (id, status) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",

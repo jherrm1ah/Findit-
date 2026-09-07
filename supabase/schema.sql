@@ -45,6 +45,12 @@ create table if not exists users (
   location_updated_at timestamptz,
   avatar_url text,
   notifications_enabled boolean not null default true,
+  -- Set only when promoteToAdmin() overwrites role to 'admin' — records
+  -- what the account actually was (buyer/seller) so demoteFromAdmin() can
+  -- restore it exactly rather than guessing. Null for every account that
+  -- was never promoted (including admins created directly via
+  -- scripts/create-admin.mjs).
+  previous_role text,
   created_at timestamptz not null default now()
 );
 

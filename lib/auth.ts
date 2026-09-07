@@ -327,12 +327,62 @@ export async function promoteToAdmin(phone: string): Promise<User> {
   const db = getDb();
   const result = await db
     .from("users")
-    .update({ role: "admin" })
+    .update({ role: "admin", previous_role: user.role })
     .eq("id", user.id)
     .select()
     .single();
   const row = assertNoError(result, "promoting account to admin") as Row;
   return rowToUser(row);
+}
+
+// Removes admin access, restoring whatever role the account actually had
+// before it was promoted (buyer/seller) — falls back to "buyer" if there's
+// no previous_role on file (e.g. an admin created directly via
+// scripts/create-admin.mjs, which was never "promoted" from anything).
+//
+// Two guards a UI confirmation dialog can't substitute for, because they
+// protect the *platform*, not just this one action: an admin can never
+// demote themselves (self-lockout — always needs a second admin to act),
+// and the last remaining admin can never be demoted at all (would leave
+// FindIt with zero admins and no in-app way to create another one).
+export async function demoteFromAdmin(actingAdminId: string, phone: string): Promise<User> {
+  const user = await getUserByPhone(phone);
+  if (!user) {
+    throw new ValidationError("No FindIt account exists for that phone number yet.");
+  }
+  if (user.role !== "admin") {
+    throw new ValidationError(`${user.name} isn't an admin.`);
+  }
+  if (user.id === actingAdminId) {
+    throw new ValidationError("You can't remove your own admin access — ask another admin to do it.");
+  }
+
+  const db = getDb();
+  const countResult = await db
+    .from("users")
+    .select("id", { count: "exact", head: true })
+    .eq("role", "admin");
+  if (countResult.error) {
+    throw new Error(`checking admin count: ${countResult.error.message}`);
+  }
+  if ((countResult.count ?? 0) <= 1) {
+    throw new ValidationError("Can't remove the last admin — promote someone else first.");
+  }
+
+  const row = assertNoError(
+    await db.from("users").select("previous_role").eq("id", user.id).single(),
+    "loading account"
+  ) as Row;
+  const restoreRole = (row.previous_role as Role | null) ?? "buyer";
+
+  const updateResult = await db
+    .from("users")
+    .update({ role: restoreRole, previous_role: null })
+    .eq("id", user.id)
+    .select()
+    .single();
+  const updatedRow = assertNoError(updateResult, "removing admin access") as Row;
+  return rowToUser(updatedRow);
 }
 
 export async function createSession(userId: string): Promise<string> {

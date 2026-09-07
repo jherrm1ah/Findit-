@@ -357,6 +357,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     return promoted;
   };
 
+  const handleDemoteFromAdmin = async (phone) => {
+    const demoted = await api.demoteFromAdmin(phone);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return demoted;
+  };
+
   const handleSendOffer = async (requestId, offerInput) => {
     try {
       await api.sendSellerOffer(requestId, offerInput);
@@ -514,6 +520,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               otpStats={otpStats}
               onLookupUser={handleLookupUser}
               onPromoteToAdmin={handlePromoteToAdmin}
+              onDemoteFromAdmin={handleDemoteFromAdmin}
+              currentAdminId={user.id}
               showToast={showToast}
             />
           ) : (
