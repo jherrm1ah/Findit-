@@ -1,0 +1,702 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User,
+} from "lucide-react";
+import { Logo, Wordmark, RoleGate } from "./shared";
+import { api } from "./api";
+import { getStoredLocation, requestBrowserLocation } from "./location";
+import Home from "./Home";
+import Browse from "./Browse";
+import RequestForm from "./RequestForm";
+import SellerDashboard from "./SellerDashboard";
+import AdminQueue from "./AdminQueue";
+import BecomeSeller from "./BecomeSeller";
+import Profile from "./Profile";
+import AccountDetails from "./AccountDetails";
+import NotificationPreferences from "./NotificationPreferences";
+import HelpSupport from "./HelpSupport";
+import About from "./About";
+import Account from "./Account";
+import Notifications from "./Notifications";
+import Checkout from "./Checkout";
+import ProductDetail from "./ProductDetail";
+import Messages from "./Messages";
+import Thread from "./Thread";
+import SellerProfile from "./SellerProfile";
+import MyRequests from "./MyRequests";
+
+function tabsFor(role) {
+  const middle =
+    role === "admin"
+      ? { key: "admin", label: "Admin", icon: ShieldCheck }
+      : { key: "seller", label: role === "seller" ? "Dashboard" : "Sell", icon: LayoutDashboard };
+  return [
+    { key: "home", label: "Home", icon: HomeIcon },
+    { key: "browse", label: "Search", icon: Search },
+    { key: "request", label: "Request", icon: ShoppingCart },
+    middle,
+    { key: "profile", label: "Profile", icon: User },
+  ];
+}
+
+export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
+  const isSeller = user?.role === "seller";
+  const isAdmin = user?.role === "admin";
+  const TABS = tabsFor(user?.role);
+
+  const [screen, setScreen] = useState("home");
+  const [browseGroup, setBrowseGroup] = useState("all");
+  const [product, setProduct] = useState(null);
+  const [viewedSeller, setViewedSeller] = useState(null);
+  const [checkoutOrder, setCheckoutOrder] = useState(null);
+
+  const [loaded, setLoaded] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [sellers, setSellers] = useState([]);
+  const [requests, setRequests] = useState([]);
+  const [conversations, setConversations] = useState([]);
+  const [activeThread, setActiveThread] = useState(null);
+  const [threadMessages, setThreadMessages] = useState([]);
+  const [threadLoading, setThreadLoading] = useState(false);
+  const [savedIds, setSavedIds] = useState([]);
+  const [myRequests, setMyRequests] = useState([]);
+  const [adminActions, setAdminActions] = useState([]);
+  const [otpStats, setOtpStats] = useState(null);
+  const [reportedOrders, setReportedOrders] = useState([]);
+  const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
+
+  // Real device/account location — set only once the user explicitly grants
+  // browser geolocation permission (see ./location.js). Never defaulted to
+  // any city. Used to sort listings/requests by real distance; the app
+  // falls back to today's recency order whenever this is null.
+  const [myLocation, setMyLocation] = useState(null); // { lat, lng } | null
+  const [locationStatus, setLocationStatus] = useState("idle"); // idle | requesting | granted | denied | unavailable | unsupported
+
+  useEffect(() => {
+    if (user?.lat != null && user?.lng != null) {
+      setMyLocation({ lat: user.lat, lng: user.lng });
+      setLocationStatus("granted");
+      return;
+    }
+    const stored = getStoredLocation();
+    if (stored) {
+      setMyLocation({ lat: stored.lat, lng: stored.lng });
+      setLocationStatus("granted");
+    }
+  }, [user?.id]);
+
+  const handleEnableLocation = async () => {
+    setLocationStatus("requesting");
+    try {
+      const loc = await requestBrowserLocation();
+      setMyLocation(loc);
+      setLocationStatus("granted");
+      if (user) {
+        api.updateMyLocation(loc.lat, loc.lng).catch(() => {});
+      }
+    } catch (err) {
+      const reason = ["denied", "unsupported"].includes(err.message) ? err.message : "unavailable";
+      setLocationStatus(reason);
+      showToast(
+        reason === "denied"
+          ? "Location access was denied — you can still browse everything, just not sorted by distance."
+          : "Couldn't get your location right now — try again later.",
+        "error"
+      );
+    }
+  };
+
+  useEffect(() => {
+    const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
+    Promise.all(tasks)
+      .then(([p, o, n]) => {
+        setProducts(p);
+        setOrders(o);
+        setNotifications(n);
+      })
+      .finally(() => setLoaded(true));
+
+    // These two are role-gated server-side; only fetch them for roles that
+    // can actually see the screens they back, so a buyer/guest doesn't spend
+    // a request hitting a 403 it can't do anything with.
+    if (isSeller || isAdmin) {
+      api.getOpenRequests().then(setRequests).catch(() => {});
+    }
+    if (isSeller) {
+      api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    }
+    if (isAdmin) {
+      api.getSellers().then(setSellers).catch(() => {});
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+      api.getOtpStats().then(setOtpStats).catch(() => {});
+      api.getReportedOrders().then(setReportedOrders).catch(() => {});
+    }
+    if (user) {
+      api.getSavedIds().then(setSavedIds).catch(() => {});
+      // Fetched here too (not just on navigating to the Messages screen) so
+      // Profile's "Messages" card can show an unread count up front, the
+      // same way its "Notifications" card already does — otherwise you'd
+      // have to open Messages blind to find out you have unread chats.
+      api.getConversations().then(setConversations).catch(() => {});
+    } else {
+      setSavedIds([]);
+    }
+  }, [user?.id]);
+
+  const go = (s, group) => {
+    setScreen(s);
+    if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
+    setProduct(null); // close any open product detail overlay when navigating
+    setViewedSeller(null);
+    window.scrollTo?.(0, 0);
+    if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
+      api.getOpenRequests().then(setRequests).catch(() => {});
+    }
+    if (s === "profile" && isSeller) {
+      api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    }
+    if (s === "messages" && user) {
+      api.getConversations().then(setConversations).catch(() => {});
+    }
+    if (s === "myRequests" && user) {
+      api.getMyRequests().then(setMyRequests).catch(() => {});
+    }
+  };
+
+  const handleToggleSaved = async (productId) => {
+    if (!user) {
+      showToast("Log in to save items.", "error");
+      return;
+    }
+    const wasSaved = savedIds.includes(productId);
+    setSavedIds((ids) => (wasSaved ? ids.filter((id) => id !== productId) : [...ids, productId]));
+    try {
+      if (wasSaved) {
+        await api.unsaveItem(productId);
+      } else {
+        await api.saveItem(productId);
+      }
+    } catch (err) {
+      setSavedIds((ids) => (wasSaved ? [...ids, productId] : ids.filter((id) => id !== productId)));
+      showToast(err.message || "Couldn't update your saved items — try again.", "error");
+    }
+  };
+
+  const handleViewSeller = (sellerName) => {
+    setProduct(null);
+    setViewedSeller(sellerName);
+  };
+
+  const handleOpenProductFromSeller = (p) => {
+    setViewedSeller(null);
+    setProduct(p);
+  };
+
+  const buyNow = async (prod, qty, condition) => {
+    try {
+      // Only productId/qty go to the server — it looks up the real product
+      // and computes price/seller itself, so nothing here is trusted as-is.
+      const order = await api.createOrder({ productId: prod.id, qty });
+      setOrders((os) => [order, ...os]);
+      setCheckoutOrder({ product: prod, qty, condition });
+      setProduct(null);
+      setScreen("checkout");
+      window.scrollTo?.(0, 0);
+    } catch (err) {
+      showToast(err.message || "Couldn't place that order — try again.", "error");
+    }
+  };
+
+  const handleReview = async (orderId, rating, comment) => {
+    try {
+      const order = await api.submitOrderReview(orderId, { rating, comment: comment || null });
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Review submitted — thanks for the feedback.");
+    } catch (err) {
+      showToast(err.message || "Couldn't submit that review — try again.", "error");
+      throw err; // let Account.jsx know the submit failed so it keeps the form open
+    }
+  };
+
+  const handleConfirmDelivery = async (orderId) => {
+    try {
+      const order = await api.confirmDelivery(orderId);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Delivery confirmed — the payment has been released to the seller.");
+    } catch (err) {
+      showToast(err.message || "Couldn't confirm that order — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleReportIssue = async (orderId, note) => {
+    try {
+      const order = await api.reportOrderIssue(orderId, note);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Reported — FindIt is holding your payment while we review it.");
+    } catch (err) {
+      showToast(err.message || "Couldn't report that problem — try again.", "error");
+      throw err; // keep the form open so they can retry
+    }
+  };
+
+  const handleResolveOrderIssue = async (orderId, outcome) => {
+    try {
+      await api.resolveOrderIssue(orderId, outcome);
+      // Drop it from the queue — it's no longer an open problem.
+      setReportedOrders((os) => os.filter((o) => o.id !== orderId));
+      showToast(outcome === "refunded" ? "Buyer refunded." : "Payment released to the seller.");
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+    } catch (err) {
+      showToast(err.message || "Couldn't resolve that report — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleAdvanceOrderStatus = async (orderId, status) => {
+    try {
+      const order = await api.updateOrderStatus(orderId, status);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast(`Order marked "${status}".`);
+    } catch (err) {
+      showToast(err.message || "Couldn't update that order — try again.", "error");
+    }
+  };
+
+  const handleUploadImage = async (file) => {
+    try {
+      return await api.uploadImage(file);
+    } catch (err) {
+      showToast(err.message || "Couldn't upload that image — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleUploadAvatar = async (file) => {
+    try {
+      const url = await api.uploadImage(file);
+      const updated = await api.updateAvatar(url);
+      onUserUpdate(updated);
+    } catch (err) {
+      showToast(err.message || "Couldn't update your profile photo — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleUpdateName = async (name) => {
+    const updated = await api.updateName(name);
+    onUserUpdate(updated);
+  };
+
+  const handleUpdateBusinessName = async (businessName) => {
+    const updated = await api.updateBusinessName(businessName);
+    onUserUpdate(updated);
+    // The rename is propagated server-side to every product/order/offer row
+    // that carried the old name — refetch so this seller's own dashboard
+    // doesn't keep filtering by the stale name still cached client-side.
+    api.getProducts().then(setProducts).catch(() => {});
+    api.getOrders().then(setOrders).catch(() => {});
+  };
+
+  const handleBecomeSeller = async (businessName) => {
+    const updated = await api.becomeSeller(businessName);
+    onUserUpdate(updated);
+    // They're a pending seller now, so the dashboard should show that state
+    // rather than whatever (nothing) was cached for a buyer.
+    api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    showToast("Submitted — an admin will review your seller account shortly.");
+  };
+
+  const handleUpdatePhone = async (newPhone, currentPassword) => {
+    const updated = await api.updatePhone(newPhone, currentPassword);
+    onUserUpdate(updated);
+  };
+
+  const handleUpdatePassword = async (currentPassword, newPassword) => {
+    await api.updatePassword(currentPassword, newPassword);
+  };
+
+  const handleUpdateNotificationPref = async (enabled) => {
+    const updated = await api.updateNotificationPref(enabled);
+    onUserUpdate(updated);
+  };
+
+  const handleCreateProduct = async (input) => {
+    try {
+      const product = await api.createProduct({
+        ...input,
+        lat: myLocation?.lat ?? null,
+        lng: myLocation?.lng ?? null,
+      });
+      setProducts((ps) => [product, ...ps]);
+      showToast("Listing added.");
+    } catch (err) {
+      showToast(err.message || "Couldn't add that listing — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleUpdateProduct = async (id, patch) => {
+    try {
+      const product = await api.updateProduct(id, {
+        ...patch,
+        lat: myLocation?.lat ?? null,
+        lng: myLocation?.lng ?? null,
+      });
+      setProducts((ps) => ps.map((p) => (p.id === id ? product : p)));
+      showToast("Listing updated.");
+    } catch (err) {
+      showToast(err.message || "Couldn't update that listing — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleDeleteProduct = async (id) => {
+    try {
+      await api.deleteProduct(id);
+      setProducts((ps) => ps.filter((p) => p.id !== id));
+      showToast("Listing removed.");
+    } catch (err) {
+      showToast(err.message || "Couldn't remove that listing — try again.", "error");
+    }
+  };
+
+  const handleMarkNotificationRead = async (id) => {
+    setNotifications((ns) => ns.map((n) => (n.id === id ? { ...n, unread: false } : n)));
+    try {
+      await api.markNotificationRead(id);
+    } catch {
+      // best-effort: local state already reflects the read state
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    setNotifications((ns) => ns.map((n) => ({ ...n, unread: false })));
+    try {
+      await api.markAllNotificationsRead();
+    } catch {
+      // best-effort
+    }
+  };
+
+  const handleSellerStatusChange = async (id, status) => {
+    const seller = sellers.find((s) => s.id === id);
+    setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status } : s)));
+    try {
+      await api.setSellerStatus(id, status);
+      showToast(`${seller?.name || "Seller"} ${status}.`);
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+    } catch (err) {
+      setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status: seller.status } : s)));
+      showToast(err.message || "Couldn't update that seller — try again.", "error");
+    }
+  };
+
+  const handleLookupUser = (phone) => api.lookupUserByPhone(phone);
+
+  const handlePromoteToAdmin = async (phone) => {
+    const promoted = await api.promoteToAdmin(phone);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return promoted;
+  };
+
+  const handleDemoteFromAdmin = async (phone) => {
+    const demoted = await api.demoteFromAdmin(phone);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return demoted;
+  };
+
+  const handleSendOffer = async (requestId, offerInput) => {
+    try {
+      await api.sendSellerOffer(requestId, offerInput);
+      setRequests(await api.getOpenRequests());
+      showToast("Offer sent to the customer.");
+    } catch (err) {
+      showToast(err.message || "Couldn't send that offer — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleAcceptOffer = async (requestId, offerId) => {
+    try {
+      const order = await api.acceptOffer(requestId, offerId);
+      setOrders((os) => [order, ...os]);
+      setMyRequests((rs) =>
+        rs.map((r) =>
+          r.id === requestId
+            ? { ...r, status: "matched", offers: r.offers.map((o) => (o.id === offerId ? { ...o, accepted: true } : o)) }
+            : r
+        )
+      );
+      showToast("Order placed — track it in My orders.");
+    } catch (err) {
+      showToast(err.message || "Couldn't accept that offer — try again.", "error");
+    }
+  };
+
+  const handleOpenThread = async (id, otherParty) => {
+    setActiveThread({ id, otherParty });
+    setThreadLoading(true);
+    try {
+      const messages = await api.getMessages(id);
+      setThreadMessages(messages);
+      setConversations((cs) => cs.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
+    } catch (err) {
+      showToast(err.message || "Couldn't load that conversation — try again.", "error");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (conversationId, body) => {
+    try {
+      const message = await api.sendMessage(conversationId, body);
+      setThreadMessages((ms) => [...ms, message]);
+    } catch (err) {
+      showToast(err.message || "Couldn't send that message — try again.", "error");
+    }
+  };
+
+  const handleContactSeller = async (product) => {
+    if (!user) {
+      showToast("Log in to message a seller.", "error");
+      return;
+    }
+    try {
+      const conversationId = await api.startConversation(product.seller);
+      setActiveThread({ id: conversationId, otherParty: { businessName: product.seller, name: product.seller } });
+      setThreadLoading(true);
+      setProduct(null);
+      const messages = await api.getMessages(conversationId);
+      setThreadMessages(messages);
+    } catch (err) {
+      showToast(err.message || "Couldn't start that conversation — try again.", "error");
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  if (!loaded) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#FAFAFF]">
+        <div className="relative w-12 h-12">
+          <div className="absolute inset-0 rounded-full border-4 border-[#ECE9F7]" />
+          <div className="absolute inset-0 rounded-full border-4 border-[#7C3AED] border-t-transparent animate-spin" />
+        </div>
+        <p className="text-[13px] text-[#6B6483]">Loading FindIt…</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
+      {screen !== "home" && (
+        <header className="sticky top-0 z-30 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 py-3 flex items-center justify-between">
+          <button onClick={() => go("home")} className="flex items-center gap-2">
+            <Logo size={26} />
+            <Wordmark />
+          </button>
+        </header>
+      )}
+
+      <main className="pb-24">
+        {screen === "home" && (
+          <Home
+            go={go}
+            openProduct={setProduct}
+            products={products}
+            unreadCount={notifications.filter((n) => n.unread).length}
+            savedIds={savedIds}
+            onToggleSaved={handleToggleSaved}
+            myLocation={myLocation}
+            locationStatus={locationStatus}
+            onEnableLocation={handleEnableLocation}
+          />
+        )}
+        {screen === "browse" && (
+          <Browse
+            initialGroup={browseGroup}
+            openProduct={setProduct}
+            products={products}
+            savedIds={savedIds}
+            onToggleSaved={handleToggleSaved}
+            myLocation={myLocation}
+          />
+        )}
+        {screen === "request" && (
+          <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
+        )}
+        {screen === "myRequests" && (
+          <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} />
+        )}
+        {screen === "seller" && (
+          isSeller ? (
+            <SellerDashboard
+              requests={requests}
+              onSendOffer={handleSendOffer}
+              user={user}
+              orders={orders}
+              onAdvanceOrderStatus={handleAdvanceOrderStatus}
+              products={products}
+              onCreateProduct={handleCreateProduct}
+              onUpdateProduct={handleUpdateProduct}
+              onDeleteProduct={handleDeleteProduct}
+              onUploadImage={handleUploadImage}
+              myLocation={myLocation}
+            />
+          ) : (
+            <RoleGate
+              title="Seller access needed"
+              message="This dashboard belongs to seller accounts. Sign up with a seller account (or log in with one) to respond to customer requests here."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
+        )}
+        {screen === "admin" && (
+          isAdmin ? (
+            <AdminQueue
+              sellers={sellers}
+              requests={requests}
+              onSellerStatusChange={handleSellerStatusChange}
+              adminActions={adminActions}
+              otpStats={otpStats}
+              reportedOrders={reportedOrders}
+              onResolveOrderIssue={handleResolveOrderIssue}
+              onLookupUser={handleLookupUser}
+              onPromoteToAdmin={handlePromoteToAdmin}
+              onDemoteFromAdmin={handleDemoteFromAdmin}
+              currentAdminId={user.id}
+              showToast={showToast}
+            />
+          ) : (
+            <RoleGate
+              title="Admin access needed"
+              message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
+        )}
+        {screen === "profile" && (
+          <Profile
+            go={go}
+            user={user}
+            onLogout={onLogout}
+            unreadCount={notifications.filter((n) => n.unread).length}
+            messageUnreadCount={conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0)}
+            onUploadAvatar={handleUploadAvatar}
+            sellerStatus={mySellerStatus}
+          />
+        )}
+        {screen === "accountDetails" && (
+          <AccountDetails
+            user={user}
+            onUpdateName={handleUpdateName}
+            onUpdateBusinessName={handleUpdateBusinessName}
+            onUpdatePhone={handleUpdatePhone}
+            onUpdatePassword={handleUpdatePassword}
+            showToast={showToast}
+          />
+        )}
+        {screen === "becomeSeller" && (
+          <BecomeSeller user={user} onBecomeSeller={handleBecomeSeller} go={go} />
+        )}
+        {screen === "notifPrefs" && (
+          <NotificationPreferences user={user} onToggle={handleUpdateNotificationPref} showToast={showToast} />
+        )}
+        {screen === "help" && <HelpSupport />}
+        {screen === "about" && <About />}
+        {screen === "messages" && (
+          <Messages conversations={conversations} onOpenThread={handleOpenThread} />
+        )}
+        {screen === "account" && (
+          <Account
+            openProduct={setProduct}
+            orders={orders}
+            products={products}
+            onReview={handleReview}
+            onConfirmDelivery={handleConfirmDelivery}
+            onReportIssue={handleReportIssue}
+            savedIds={savedIds}
+          />
+        )}
+        {screen === "notifications" && (
+          <Notifications
+            notifications={notifications}
+            onMarkRead={handleMarkNotificationRead}
+            onMarkAllRead={handleMarkAllRead}
+          />
+        )}
+        {screen === "checkout" && checkoutOrder && (
+          <Checkout product={checkoutOrder.product} qty={checkoutOrder.qty} condition={checkoutOrder.condition} go={go} />
+        )}
+      </main>
+
+      {product && (
+        <ProductDetail
+          product={product}
+          onClose={() => setProduct(null)}
+          go={go}
+          onBuyNow={buyNow}
+          onContact={handleContactSeller}
+          onViewSeller={handleViewSeller}
+          savedIds={savedIds}
+          onToggleSaved={handleToggleSaved}
+          myLocation={myLocation}
+        />
+      )}
+
+      {viewedSeller && (
+        <SellerProfile
+          sellerName={viewedSeller}
+          products={products}
+          onBack={() => setViewedSeller(null)}
+          onOpenProduct={handleOpenProductFromSeller}
+          onContact={handleContactSeller}
+          myLocation={myLocation}
+        />
+      )}
+
+      {activeThread && (
+        <Thread
+          conversationId={activeThread.id}
+          otherParty={activeThread.otherParty}
+          messages={threadMessages}
+          loading={threadLoading}
+          onBack={() => setActiveThread(null)}
+          onSend={handleSendMessage}
+        />
+      )}
+
+      <nav className="fixed bottom-0 left-0 right-0 z-30 px-6 pb-6 pt-2 flex justify-center">
+        <div
+          className="flex items-center gap-1 rounded-full shadow-2xl px-3 py-2.5"
+          style={{ background: "linear-gradient(135deg,#1E1B4B,#3B1874)" }}
+        >
+          {TABS.map((t) => {
+            const activeKey = ["account", "notifications", "accountDetails", "notifPrefs", "help", "about", "becomeSeller"].includes(screen)
+              ? "profile"
+              : screen;
+            const active = activeKey === t.key;
+            return (
+              <button
+                key={t.key}
+                onClick={() => go(t.key)}
+                aria-label={t.label}
+                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all"
+                style={active ? { background: "linear-gradient(135deg,#FCD34D,#F59E0B)" } : {}}
+              >
+                <t.icon size={18} className={active ? "text-[#3B1874]" : "text-white/70"} strokeWidth={active ? 2.3 : 1.8} />
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+    </div>
+  );
+}
