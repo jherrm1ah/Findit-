@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listProducts, createProduct, getSellerStatusForUser, isValidProductImageUrl } from "@/lib/repo";
+import { listProducts, createProduct, getSellerStatusForUser, getSellerIdForUser, isValidProductImageUrl } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -70,11 +70,16 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Looked up alongside the text business name so the reliable seller_id
+    // (migration 009) gets recorded on every new listing — see
+    // lib/sellerIdentityMatch.ts for why this can't just be guessed later.
+    const sellerId = await getSellerIdForUser(user.id);
     const product = await createProduct({
       category: body.category,
       name: body.name,
       price: body.price,
       seller: user.businessName!,
+      sellerId,
       imageUrl: body.imageUrl ?? null,
       // Sent by the client from the seller's current known location (see
       // components/findit-app/location.js); null if they haven't granted it.

@@ -244,6 +244,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleCheckSellerIdentityStatus = () => api.getSellerIdentityReport();
+  const handlePreviewSellerIdentityBackfill = () => api.runSellerIdentityBackfill(false);
+  const handleApplySellerIdentityBackfill = () => api.runSellerIdentityBackfill(true);
+
   const handleResolveOrderIssue = async (orderId, outcome) => {
     try {
       await api.resolveOrderIssue(orderId, outcome);
@@ -567,6 +571,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               otpStats={otpStats}
               reportedOrders={reportedOrders}
               onResolveOrderIssue={handleResolveOrderIssue}
+              onCheckSellerIdentityStatus={handleCheckSellerIdentityStatus}
+              onPreviewSellerIdentityBackfill={handlePreviewSellerIdentityBackfill}
+              onApplySellerIdentityBackfill={handleApplySellerIdentityBackfill}
               onLookupUser={handleLookupUser}
               onPromoteToAdmin={handlePromoteToAdmin}
               onDemoteFromAdmin={handleDemoteFromAdmin}

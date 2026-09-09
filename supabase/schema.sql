@@ -101,6 +101,11 @@ create table if not exists products (
   name text not null,
   price integer not null check (price > 0),
   seller text not null,
+  -- Reliable identity alongside the text name above (see migration 009):
+  -- nullable and unused by any user-facing query yet — see
+  -- lib/sellerIdentityMatch.ts and app/api/admin/seller-identity/route.ts
+  -- for the backfill/verification process before anything reads from it.
+  seller_id text references sellers(id),
   image_url text,
   art integer not null default 0,
   -- Captured from the selling account's location at the time the listing was
@@ -111,6 +116,7 @@ create table if not exists products (
   lng double precision,
   created_at timestamptz not null default now()
 );
+create index if not exists products_seller_id_idx on products(seller_id);
 create index if not exists products_seller_idx on products(seller);
 create index if not exists products_created_at_idx on products(created_at desc);
 
@@ -154,6 +160,8 @@ create table if not exists offers (
   id text primary key,
   request_id text not null references requests(id) on delete cascade,
   seller text not null,
+  -- See seller_id on products above — same reliable-identity migration.
+  seller_id text references sellers(id),
   price integer not null check (price > 0),
   delivery text not null,
   eta text not null,
@@ -163,6 +171,7 @@ create table if not exists offers (
   accepted boolean not null default false,
   created_at timestamptz not null default now()
 );
+create index if not exists offers_seller_id_idx on offers(seller_id);
 create index if not exists offers_request_id_idx on offers(request_id);
 
 -- ---------------------------------------------------------------------------
@@ -177,6 +186,8 @@ create table if not exists orders (
   user_id text not null references users(id) on delete cascade,
   item text not null,
   seller text not null,
+  -- See seller_id on products above — same reliable-identity migration.
+  seller_id text references sellers(id),
   price integer not null check (price > 0),
   status text not null default 'Awaiting payment',
   can_review boolean not null default false,
@@ -200,6 +211,7 @@ create index if not exists orders_user_id_idx on orders(user_id);
 create index if not exists orders_seller_idx on orders(seller);
 create index if not exists orders_escrow_status_idx on orders(escrow_status)
   where escrow_status = 'disputed';
+create index if not exists orders_seller_id_idx on orders(seller_id);
 
 -- ---------------------------------------------------------------------------
 -- notifications — also now always owned by a real user (no more shared

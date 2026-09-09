@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addSellerOfferToRequest, getSellerStatusForUser } from "@/lib/repo";
+import { addSellerOfferToRequest, getSellerStatusForUser, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -52,7 +52,9 @@ export async function POST(
   }
 
   try {
-    const offer = await addSellerOfferToRequest(params.id, user.businessName!, {
+    // See the products route — same seller_id dual-write.
+    const sellerId = await getSellerIdForUser(user.id);
+    const offer = await addSellerOfferToRequest(params.id, user.businessName!, sellerId, {
       price: body.price,
       delivery: body.delivery,
       eta: body.eta,

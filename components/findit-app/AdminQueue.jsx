@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 
@@ -194,6 +194,139 @@ function ReportedProblems({ orders, onResolve }) {
   );
 }
 
+// Step D (verification) + Step B (backfill) of the seller_id migration —
+// see the migration strategy this was built against. "Check status" and
+// "Preview" only ever read; "Apply" only ever writes matched rows, and only
+// after a preview exists so nobody can apply blind.
+function SellerIdentityMigration({ onCheckStatus, onPreview, onApply, showToast }) {
+  const [status, setStatus] = useState(null);
+  const [preview, setPreview] = useState(null);
+  const [loading, setLoading] = useState(null); // "status" | "preview" | "apply" | null
+
+  const TABLES = ["products", "orders", "offers"];
+
+  const runStatus = async () => {
+    setLoading("status");
+    try {
+      setStatus(await onCheckStatus());
+    } catch (err) {
+      showToast?.(err.message || "Couldn't load the status report.", "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const runPreview = async () => {
+    setLoading("preview");
+    try {
+      setPreview(await onPreview());
+    } catch (err) {
+      showToast?.(err.message || "Couldn't preview the backfill.", "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const runApply = async () => {
+    setLoading("apply");
+    try {
+      const result = await onApply();
+      const total = TABLES.reduce((sum, t) => sum + (result[t]?.appliedCount ?? 0), 0);
+      showToast?.(`Backfilled seller_id on ${total} row${total === 1 ? "" : "s"}.`);
+      setPreview(null); // state changed — force a fresh preview before applying again
+      setStatus(await onCheckStatus());
+    } catch (err) {
+      showToast?.(err.message || "Couldn't apply the backfill.", "error");
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const totalMatched = preview ? TABLES.reduce((sum, t) => sum + (preview[t]?.matchedCount ?? 0), 0) : 0;
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-[12px] text-[#6B6483]">
+          Reliable seller identity for listings, orders and offers — additive only, nothing existing changes until you review and apply.
+        </p>
+      </div>
+
+      <div className="flex gap-2 mt-3 mb-3">
+        <button
+          onClick={runStatus}
+          disabled={loading !== null}
+          className={`flex items-center gap-1.5 text-[12px] font-semibold px-3.5 py-2 rounded-xl border border-[#ECE9F7] text-[#1E1B4B] ${loading !== null ? "opacity-60" : ""}`}
+        >
+          <RefreshCw size={12} className={loading === "status" ? "animate-spin" : ""} /> Check status
+        </button>
+        <button
+          onClick={runPreview}
+          disabled={loading !== null}
+          className={`flex items-center gap-1.5 text-[12px] font-semibold px-3.5 py-2 rounded-xl border border-[#ECE9F7] text-[#1E1B4B] ${loading !== null ? "opacity-60" : ""}`}
+        >
+          {loading === "preview" ? "Previewing…" : "Preview backfill"}
+        </button>
+        {preview && (
+          <button
+            onClick={runApply}
+            disabled={loading !== null || totalMatched === 0}
+            className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${loading !== null || totalMatched === 0 ? "opacity-40" : ""}`}
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            {loading === "apply" ? "Applying…" : `Apply backfill (${totalMatched})`}
+          </button>
+        )}
+      </div>
+
+      {status && (
+        <div className="space-y-1.5 mb-3">
+          {TABLES.map((t) => {
+            const r = status[t];
+            if (!r) return null;
+            return (
+              <div key={t} className="flex items-center justify-between text-[11px] text-[#514B67] bg-[#F5F2FC] rounded-lg px-2.5 py-1.5">
+                <span className="capitalize font-medium">{t}</span>
+                <span>
+                  {r.withSellerId}/{r.total} have seller_id
+                  {r.mismatched.length > 0 && (
+                    <span className="text-[#E64980] font-semibold"> · {r.mismatched.length} mismatched</span>
+                  )}
+                </span>
+              </div>
+            );
+          })}
+          <p className="text-[10px] text-[#8A8372]">Orphaned relationships: {status.orphanedRelationships}</p>
+        </div>
+      )}
+
+      {preview && (
+        <div className="space-y-2 pt-2 border-t border-[#ECE9F7]">
+          {TABLES.map((t) => {
+            const p = preview[t];
+            if (!p) return null;
+            return (
+              <div key={t} className="text-[11px] text-[#514B67]">
+                <p className="font-medium capitalize mb-1">{t}: {p.matchedCount} safe to backfill{p.appliedCount ? ` (${p.appliedCount} already applied)` : ""}</p>
+                {p.ambiguous.length > 0 && (
+                  <p className="text-[#D97706] pl-2">
+                    Ambiguous — needs a rename to resolve: {p.ambiguous.map((a) => `"${a.sellerName}" (${a.candidateCount} accounts, ${a.rowCount} rows)`).join(", ")}
+                  </p>
+                )}
+                {p.unmatched.length > 0 && (
+                  <p className="text-[#6B6483] pl-2">
+                    No matching account: {p.unmatched.map((u) => `"${u.sellerName}" (${u.rowCount} rows)`).join(", ")}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -205,6 +338,9 @@ export default function AdminQueue({
   onDemoteFromAdmin,
   reportedOrders = [],
   onResolveOrderIssue,
+  onCheckSellerIdentityStatus,
+  onPreviewSellerIdentityBackfill,
+  onApplySellerIdentityBackfill,
   currentAdminId,
   showToast,
 }) {
@@ -263,6 +399,16 @@ export default function AdminQueue({
           </div>
         ))}
       </div>
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+        <Link2 size={13} className="text-[#7C3AED]" /> Seller identity migration
+      </p>
+      <SellerIdentityMigration
+        onCheckStatus={onCheckSellerIdentityStatus}
+        onPreview={onPreviewSellerIdentityBackfill}
+        onApply={onApplySellerIdentityBackfill}
+        showToast={showToast}
+      />
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
         <UserPlus size={13} className="text-[#7C3AED]" /> Team & admin access

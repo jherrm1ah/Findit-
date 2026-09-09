@@ -114,6 +114,13 @@ export const api = {
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
+  getSellerIdentityReport: () => request("/api/admin/seller-identity"),
+  runSellerIdentityBackfill: (apply) =>
+    request("/api/admin/seller-identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apply: Boolean(apply) }),
+    }),
   resolveOrderIssue: (orderId, outcome) =>
     request("/api/admin/disputes", {
       method: "POST",

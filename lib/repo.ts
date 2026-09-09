@@ -26,6 +26,10 @@ export type Product = {
   name: string;
   price: number;
   seller: string;
+  // Reliable identity alongside the text name above — see migration 009 and
+  // lib/sellerIdentityMatch.ts. Null until backfilled/dual-written; not read
+  // by any user-facing logic yet.
+  sellerId: string | null;
   imageUrl: string | null;
   art: number;
   createdAt: string;
@@ -204,6 +208,7 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     name: row.name as string,
     price: row.price as number,
     seller: row.seller as string,
+    sellerId: (row.seller_id as string | null) ?? null,
     imageUrl: (row.image_url as string | null) ?? null,
     art: row.art as number,
     createdAt: row.created_at as string,
@@ -265,6 +270,11 @@ export async function createProduct(input: {
   name: string;
   price: number;
   seller: string;
+  // The caller's own seller account id, looked up via getSellerIdForUser —
+  // dual-written alongside the text name so seller_id starts being trustworthy
+  // for every NEW listing, without changing anything about how listings are
+  // read or displayed today.
+  sellerId?: string | null;
   imageUrl?: string | null;
   lat?: number | null;
   lng?: number | null;
@@ -281,6 +291,7 @@ export async function createProduct(input: {
       name: input.name.trim(),
       price: Math.round(input.price),
       seller: input.seller,
+      seller_id: input.sellerId ?? null,
       image_url: input.imageUrl ?? null,
       lat: input.lat ?? null,
       lng: input.lng ?? null,
@@ -388,6 +399,10 @@ export async function listOrders(userId: string, sellerName?: string | null): Pr
 async function insertOrder(input: {
   item: string;
   seller: string;
+  // See sellerId on createProduct — same dual-write, carried through from
+  // whichever product/offer this order was created from (both already carry
+  // their own seller_id by the time this runs).
+  sellerId?: string | null;
   price: number;
   status: string;
   requestId?: string | null;
@@ -402,6 +417,7 @@ async function insertOrder(input: {
       user_id: input.userId,
       item: input.item,
       seller: input.seller,
+      seller_id: input.sellerId ?? null,
       price: input.price,
       status: input.status,
       request_id: input.requestId ?? null,
@@ -434,6 +450,7 @@ export async function createOrderFromProduct(
   const order = await insertOrder({
     item: product.name,
     seller: product.seller,
+    sellerId: product.sellerId,
     price: product.price * qty,
     status: "Awaiting payment",
     userId,
@@ -882,6 +899,19 @@ export async function getSellerStatusForUser(userId: string): Promise<Seller["st
   return (row?.status as Seller["status"] | undefined) ?? null;
 }
 
+// The caller's own sellers.id — looked up by the API routes that create a
+// listing or an offer, so the reliable seller_id (migration 009) can be
+// dual-written alongside the existing text business name. Null for a seller
+// account that somehow has no sellers row yet (shouldn't happen given
+// createUser/becomeSeller always create one, but this is a lookup, not an
+// assumption, so it degrades to "no seller_id recorded" rather than throwing).
+export async function getSellerIdForUser(userId: string): Promise<string | null> {
+  const db = getDb();
+  const result = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
+  const row = assertNoError(result, "looking up seller id") as Row | null;
+  return (row?.id as string | undefined) ?? null;
+}
+
 export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {
   const db = getDb();
   const result = await db
@@ -1158,6 +1188,9 @@ export function validateOfferInput(input: { price: number; delivery: string; eta
 export async function addSellerOfferToRequest(
   requestId: string,
   sellerName: string,
+  // See sellerId on createProduct — same dual-write, looked up by the caller
+  // via getSellerIdForUser.
+  sellerId: string | null,
   input: { price: number; delivery: string; eta: string; warranty: string; note?: string | null }
 ): Promise<Offer | null> {
   const db = getDb();
@@ -1174,6 +1207,7 @@ export async function addSellerOfferToRequest(
       id,
       request_id: requestId,
       seller: sellerName,
+      seller_id: sellerId,
       price: Math.round(input.price),
       delivery: input.delivery.trim(),
       eta: input.eta.trim(),
@@ -1234,6 +1268,7 @@ export async function acceptOffer(
   const order = await insertOrder({
     item: request.title as string,
     seller: offer.seller as string,
+    sellerId: (offer.seller_id as string | null) ?? null,
     price: offer.price as number,
     status: "Seller preparing",
     requestId,
