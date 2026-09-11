@@ -98,12 +98,15 @@ export type Notification = {
   time: string;
 };
 
+export type SellerStatus = "pending" | "approved" | "rejected" | "suspended";
+
 export type Seller = {
   id: string;
   userId: string;
   name: string;
   phone: string | null;
-  status: "pending" | "approved" | "rejected";
+  status: SellerStatus;
+  statusReason: string | null;
   createdAt: string;
 };
 
@@ -1036,7 +1039,8 @@ function rowToSeller(row: Row): Seller {
     userId: row.user_id as string,
     name: row.name as string,
     phone: (userRow?.phone as string | undefined) ?? null,
-    status: row.status as Seller["status"],
+    status: row.status as SellerStatus,
+    statusReason: (row.status_reason as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }
@@ -1051,16 +1055,38 @@ export async function listSellers(): Promise<Seller[]> {
   return rows.map(rowToSeller);
 }
 
-// Used to block a rejected seller from taking further marketplace actions
-// (new listings, uploads, offers) — otherwise an admin's "reject" click has
-// no real effect, since role alone (checked everywhere else) doesn't change
-// when a seller is rejected. Returns null for a non-seller (e.g. an admin),
-// which correctly never matches the 'rejected' check callers do.
-export async function getSellerStatusForUser(userId: string): Promise<Seller["status"] | null> {
+// Used to gate every restricted seller action (new listings, uploads,
+// offers) against the seller's real lifecycle state — otherwise an admin's
+// approve/reject/suspend click has no actual effect, since role alone
+// (checked everywhere else) doesn't change with seller status. Returns null
+// for a non-seller (e.g. an admin), which correctly never matches
+// 'approved' below.
+export async function getSellerStatusForUser(userId: string): Promise<SellerStatus | null> {
   const db = getDb();
   const result = await db.from("sellers").select("status").eq("user_id", userId).maybeSingle();
   const row = assertNoError(result, "checking seller status") as Row | null;
-  return (row?.status as Seller["status"] | undefined) ?? null;
+  return (row?.status as SellerStatus | undefined) ?? null;
+}
+
+// The single source of truth for "can this seller take a restricted action
+// right now" — replaces three previously-separate inline
+// `status === "rejected"` checks (uploads, listings, offers), each of which
+// silently let a 'pending' seller through since pending only differed from
+// approved in the admin's own head, not in enforced behavior. Pure and unit
+// tested: only 'approved' passes; pending/rejected/suspended each get a
+// message that tells the seller what's actually going on, not a bare 403.
+export function assertSellerCanTransact(status: SellerStatus | null): void {
+  if (status === "approved") return;
+  if (status === "pending") {
+    throw new ValidationError("Your seller account is still under review — you can list and sell once it's approved.");
+  }
+  if (status === "suspended") {
+    throw new ValidationError("Your seller account is suspended — contact FindIt support for details.");
+  }
+  if (status === "rejected") {
+    throw new ValidationError("Your seller account isn't approved to do that.");
+  }
+  throw new ValidationError("Seller account not found.");
 }
 
 // The caller's own sellers.id — looked up by the API routes that create a
@@ -1106,11 +1132,14 @@ export async function updateSellerBranding(
   assertNoError(result, "updating store branding");
 }
 
-export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {
+export async function setSellerStatus(id: string, status: SellerStatus, reason: string | null = null): Promise<Seller | null> {
+  if ((status === "rejected" || status === "suspended") && !reason?.trim()) {
+    throw new ValidationError("Give the seller a reason — never a silent rejection or suspension.");
+  }
   const db = getDb();
   const result = await db
     .from("sellers")
-    .update({ status })
+    .update({ status, status_reason: status === "approved" || status === "pending" ? null : reason!.trim() })
     .eq("id", id)
     .select("*, users(phone)")
     .maybeSingle();
@@ -1118,16 +1147,18 @@ export async function setSellerStatus(id: string, status: Seller["status"]): Pro
   if (!row) return null;
   const seller = rowToSeller(row);
 
-  if (status === "approved" || status === "rejected") {
-    await notifyBestEffort({
-      userId: seller.userId,
-      type: "seller",
-      title: status === "approved" ? "You're approved to sell" : "Seller application update",
-      body:
-        status === "approved"
-          ? "Your seller account has been approved — you can now list products and respond to requests."
-          : "Your seller application wasn't approved this time.",
-    });
+  const NOTIFY: Record<SellerStatus, { title: string; body: string } | null> = {
+    pending: null,
+    approved: {
+      title: "You're approved to sell",
+      body: "Your seller account has been approved — you can now list products and respond to requests.",
+    },
+    rejected: { title: "Seller application update", body: `Your seller application wasn't approved: ${reason}` },
+    suspended: { title: "Your seller account is suspended", body: `FindIt has suspended your selling privileges: ${reason}` },
+  };
+  const notification = NOTIFY[status];
+  if (notification) {
+    await notifyBestEffort({ userId: seller.userId, type: "seller", ...notification });
   }
 
   return seller;

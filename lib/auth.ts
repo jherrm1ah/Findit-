@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
 import { normalizeE164 } from "./phone";
+import type { AdminRole } from "./adminRoles";
 import { ensureDefaultStoreSubscription } from "./subscriptions";
 
 export const SESSION_COOKIE = "findit_session";
@@ -26,6 +27,9 @@ export type User = {
   phoneVerified: boolean;
   avatarUrl: string | null;
   notificationsEnabled: boolean;
+  // Scoped admin sub-role — meaningful only when role === "admin". See
+  // lib/adminRoles.ts. Null for every buyer/seller account.
+  adminRole: AdminRole | null;
 };
 
 type Row = Record<string, unknown>;
@@ -43,6 +47,7 @@ function rowToUser(row: Row): User {
     phoneVerified: (row.phone_verified as boolean | null) ?? true,
     avatarUrl: (row.avatar_url as string | null) ?? null,
     notificationsEnabled: (row.notifications_enabled as boolean | null) ?? true,
+    adminRole: (row.admin_role as AdminRole | null) ?? null,
   };
 }
 
@@ -403,13 +408,15 @@ export async function getUserByPhone(phone: string): Promise<User | null> {
   return row ? rowToUser(row) : null;
 }
 
-// Grants full admin access to an existing account. Deliberately no
-// "super-admin" gate above this — any admin can promote any other real
-// account, the same trust model scripts/create-admin.mjs already used
-// (whoever can run it can create an admin); this just moves that into the
-// app so a non-technical founder's team doesn't need the terminal for
-// every teammate after the very first admin exists.
-export async function promoteToAdmin(phone: string): Promise<User> {
+// Grants admin access to an existing account, with a scoped sub-role (see
+// lib/adminRoles.ts) — defaults to 'super_admin' (full access) when not
+// given, matching this function's original behavior before scoped roles
+// existed. Granting admin access at all is gated to super_admin-only at the
+// ROUTE level (requireSuperAdmin in lib/adminRoles.ts) — creating a new
+// admin is categorically more sensitive than any single permission domain,
+// so a lesser admin role must never be able to do it, unlike the old "any
+// admin can promote any other account" model this replaces.
+export async function promoteToAdmin(phone: string, adminRole: AdminRole = "super_admin"): Promise<User> {
   const user = await getUserByPhone(phone);
   if (!user) {
     throw new ValidationError("No FindIt account exists for that phone number yet.");
@@ -421,7 +428,7 @@ export async function promoteToAdmin(phone: string): Promise<User> {
   const db = getDb();
   const result = await db
     .from("users")
-    .update({ role: "admin", previous_role: user.role })
+    .update({ role: "admin", previous_role: user.role, admin_role: adminRole })
     .eq("id", user.id)
     .select()
     .single();
@@ -437,8 +444,12 @@ export async function promoteToAdmin(phone: string): Promise<User> {
 // Two guards a UI confirmation dialog can't substitute for, because they
 // protect the *platform*, not just this one action: an admin can never
 // demote themselves (self-lockout — always needs a second admin to act),
-// and the last remaining admin can never be demoted at all (would leave
-// FindIt with zero admins and no in-app way to create another one).
+// and the last remaining SUPER admin can never be demoted. That second
+// guard is deliberately about super_admin specifically, not "any admin" —
+// promoting/demoting is itself super_admin-only (see requireSuperAdmin in
+// lib/adminRoles.ts), so losing the last super_admin would leave FindIt
+// with admins who exist but can never create or remove another one, a
+// quieter but just as real lockout than having zero admins at all.
 export async function demoteFromAdmin(actingAdminId: string, phone: string): Promise<User> {
   const user = await getUserByPhone(phone);
   if (!user) {
@@ -452,15 +463,18 @@ export async function demoteFromAdmin(actingAdminId: string, phone: string): Pro
   }
 
   const db = getDb();
-  const countResult = await db
-    .from("users")
-    .select("id", { count: "exact", head: true })
-    .eq("role", "admin");
-  if (countResult.error) {
-    throw new Error(`checking admin count: ${countResult.error.message}`);
-  }
-  if ((countResult.count ?? 0) <= 1) {
-    throw new ValidationError("Can't remove the last admin — promote someone else first.");
+  if (user.adminRole === "super_admin") {
+    const countResult = await db
+      .from("users")
+      .select("id", { count: "exact", head: true })
+      .eq("role", "admin")
+      .eq("admin_role", "super_admin");
+    if (countResult.error) {
+      throw new Error(`checking super admin count: ${countResult.error.message}`);
+    }
+    if ((countResult.count ?? 0) <= 1) {
+      throw new ValidationError("Can't remove the last Super Admin — promote another Super Admin first.");
+    }
   }
 
   const row = assertNoError(
@@ -471,7 +485,7 @@ export async function demoteFromAdmin(actingAdminId: string, phone: string): Pro
 
   const updateResult = await db
     .from("users")
-    .update({ role: restoreRole, previous_role: null })
+    .update({ role: restoreRole, previous_role: null, admin_role: null })
     .eq("id", user.id)
     .select()
     .single();

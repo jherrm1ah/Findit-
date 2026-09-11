@@ -512,23 +512,24 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
-  const handleSellerStatusChange = async (id, status) => {
+  const handleSellerStatusChange = async (id, status, reason) => {
     const seller = sellers.find((s) => s.id === id);
     setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status } : s)));
     try {
-      await api.setSellerStatus(id, status);
+      await api.setSellerStatus(id, status, reason);
       showToast(`${seller?.name || "Seller"} ${status}.`);
       api.getAdminActions().then(setAdminActions).catch(() => {});
     } catch (err) {
       setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status: seller.status } : s)));
       showToast(err.message || "Couldn't update that seller — try again.", "error");
+      throw err;
     }
   };
 
   const handleLookupUser = (phone) => api.lookupUserByPhone(phone);
 
-  const handlePromoteToAdmin = async (phone) => {
-    const promoted = await api.promoteToAdmin(phone);
+  const handlePromoteToAdmin = async (phone, adminRole) => {
+    const promoted = await api.promoteToAdmin(phone, adminRole);
     api.getAdminActions().then(setAdminActions).catch(() => {});
     return promoted;
   };
@@ -777,6 +778,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onPromoteToAdmin={handlePromoteToAdmin}
               onDemoteFromAdmin={handleDemoteFromAdmin}
               currentAdminId={user.id}
+              currentAdminRole={user.adminRole}
               showToast={showToast}
               sellerVerifications={sellerVerifications}
               onReviewSellerVerification={handleReviewSellerVerification}

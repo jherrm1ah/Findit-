@@ -1,21 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser, getUserByPhone } from "@/lib/auth";
+import { getUserByPhone } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminRoles";
 import { getSellerIdForUser } from "@/lib/repo";
 import { grantStorePlan, BillingPeriod } from "@/lib/subscriptions";
 import { logAdminAction } from "@/lib/repo";
 import { errorResponse } from "@/lib/errors";
 
-// Admin-only escape hatch: activates a paid Store plan for a seller without
-// going through Paystack at all — for a seller who paid off-platform (bank
-// transfer) before Paystack keys existed here, or for testing the upgrade
-// flow in an environment with none configured. Always audit-logged, same as
-// every other high-impact admin action (seller approve/reject, promote/
-// demote) in this app.
+// Admin-only (finance domain) escape hatch: activates a paid Store plan for
+// a seller without going through Paystack at all — for a seller who paid
+// off-platform (bank transfer) before Paystack keys existed here, or for
+// testing the upgrade flow in an environment with none configured. Always
+// audit-logged, same as every other high-impact admin action (seller
+// approve/reject, promote/demote) in this app.
 export async function POST(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireAdmin(req, "finance");
+  if (admin instanceof NextResponse) return admin;
 
   let body: { phone?: string; sellerId?: string; planId?: string; billingPeriod?: BillingPeriod };
   try {

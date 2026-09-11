@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminRoles";
 import { listPendingVerifications } from "@/lib/sellerVerification";
 import { errorResponse } from "@/lib/errors";
 
@@ -7,10 +7,8 @@ import { errorResponse } from "@/lib/errors";
 // needs_info) — evidence URLs are short-lived signed URLs generated fresh
 // on every request, never stored or cached as plain public links.
 export async function GET(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireAdmin(req, "verification");
+  if (admin instanceof NextResponse) return admin;
   try {
     return NextResponse.json({ submissions: await listPendingVerifications() });
   } catch (err) {

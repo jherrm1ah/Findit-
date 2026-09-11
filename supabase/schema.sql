@@ -56,6 +56,12 @@ create table if not exists users (
   -- was never promoted (including admins created directly via
   -- scripts/create-admin.mjs).
   previous_role text,
+  -- Scoped admin sub-role — meaningful only when role='admin'. Narrows
+  -- what an admin account can do (see lib/adminRoles.ts), enforced
+  -- server-side on every admin route. 'super_admin' = full access, the
+  -- default for every admin so nothing loses capability by default.
+  admin_role text
+    check (admin_role in ('super_admin', 'verification_admin', 'support_admin', 'finance_admin', 'moderation_admin')),
   created_at timestamptz not null default now()
 );
 
@@ -83,7 +89,14 @@ create table if not exists sellers (
   id text primary key,
   user_id text not null unique references users(id) on delete cascade,
   name text not null,
-  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
+  -- pending: can complete onboarding, cannot list/offer/upload yet.
+  -- approved: normal selling privileges. rejected/suspended: restricted —
+  -- see lib/repo.ts#assertSellerCanTransact, the single source of truth
+  -- every restricted-action route checks against.
+  status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'suspended')),
+  -- Reused for a rejection reason or a suspension reason — a decision that
+  -- restricts a seller always comes with one shown back to them.
+  status_reason text,
   created_at timestamptz not null default now(),
   -- Real backing for the Store subscription "customization" feature (see
   -- subscription_plans.customization_level below) — settable only when the

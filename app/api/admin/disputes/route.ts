@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listDisputedOrders, resolveOrderIssue, logAdminAction } from "@/lib/repo";
-import { getSessionUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminRoles";
 import { errorResponse } from "@/lib/errors";
 
 // Orders where the buyer reported a problem and the money is still held.
 export async function GET(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireAdmin(req, "moderation");
+  if (admin instanceof NextResponse) return admin;
   try {
     return NextResponse.json({ orders: await listDisputedOrders() });
   } catch (err) {
@@ -18,10 +16,8 @@ export async function GET(req: NextRequest) {
 
 // An admin decides: pay the seller, or refund the buyer.
 export async function POST(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireAdmin(req, "moderation");
+  if (admin instanceof NextResponse) return admin;
 
   let body: { orderId?: string; outcome?: string };
   try {

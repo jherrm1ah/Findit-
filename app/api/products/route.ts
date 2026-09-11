@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listProducts, createProduct, getSellerStatusForUser, getSellerIdForUser, isValidProductImageUrl } from "@/lib/repo";
+import { listProducts, createProduct, getSellerStatusForUser, assertSellerCanTransact, getSellerIdForUser, isValidProductImageUrl } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -17,15 +17,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }
 
-  // An admin's "reject" action must actually stop a seller from listing —
-  // otherwise it's cosmetic. (Pending/approved sellers can already list;
-  // only rejected sellers are blocked.)
-  const status = await getSellerStatusForUser(user.id);
-  if (status === "rejected") {
-    return NextResponse.json(
-      { error: "Your seller account isn't approved to list products." },
-      { status: 403 }
-    );
+  // An admin's approve/reject/suspend decision must actually control
+  // whether a seller can list — see assertSellerCanTransact, the one place
+  // this lifecycle is enforced (pending/rejected/suspended all blocked now,
+  // not just rejected).
+  try {
+    assertSellerCanTransact(await getSellerStatusForUser(user.id));
+  } catch (err) {
+    return errorResponse(err, "Your seller account isn't approved to list products.");
   }
 
   const { allowed, retryAfterSeconds } = checkRateLimit(`listing:${user.id}`, MAX_LISTINGS, WINDOW_MS);

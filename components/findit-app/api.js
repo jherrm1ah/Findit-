@@ -140,11 +140,11 @@ export const api = {
     }),
   lookupUserByPhone: (phone) =>
     request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),
-  promoteToAdmin: (phone) =>
+  promoteToAdmin: (phone, adminRole) =>
     request("/api/admin/promote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, adminRole }),
     }).then((d) => d.user),
   demoteFromAdmin: (phone) =>
     request("/api/admin/demote", {
@@ -152,11 +152,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone }),
     }).then((d) => d.user),
-  setSellerStatus: (id, status) =>
+  setSellerStatus: (id, status, reason) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, reason }),
     }).then((d) => d.seller),
 
   classifyRequest: (description) =>

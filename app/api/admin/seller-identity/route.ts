@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/adminRoles";
 import { getDb } from "@/lib/db";
 import { errorResponse } from "@/lib/errors";
 import {
@@ -31,10 +31,8 @@ async function loadRows(table: "products" | "orders" | "offers"): Promise<Row[]>
 
 // GET — Step D: is seller_id trustworthy yet? Never writes anything.
 export async function GET(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireSuperAdmin(req);
+  if (admin instanceof NextResponse) return admin;
 
   try {
     const sellers = await loadSellerNames();
@@ -66,10 +64,8 @@ export async function GET(req: NextRequest) {
 // Body: { apply?: boolean }. Default (or apply: false) computes and returns
 // the plan without writing anything — a preview, safe to call freely.
 export async function POST(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireSuperAdmin(req);
+  if (admin instanceof NextResponse) return admin;
 
   let body: { apply?: boolean };
   try {

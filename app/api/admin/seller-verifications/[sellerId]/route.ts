@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/adminRoles";
 import { adminReviewVerification } from "@/lib/sellerVerification";
 import { errorResponse } from "@/lib/errors";
 
 export async function POST(req: NextRequest, { params }: { params: { sellerId: string } }) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireAdmin(req, "verification");
+  if (admin instanceof NextResponse) return admin;
 
   let body: { action?: "approved" | "rejected" | "needs_info"; reason?: string };
   try {

@@ -9,6 +9,7 @@ import {
   isValidProductImageUrl,
   ORDER_STATUSES,
   ValidationError,
+  assertSellerCanTransact,
 } from "./repo";
 
 // NOTE ON SCOPE: lib/repo.ts now talks to a real Supabase Postgres database
@@ -168,5 +169,44 @@ describe("isValidProductImageUrl", () => {
   it("rejects a different Supabase project's bucket, not just non-Supabase hosts", () => {
     const otherPrefix = "https://different-project.supabase.co/storage/v1/object/public/product-images/";
     expect(isValidProductImageUrl(`${otherPrefix}x.jpg`, prefix)).toBe(false);
+  });
+});
+
+// The real seller lifecycle gate (migration 013) — replaces three
+// previously-separate `status === "rejected"` checks that let a 'pending'
+// seller through everywhere. Only 'approved' should ever pass.
+describe("assertSellerCanTransact", () => {
+  it("allows an approved seller through", () => {
+    expect(() => assertSellerCanTransact("approved")).not.toThrow();
+  });
+
+  it("blocks pending — the actual bug fix: pending used to behave like approved", () => {
+    expect(() => assertSellerCanTransact("pending")).toThrow(ValidationError);
+  });
+
+  it("blocks rejected", () => {
+    expect(() => assertSellerCanTransact("rejected")).toThrow(ValidationError);
+  });
+
+  it("blocks suspended", () => {
+    expect(() => assertSellerCanTransact("suspended")).toThrow(ValidationError);
+  });
+
+  it("blocks a non-seller (null status) with its own message rather than crashing", () => {
+    expect(() => assertSellerCanTransact(null)).toThrow(ValidationError);
+  });
+
+  it("gives each blocked status a distinct, actionable message — never a bare 403", () => {
+    const messages = new Set(
+      (["pending", "rejected", "suspended", null] as const).map((s) => {
+        try {
+          assertSellerCanTransact(s);
+          return "";
+        } catch (err) {
+          return (err as Error).message;
+        }
+      })
+    );
+    expect(messages.size).toBe(4);
   });
 });

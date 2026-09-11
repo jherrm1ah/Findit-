@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, getSellerIdForUser, Product } from "@/lib/repo";
+import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, getSellerIdForUser, getSellerStatusForUser, assertSellerCanTransact, Product } from "@/lib/repo";
 import { getSessionUser, User } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { sellerOwnsItem } from "@/lib/sellerIdentityMatch";
@@ -53,6 +53,20 @@ export async function PATCH(
       { error: "imageUrl must be an image uploaded through FindIt." },
       { status: 400 }
     );
+  }
+
+  // Taking a listing down yourself (active: false, nothing else) is always
+  // allowed regardless of seller status — a suspended seller can still
+  // remove their own content. Anything else editing a live listing
+  // (including reactivating one) requires the same approved-seller check
+  // creating a new listing does.
+  const isSelfTakedownOnly = body.active === false && Object.keys(body).length === 1;
+  if (user?.role === "seller" && !isSelfTakedownOnly) {
+    try {
+      assertSellerCanTransact(await getSellerStatusForUser(user.id));
+    } catch (err) {
+      return errorResponse(err, "Your seller account isn't approved to edit listings.");
+    }
   }
 
   try {

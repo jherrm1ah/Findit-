@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { uploadProductImage } from "@/lib/storage";
 import { checkRateLimit } from "@/lib/rateLimit";
-import { getSellerStatusForUser } from "@/lib/repo";
 import { errorResponse } from "@/lib/errors";
 
 const MAX_BYTES = 5 * 1024 * 1024;
@@ -16,16 +15,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in first." }, { status: 401 });
   }
 
-  if (user.role === "seller") {
-    const status = await getSellerStatusForUser(user.id);
-    if (status === "rejected") {
-      return NextResponse.json(
-        { error: "Your seller account isn't approved to upload images." },
-        { status: 403 }
-      );
-    }
-  }
-
+  // This endpoint is shared by product photos, store branding, seller
+  // verification... and account avatars — a pending/rejected/suspended
+  // seller uploading their own profile photo isn't a restricted seller
+  // action, so it isn't gated here. The actual restricted actions
+  // (creating a listing, setting store branding) each independently check
+  // assertSellerCanTransact/assertCanCustomizeStore before the resulting
+  // URL is ever attached to anything public.
   const { allowed, retryAfterSeconds } = checkRateLimit(`upload:${user.id}`, MAX_UPLOADS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(

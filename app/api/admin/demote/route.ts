@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser, demoteFromAdmin } from "@/lib/auth";
+import { demoteFromAdmin } from "@/lib/auth";
+import { requireSuperAdmin } from "@/lib/adminRoles";
 import { logAdminAction, notifyBestEffort } from "@/lib/repo";
 import { errorResponse } from "@/lib/errors";
 
+// Removing admin access is the same sensitivity class as granting it — see
+// the promote route.
 export async function POST(req: NextRequest) {
-  const admin = await getSessionUser(req);
-  if (admin?.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  const admin = await requireSuperAdmin(req);
+  if (admin instanceof NextResponse) return admin;
 
   let body: { phone?: string };
   try {
