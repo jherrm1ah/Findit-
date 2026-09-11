@@ -4,6 +4,7 @@ import {
   matchSellerIdByName,
   planSellerIdBackfill,
   verifySellerIdIntegrity,
+  sellerOwnsItem,
 } from "./sellerIdentityMatch";
 
 // This is the logic the whole "do not break existing data" promise rests
@@ -143,5 +144,37 @@ describe("verifySellerIdIntegrity", () => {
       new Map([["s1", "New Name"]])
     );
     expect(report.mismatched).toEqual([]);
+  });
+});
+
+describe("sellerOwnsItem", () => {
+  it("allows a seller to manage their own listing", () => {
+    expect(sellerOwnsItem("Chidi Electronics", "s1", "Chidi Electronics", "s1")).toBe(true);
+  });
+
+  it("blocks a stranger with a completely different name", () => {
+    expect(sellerOwnsItem("Amaka Solar Supplies", "s2", "Chidi Electronics", "s1")).toBe(false);
+  });
+
+  it("THE BUG: blocks a same-name collision once both sides carry a seller_id", () => {
+    // Two different seller accounts both happen to be named "Chidi
+    // Electronics" — s1 owns the listing, s3 is a different account that
+    // merely shares its name. Before this fix, name-only matching let s3
+    // manage s1's listing; seller_id now tells them apart.
+    expect(sellerOwnsItem("Chidi Electronics", "s3", "Chidi Electronics", "s1")).toBe(false);
+  });
+
+  it("falls back to name-only matching for rows that predate seller_id", () => {
+    // itemSellerId null means this row hasn't been backfilled yet — same
+    // behavior as before seller_id existed, not a regression.
+    expect(sellerOwnsItem("Chidi Electronics", "s1", "Chidi Electronics", null)).toBe(true);
+  });
+
+  it("falls back to name-only matching when the caller has no seller_id yet", () => {
+    expect(sellerOwnsItem("Chidi Electronics", null, "Chidi Electronics", "s1")).toBe(true);
+  });
+
+  it("blocks when the name simply doesn't match, seller_id aside", () => {
+    expect(sellerOwnsItem("Different Name", "s1", "Chidi Electronics", "s1")).toBe(false);
   });
 });

@@ -49,6 +49,9 @@ export type Order = {
   userId: string;
   item: string;
   seller: string;
+  // Reliable identity alongside the text name above — see migration 009 and
+  // lib/sellerIdentityMatch.ts. Null until backfilled/dual-written.
+  sellerId: string | null;
   price: number;
   status: string;
   canReview: boolean;
@@ -352,6 +355,7 @@ function rowToOrder(row: Row): Order {
     userId: row.user_id as string,
     item: row.item as string,
     seller: row.seller as string,
+    sellerId: (row.seller_id as string | null) ?? null,
     price: row.price as number,
     status: row.status as string,
     canReview: Boolean(row.can_review),

@@ -125,3 +125,22 @@ export function verifySellerIdIntegrity(
 
   return report;
 }
+
+// A seller can manage (edit/delete) a listing or order only if it's really
+// theirs. Comparing business names alone isn't enough: business_name has no
+// uniqueness constraint (see the module comment above), so two sellers can
+// share a name, and a name-only check would let either one touch the
+// other's data. When both sides carry a reliable seller_id, that has to
+// match too — it's the one thing a shared name can't fake. Rows created
+// before seller_id existed (itemSellerId null) fall back to the name-only
+// check, same as before this existed.
+export function sellerOwnsItem(
+  callerBusinessName: string | null,
+  callerSellerId: string | null,
+  itemSellerName: string,
+  itemSellerId: string | null
+): boolean {
+  if (callerBusinessName !== itemSellerName) return false;
+  if (itemSellerId && callerSellerId && itemSellerId !== callerSellerId) return false;
+  return true;
+}

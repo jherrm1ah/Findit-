@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, Product } from "@/lib/repo";
+import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, getSellerIdForUser, Product } from "@/lib/repo";
 import { getSessionUser, User } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
+import { sellerOwnsItem } from "@/lib/sellerIdentityMatch";
 
 function storagePrefix(): string {
   return `${process.env.SUPABASE_URL ?? ""}/storage/v1/object/public/product-images/`;
 }
 
-function canManage(user: User | null, product: Product) {
-  return user?.role === "admin" || (user?.role === "seller" && user.businessName === product.seller);
+// Matching by business name alone isn't safe once two sellers can share a
+// name (business_name has no uniqueness constraint) — sellerOwnsItem also
+// requires seller_id to agree when both sides have one. See migration 009.
+async function canManage(user: User | null, product: Product): Promise<boolean> {
+  if (user?.role === "admin") return true;
+  if (user?.role !== "seller") return false;
+  const callerSellerId = await getSellerIdForUser(user.id);
+  return sellerOwnsItem(user.businessName, callerSellerId, product.seller, product.sellerId);
 }
 
 export async function PATCH(
@@ -20,7 +27,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const user = await getSessionUser(req);
-  if (!canManage(user, product)) {
+  if (!(await canManage(user, product))) {
     return NextResponse.json(
       { error: "Only the seller who owns this listing (or an admin) can edit it." },
       { status: 403 }
@@ -64,7 +71,7 @@ export async function DELETE(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
   const user = await getSessionUser(req);
-  if (!canManage(user, product)) {
+  if (!(await canManage(user, product))) {
     return NextResponse.json(
       { error: "Only the seller who owns this listing (or an admin) can delete it." },
       { status: 403 }
