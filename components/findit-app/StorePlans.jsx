@@ -1,0 +1,141 @@
+"use client";
+
+import { useState } from "react";
+import { Check, Crown, Store, Loader2 } from "lucide-react";
+import { naira } from "./data";
+
+const TIER_ICONS = { store_free: Store, store_basic: Store, store_business: Store, store_pro: Crown };
+
+const FEATURE_ROWS = (plan) => [
+  plan.productLimit === null ? "Unlimited active products" : `Up to ${plan.productLimit} active products`,
+  plan.storageLimitMb ? `${plan.storageLimitMb.toLocaleString("en-NG")} MB photo storage` : null,
+  plan.analyticsLevel !== "none" ? `${cap(plan.analyticsLevel)} analytics` : null,
+  plan.customizationLevel !== "none" ? `${cap(plan.customizationLevel)} store customization` : null,
+  plan.featuredListingAccess ? "Featured product placement" : null,
+  plan.prioritySupport ? "Priority support" : null,
+  plan.proBadge ? "Pro Store badge" : null,
+].filter(Boolean);
+
+function cap(s) {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+// The exact progression from the spec: what upgrading each tier is FOR, not
+// just what it unlocks.
+const TIER_TAGLINE = {
+  store_free: "Start selling",
+  store_basic: "Build your store",
+  store_business: "Grow your business",
+  store_pro: "Scale your business",
+};
+
+export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, changing, go }) {
+  const [pendingPlanId, setPendingPlanId] = useState(null);
+
+  if (!storePlan) {
+    return (
+      <div className="px-5 pt-6 pb-10 flex items-center justify-center min-h-[50vh]">
+        <Loader2 size={20} className="animate-spin text-[#7C3AED]" />
+      </div>
+    );
+  }
+
+  const { plan: currentPlan, plans, usage } = storePlan;
+
+  const choose = async (planId) => {
+    setPendingPlanId(planId);
+    try {
+      await onChangePlan(planId, "monthly");
+    } finally {
+      setPendingPlanId(null);
+    }
+  };
+
+  return (
+    <div className="px-5 pt-6 pb-10">
+      <div className="flex items-center gap-2 mb-1">
+        <Store size={17} className="text-[#7C3AED]" />
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Store plans</h1>
+      </div>
+      <p className="text-[12px] text-[#6B6483] mb-1">
+        You&apos;re on <span className="font-semibold text-[#1E1B4B]">{currentPlan.name}</span> — {usage.label}.
+      </p>
+      {storePlan.subscription.status === "trialing" && (
+        <p className="text-[11px] text-[#B45309] mb-5">
+          Trial active until {new Date(storePlan.subscription.trialEndsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}.
+        </p>
+      )}
+      {storePlan.subscription.status !== "trialing" && <div className="mb-5" />}
+
+      <div className="space-y-3">
+        {plans.map((plan) => {
+          const Icon = TIER_ICONS[plan.id] || Store;
+          const isCurrent = plan.id === currentPlan.id;
+          const isBusy = changing && pendingPlanId === plan.id;
+          return (
+            <div
+              key={plan.id}
+              className={`bg-white rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 border-2 ${
+                isCurrent ? "border-[#7C3AED]" : "border-[#ECE9F7]"
+              }`}
+            >
+              <div className="flex items-start justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+                    <Icon size={15} className="text-[#7C3AED]" />
+                  </div>
+                  <div>
+                    <p className="text-[14px] font-bold text-[#1E1B4B]">{plan.name}</p>
+                    <p className="text-[10.5px] text-[#8A8372] uppercase tracking-wide">{TIER_TAGLINE[plan.id]}</p>
+                  </div>
+                </div>
+                {isCurrent && (
+                  <span className="text-[10px] font-semibold text-[#7C3AED] bg-[#7C3AED]/10 px-2 py-1 rounded-full shrink-0">
+                    Current plan
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[18px] font-bold text-[#1E1B4B] my-2">
+                {plan.priceMonthly === 0 ? "Free" : naira(plan.priceMonthly)}
+                {plan.priceMonthly > 0 && <span className="text-[11px] font-medium text-[#8A8372]">/month</span>}
+              </p>
+
+              <ul className="space-y-1.5 mb-3">
+                {FEATURE_ROWS(plan).map((f) => (
+                  <li key={f} className="flex items-center gap-2 text-[11.5px] text-[#514B67]">
+                    <Check size={12} className="text-[#10B981] shrink-0" /> {f}
+                  </li>
+                ))}
+              </ul>
+
+              {!isCurrent && (
+                <button
+                  onClick={() => choose(plan.id)}
+                  disabled={changing}
+                  className={`w-full text-white text-[12.5px] font-semibold py-2.5 rounded-xl ${changing ? "opacity-50" : ""}`}
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {isBusy ? "Working…" : plan.sortOrder > currentPlan.sortOrder ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`}
+                </button>
+              )}
+              {isCurrent && plan.priceMonthly > 0 && (
+                <button
+                  onClick={onCancelPlan}
+                  disabled={changing}
+                  className="w-full text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl py-2.5 disabled:opacity-50"
+                >
+                  Cancel — back to Free
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <button onClick={() => go("seller")} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
+        Back to dashboard
+      </button>
+    </div>
+  );
+}

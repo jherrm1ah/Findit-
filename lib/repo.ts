@@ -1,5 +1,6 @@
 import { getDb, assertNoError } from "./db";
 import { CATEGORY_LABELS } from "./categories";
+import { assertCanActivateProduct } from "./subscriptions";
 
 export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
@@ -42,6 +43,11 @@ export type Product = {
   // not stored on the product row. See getSellerStatsMap().
   verified: boolean;
   rating: number | null;
+  // false only when a Store subscription downgrade pushed this listing over
+  // the new plan's product limit (see lib/subscriptions.ts) — the listing
+  // still exists with all its data, it's just hidden from buyers until the
+  // seller upgrades again or another listing is deactivated in its place.
+  active: boolean;
 };
 
 export type Order = {
@@ -219,6 +225,7 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     lng: (row.lng as number | null) ?? null,
     verified: stats.verified,
     rating: stats.rating,
+    active: row.active !== false,
   };
 }
 
@@ -284,6 +291,16 @@ export async function createProduct(input: {
 }): Promise<Product> {
   validateProductInput(input);
 
+  // Backend-enforced, not a frontend nicety: a Free seller at their listing
+  // cap can't bypass the "Add listing" button by hitting this API directly.
+  // Only checked when the caller's seller_id is known — an account whose
+  // seller_id hasn't been backfilled yet (pre-migration-009 data) can't have
+  // its plan looked up reliably, so it falls back to today's behavior
+  // (no limit) rather than blocking a real seller over a migration gap.
+  if (input.sellerId) {
+    await assertCanActivateProduct(input.sellerId);
+  }
+
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
   const result = await db
@@ -315,12 +332,23 @@ export async function updateProduct(
     imageUrl: string | null;
     lat: number | null;
     lng: number | null;
+    // Reactivating a listing a plan downgrade hid goes through the same
+    // limit check createProduct does — a seller can't work around their
+    // plan's cap by flipping an existing listing back on instead of making
+    // a new one.
+    active: boolean;
   }>
 ): Promise<Product | null> {
   const existing = await getProduct(id);
   if (!existing) return null;
 
   validateProductInput(patch);
+
+  // Same fallback-skip as createProduct: only enforced when this listing's
+  // seller_id is known.
+  if (patch.active === true && !existing.active && existing.sellerId) {
+    await assertCanActivateProduct(existing.sellerId);
+  }
 
   const db = getDb();
   const result = await db
@@ -332,6 +360,7 @@ export async function updateProduct(
       image_url: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
       lat: patch.lat !== undefined ? patch.lat : existing.lat,
       lng: patch.lng !== undefined ? patch.lng : existing.lng,
+      active: patch.active !== undefined ? patch.active : existing.active,
     })
     .eq("id", id);
   assertNoError(result, "updating product");

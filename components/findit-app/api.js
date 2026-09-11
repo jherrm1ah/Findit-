@@ -261,6 +261,16 @@ export const api = {
       body: JSON.stringify({ enabled }),
     }).then((d) => d.user),
 
+  getStorePlans: () => request("/api/subscriptions/plans"),
+  getMyStorePlan: () => request("/api/sellers/me/subscription"),
+  changeStorePlan: (planId, billingPeriod = "monthly") =>
+    request("/api/sellers/me/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId, billingPeriod }),
+    }),
+  cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+
   getConversations: () => request("/api/messages").then((d) => d.conversations),
   startConversation: (sellerBusinessName) =>
     request("/api/messages", {

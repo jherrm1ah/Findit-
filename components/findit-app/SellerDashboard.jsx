@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -175,6 +175,7 @@ export default function SellerDashboard({
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
   onMessageBuyer,
   myLocation,
+  storePlan, go,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -198,6 +199,9 @@ export default function SellerDashboard({
 
   const myOrders = orders.filter((o) => o.seller === user.businessName);
   const myListings = products.filter((p) => p.seller === user.businessName);
+  const plan = storePlan?.plan ?? null;
+  const usage = storePlan?.usage ?? null;
+  const atListingLimit = plan && plan.productLimit !== null && (usage?.activeProducts ?? 0) >= plan.productLimit;
 
   const reviewedOrders = myOrders.filter((o) => o.reviewed && o.myRating != null);
   const avgRating = reviewedOrders.length
@@ -288,6 +292,27 @@ export default function SellerDashboard({
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">{user.businessName}</p>
 
+      {plan && (
+        <button
+          onClick={() => go?.("storePlans")}
+          className="w-full flex items-center justify-between gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5 text-left"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+              <Crown size={16} className="text-[#7C3AED]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{plan.name} plan</p>
+              <p className="text-[11px] text-[#6B6483]">
+                {usage.label}
+                {storePlan.subscription.status === "trialing" && " · Trial"}
+              </p>
+            </div>
+          </div>
+          <span className="text-[11px] font-semibold text-[#7C3AED] shrink-0">Manage</span>
+        </button>
+      )}
+
       <div className="grid grid-cols-4 gap-2 mb-6">
         {STATS.map(([l, v]) => (
           <div key={l} className="bg-white border border-[#ECE9F7] rounded-[20px] py-3 text-center shadow-sm shadow-[#4C1D95]/5">
@@ -299,13 +324,28 @@ export default function SellerDashboard({
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My listings</p>
-        {!adding && (
+        {!adding && !atListingLimit && (
           <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
             <Plus size={13} /> Add listing
           </button>
         )}
       </div>
       <div className="space-y-3 mb-7">
+        {atListingLimit && !adding && (
+          <div className="bg-[#F5F2FC] rounded-[20px] p-4">
+            <p className="text-[12.5px] font-semibold text-[#1E1B4B] mb-1">
+              You&apos;ve reached the {plan.name} plan&apos;s limit of {plan.productLimit} active products.
+            </p>
+            <p className="text-[11px] text-[#6B6483] mb-3">Upgrade for more room to list — your existing listings are safe either way.</p>
+            <button
+              onClick={() => go?.("storePlans")}
+              className="text-white text-[11.5px] font-semibold px-3.5 py-2 rounded-xl"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              See upgrade options
+            </button>
+          </div>
+        )}
         {adding && (
           <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
             <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} onUploadImage={onUploadImage} />
@@ -315,7 +355,7 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No listings yet — add your first product above.</p>
         )}
         {myListings.map((p) => (
-          <div key={p.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
+          <div key={p.id} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false ? "opacity-60" : ""}`}>
             {editingId === p.id ? (
               <ListingForm
                 initial={{ name: p.name, category: p.category, price: String(p.price), imageUrl: p.imageUrl || null }}
@@ -327,7 +367,14 @@ export default function SellerDashboard({
             ) : (
               <div className="flex items-center justify-between gap-2 p-1">
                 <div className="min-w-0">
-                  <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{p.name}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{p.name}</p>
+                    {p.active === false && (
+                      <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
+                        <EyeOff size={9} /> Hidden — over plan limit
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] text-[#6B6483]">{GROUPS[p.category]?.label} · {naira(p.price)}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">

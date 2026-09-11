@@ -114,11 +114,17 @@ create table if not exists products (
   -- on file yet — such listings just don't get distance-sorted.
   lat double precision,
   lng double precision,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Lets a Store subscription downgrade deactivate excess listings instead
+  -- of deleting them (see subscription_plans/subscriptions below and
+  -- lib/subscriptions.ts#applyPlanChange). Defaults true so every listing
+  -- created before this feature existed just keeps working.
+  active boolean not null default true
 );
 create index if not exists products_seller_id_idx on products(seller_id);
 create index if not exists products_seller_idx on products(seller);
 create index if not exists products_created_at_idx on products(created_at desc);
+create index if not exists products_active_idx on products(active);
 
 -- ---------------------------------------------------------------------------
 -- requests / offers
@@ -310,6 +316,85 @@ create index if not exists otp_verifications_expires_at_idx on otp_verifications
 create index if not exists otp_verifications_created_at_idx on otp_verifications(created_at);
 
 -- ---------------------------------------------------------------------------
+-- subscription_plans / subscriptions / subscription_events / payments —
+-- FindIt Store subscription tiers + FindIt Pro. See
+-- supabase/migrations/010_store_subscriptions.sql for the full design notes
+-- (why this is 4 tables instead of the 8 in the original spec, why
+-- subscriptions covers both a seller's Store plan and a user's FindIt Pro
+-- plan, why products.active exists). A fresh project gets this table and its
+-- seed rows (the real plan prices/limits) directly from this file; an
+-- existing project runs migration 010 once.
+-- ---------------------------------------------------------------------------
+
+create table if not exists subscription_plans (
+  id text primary key,
+  kind text not null check (kind in ('store', 'platform')),
+  name text not null,
+  price_monthly integer not null check (price_monthly >= 0),
+  price_yearly integer,
+  product_limit integer,
+  storage_limit_mb integer,
+  analytics_level text not null default 'none' check (analytics_level in ('none', 'basic', 'advanced', 'full')),
+  customization_level text not null default 'none' check (customization_level in ('none', 'basic', 'advanced', 'full')),
+  featured_listing_access boolean not null default false,
+  priority_support boolean not null default false,
+  pro_badge boolean not null default false,
+  trial_days integer not null default 0,
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists subscriptions (
+  id text primary key,
+  owner_type text not null check (owner_type in ('store', 'platform')),
+  owner_id text not null,
+  plan_id text not null references subscription_plans(id),
+  status text not null default 'active'
+    check (status in ('active', 'trialing', 'past_due', 'cancelled', 'expired')),
+  billing_period text not null default 'monthly' check (billing_period in ('monthly', 'yearly')),
+  current_period_start timestamptz not null default now(),
+  current_period_end timestamptz,
+  trial_ends_at timestamptz,
+  cancel_at_period_end boolean not null default false,
+  cancelled_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (owner_type, owner_id)
+);
+create index if not exists subscriptions_owner_idx on subscriptions(owner_type, owner_id);
+create index if not exists subscriptions_status_idx on subscriptions(status);
+
+create table if not exists subscription_events (
+  id text primary key,
+  subscription_id text not null references subscriptions(id) on delete cascade,
+  type text not null,
+  detail jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists subscription_events_subscription_id_idx on subscription_events(subscription_id);
+create index if not exists subscription_events_created_at_idx on subscription_events(created_at desc);
+
+create table if not exists payments (
+  id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  subscription_id text references subscriptions(id),
+  kind text not null default 'subscription' check (kind in ('subscription', 'boost', 'fee', 'other')),
+  amount integer not null check (amount >= 0),
+  currency text not null default 'NGN',
+  status text not null default 'pending' check (status in ('pending', 'success', 'failed', 'refunded')),
+  provider text not null default 'paystack',
+  provider_reference text unique,
+  metadata jsonb,
+  paid_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists payments_user_id_idx on payments(user_id);
+create index if not exists payments_subscription_id_idx on payments(subscription_id);
+create index if not exists payments_status_idx on payments(status);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
 -- the note at the top of this file). All real access control lives in the
 -- Next.js API layer.
@@ -328,3 +413,42 @@ alter table messages enable row level security;
 alter table saved_items enable row level security;
 alter table admin_actions enable row level security;
 alter table otp_verifications enable row level security;
+alter table subscription_plans enable row level security;
+alter table subscriptions enable row level security;
+alter table subscription_events enable row level security;
+alter table payments enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- Seed data — the ONE deliberate exception to "no seed data" above. These
+-- are real business configuration (the FindIt Store/Pro plan prices and
+-- limits from the product spec), not demo/mock content — the app can't
+-- provision a seller onto a plan that doesn't exist. Prices are in whole
+-- NGN. Upsert-by-id: re-running this file updates names/limits here but
+-- never creates duplicates, and an admin can still edit prices later via
+-- the admin API without ever touching this file again.
+-- ---------------------------------------------------------------------------
+
+insert into subscription_plans
+  (id, kind, name, price_monthly, price_yearly, product_limit, storage_limit_mb,
+   analytics_level, customization_level, featured_listing_access, priority_support, pro_badge, trial_days, sort_order)
+values
+  ('store_free', 'store', 'Free Seller', 0, null, 10, 100, 'none', 'none', false, false, false, 0, 0),
+  ('store_basic', 'store', 'Basic Store', 2000, null, 50, 500, 'basic', 'basic', true, false, false, 30, 1),
+  ('store_business', 'store', 'Business Store', 5000, null, 200, 2000, 'advanced', 'advanced', true, true, false, 30, 2),
+  ('store_pro', 'store', 'Pro Store', 10000, null, null, 10000, 'full', 'full', true, true, true, 30, 3),
+  ('findit_pro', 'platform', 'FindIt Pro', 3500, 35000, null, null, 'advanced', 'none', true, true, true, 0, 10)
+on conflict (id) do update set
+  kind = excluded.kind,
+  name = excluded.name,
+  price_monthly = excluded.price_monthly,
+  price_yearly = excluded.price_yearly,
+  product_limit = excluded.product_limit,
+  storage_limit_mb = excluded.storage_limit_mb,
+  analytics_level = excluded.analytics_level,
+  customization_level = excluded.customization_level,
+  featured_listing_access = excluded.featured_listing_access,
+  priority_support = excluded.priority_support,
+  pro_badge = excluded.pro_badge,
+  trial_days = excluded.trial_days,
+  sort_order = excluded.sort_order,
+  updated_at = now();

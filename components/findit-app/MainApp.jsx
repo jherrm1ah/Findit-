@@ -11,6 +11,7 @@ import Home from "./Home";
 import Browse from "./Browse";
 import RequestForm from "./RequestForm";
 import SellerDashboard from "./SellerDashboard";
+import StorePlans from "./StorePlans";
 import AdminQueue from "./AdminQueue";
 import BecomeSeller from "./BecomeSeller";
 import Profile from "./Profile";
@@ -68,6 +69,11 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [otpStats, setOtpStats] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
+  // { subscription, plan, usage: { activeProducts, label }, plans } | null —
+  // see GET /api/sellers/me/subscription. null until the first fetch, or
+  // permanently for any account that's never been a seller.
+  const [storePlan, setStorePlan] = useState(null);
+  const [changingPlan, setChangingPlan] = useState(false);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -128,6 +134,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if (isSeller) {
       api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+      api.getMyStorePlan().then(setStorePlan).catch(() => {});
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
@@ -171,6 +178,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if (s === "profile" && isSeller) {
       api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+    }
+    if ((s === "seller" || s === "storePlans") && isSeller) {
+      api.getMyStorePlan().then(setStorePlan).catch(() => {});
     }
     if (s === "messages" && user) {
       api.getConversations().then(setConversations).catch(() => {});
@@ -337,6 +347,49 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     // rather than whatever (nothing) was cached for a buyer.
     api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
     showToast("Submitted — an admin will review your seller account shortly.");
+  };
+
+  // Three possible outcomes from the server — see POST
+  // /api/sellers/me/subscription: applied immediately (Free or a trial),
+  // a real Paystack checkout URL to send the seller to, or "not configured"
+  // when this environment has no Paystack keys yet.
+  const handleChangeStorePlan = async (planId, billingPeriod) => {
+    setChangingPlan(true);
+    try {
+      const result = await api.changeStorePlan(planId, billingPeriod);
+      if (result.applied) {
+        setStorePlan(await api.getMyStorePlan());
+        // A downgrade may have just deactivated some of this seller's own
+        // listings to fit the new limit — refresh so the dashboard reflects it.
+        api.getProducts().then(setProducts).catch(() => {});
+        showToast(
+          result.subscription.status === "trialing"
+            ? "Your trial has started — enjoy the upgrade."
+            : "Your store plan has been updated."
+        );
+      } else if (result.configured) {
+        window.location.href = result.checkoutUrl;
+      } else {
+        showToast(result.message || "Payments aren't set up yet — contact an admin.", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Couldn't change your store plan — try again.", "error");
+    } finally {
+      setChangingPlan(false);
+    }
+  };
+
+  const handleCancelStorePlan = async () => {
+    setChangingPlan(true);
+    try {
+      await api.cancelStorePlan();
+      setStorePlan(await api.getMyStorePlan());
+      showToast("Your store plan has been cancelled — you're back on Free.");
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel your store plan — try again.", "error");
+    } finally {
+      setChangingPlan(false);
+    }
   };
 
   const handleUpdatePhone = async (newPhone, currentPassword) => {
@@ -549,6 +602,11 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     );
   }
 
+  // A listing a plan downgrade deactivated still exists (see
+  // lib/subscriptions.ts) but shouldn't show up to buyers — only on the
+  // owning seller's own dashboard, where it's marked as hidden.
+  const buyerVisibleProducts = products.filter((p) => p.active !== false);
+
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
       {screen !== "home" && (
@@ -568,7 +626,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           <Home
             go={go}
             openProduct={setProduct}
-            products={products}
+            products={buyerVisibleProducts}
             unreadCount={notifications.filter((n) => n.unread).length}
             savedIds={savedIds}
             onToggleSaved={handleToggleSaved}
@@ -581,11 +639,29 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           <Browse
             initialGroup={browseGroup}
             openProduct={setProduct}
-            products={products}
+            products={buyerVisibleProducts}
             savedIds={savedIds}
             onToggleSaved={handleToggleSaved}
             myLocation={myLocation}
           />
+        )}
+        {screen === "storePlans" && (
+          isSeller ? (
+            <StorePlans
+              storePlan={storePlan}
+              onChangePlan={handleChangeStorePlan}
+              onCancelPlan={handleCancelStorePlan}
+              changing={changingPlan}
+              go={go}
+            />
+          ) : (
+            <RoleGate
+              title="Seller access needed"
+              message="Store plans belong to seller accounts."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
         )}
         {screen === "request" && (
           <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
@@ -608,6 +684,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onUploadImage={handleUploadImage}
               onMessageBuyer={handleMessageBuyer}
               myLocation={myLocation}
+              storePlan={storePlan}
+              go={go}
             />
           ) : (
             <RoleGate

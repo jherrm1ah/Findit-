@@ -41,6 +41,7 @@ export async function PATCH(
     imageUrl?: string | null;
     lat?: number | null;
     lng?: number | null;
+    active?: boolean;
   };
   try {
     body = await req.json();

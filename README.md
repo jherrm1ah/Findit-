@@ -62,6 +62,10 @@ funds UI as a simulated state) — see "Next steps" below.
   real coordinates to sort listings, sellers, and (for sellers) open requests by actual distance —
   "near you" works the same whether you're in Lagos, Nairobi, or anywhere else. See "Location
   awareness" below.
+- **Store plans** — every seller account has a real subscription (Free by default) that actually
+  gates what their store can do — currently the number of active listings, backend-enforced, not
+  just hidden buttons. A "Store plan" card on the Seller Dashboard links to a plan-comparison screen
+  to upgrade, start a trial, or cancel. See "Store subscriptions" below.
 
 ## Stack
 
@@ -85,6 +89,13 @@ needs one more script — `supabase/migrations/002_add_location.sql` (SQL Editor
 only adds new columns (`lat`/`lng` on `users`, `products`, `requests`); it doesn't touch existing
 data. A brand-new project doesn't need this — `schema.sql` already includes those columns.
 
+**If you already had this app running before Store subscriptions were added:** run
+`supabase/migrations/010_store_subscriptions.sql` (SQL Editor → paste → Run). It adds the
+`subscription_plans`/`subscriptions`/`subscription_events`/`payments` tables (seeded with the real
+plan prices/limits) and a `products.active` column defaulting to `true` — every existing listing
+keeps showing exactly as it does today. A brand-new project doesn't need this — `schema.sql`
+already includes it.
+
 ### 2. Configure environment variables
 
 Copy `.env.example` to `.env.local` and fill in:
@@ -95,6 +106,11 @@ Copy `.env.example` to `.env.local` and fill in:
 - `GEMINI_API_KEY` — from [ai.google.dev](https://ai.google.dev) ("Get API key"). Optional: without
   it, everything else works, and the AI-suggest button on the request form shows a clear error
   instead of a fake response.
+- `PAYSTACK_SECRET_KEY` — from [dashboard.paystack.com](https://dashboard.paystack.com) (Settings →
+  API Keys & Webhooks; use the TEST key while developing). Optional: without it, Free and
+  trial-eligible Store plan changes still work (no payment involved), and a plan that genuinely
+  needs payment reports "not configured" instead of pretending to charge anyone — see "Store
+  subscriptions" below.
 
 ### 3. Install and run
 
@@ -259,6 +275,58 @@ code, using the service role key server-side only. See the note at the top of `s
 for more detail, and if you migrate to Supabase Auth later, that's where real per-user RLS policies
 would go.
 
+## Store subscriptions
+
+Every seller account owns exactly one Store subscription — Free by default, provisioned the moment
+an account becomes a seller (`ensureDefaultStoreSubscription` in `lib/auth.ts`). Plans are real
+database rows (`subscription_plans`), not hard-coded in the frontend, specifically so an admin can
+change a price or limit without touching code:
+
+| Plan | Price | Active listings |
+| --- | --- | --- |
+| Free Seller | ₦0/mo | 10 |
+| Basic Store | ₦2,000/mo | 50 |
+| Business Store | ₦5,000/mo | 200 |
+| Pro Store | ₦10,000/mo | Unlimited |
+| FindIt Pro (platform-wide, separate from Store plans) | ₦3,500/mo or ₦35,000/yr | — |
+
+- **Backend-enforced, not just hidden buttons.** `createProduct`/reactivating a listing both call
+  `assertCanActivateProduct` (`lib/subscriptions.ts`) before touching the database — a Free seller
+  at 10/10 can't create an 11th listing by hitting the API directly, the same way every other limit
+  in this app is enforced server-side first.
+- **Downgrade never deletes data.** A plan change that tightens the product limit deactivates
+  (`products.active = false`) whichever of the seller's own listings are over the new limit —
+  oldest listings stay active first — rather than deleting anything. A deactivated listing
+  disappears from Home/Browse but still shows on the seller's own dashboard, marked "Hidden — over
+  plan limit," until they upgrade again or make room themselves.
+- **Trials.** A paid Store plan a seller hasn't already trialed starts a 30-day trial with no
+  payment required (`trial_days` on the plan row — admin-editable). This app has no scheduled job
+  runner, so instead of a cron sweeping expired trials, a trial (or an unpaid billing period) is
+  lazily resolved back to Free the next time that seller's subscription is read — never deleting
+  their store or listings, just dropping the plan.
+- **Cancelling** takes effect immediately (straight back to Free) rather than "at period end," for
+  the same reason: no scheduled job exists here to expire it later, and Free never deletes data, so
+  an immediate, honest cancel is more truthful than a promise this codebase can't keep on its own.
+- **Paystack.** `lib/paystack.ts` wraps Paystack's REST API directly (no SDK) — initializing a
+  transaction, verifying one, and verifying a webhook's HMAC-SHA512 signature
+  (`POST /api/payments/paystack/webhook`, which is what actually flips a subscription to `active`
+  once a charge succeeds — never trust a client-supplied "I paid"). With no `PAYSTACK_SECRET_KEY`
+  set, a plan change that genuinely needs payment returns a clear "not configured" response instead
+  of pretending to charge anyone; `POST /api/admin/subscriptions/grant` (admin-only, audit-logged)
+  activates a paid plan manually in the meantime — for a seller who paid off-platform, or for
+  testing the upgrade flow with no live Paystack account.
+- **Admin control.** `GET /api/admin/subscription-plans` / `PATCH /api/admin/subscription-plans/[id]`
+  edit any plan's price, limits, or features — no deploy needed. There's no dedicated admin screen
+  for this yet (see "Next steps" below); the API is real and usable from a script or a REST client
+  today.
+
+**Not built yet, deliberately out of scope for this pass:** an admin plan-editor screen, real
+per-seller storage (MB) metering (`storage_limit_mb` exists on each plan as config/display data
+only — nothing in the upload path measures usage against it), tier-themed public storefront pages,
+FindIt Pro's own screen and its combined-benefit resolution alongside a Store plan, and
+boost/featured-listing purchases and platform transaction fees (their pricing has an obvious home —
+another admin-editable `subscription_plans`-style table — but no purchase flow exists yet).
+
 ## Image uploads
 
 Product photos are stored in Supabase Storage. The `product-images` bucket is created
@@ -311,8 +379,10 @@ project rather than a local SQLite file, and this environment may not have netwo
 Supabase, the automated tests cover the real business logic that doesn't require a live database —
 input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
 math, password hashing, phone normalization (`lib/phone.ts`), OTP code generation/hashing/config
-(`lib/otp.ts`), and the real-world distance math behind "near you" — extracted into pure,
-directly-testable functions in `lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`.
+(`lib/otp.ts`), the real-world distance math behind "near you", and which listings a Store plan
+downgrade deactivates (`selectProductsToDeactivate` in `lib/subscriptions.ts` — oldest kept active
+first, nothing ever deleted) — extracted into pure, directly-testable functions in
+`lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`/`lib/subscriptions.ts`.
 The database-touching paths (signup/login, creating orders, accepting offers, messaging, the full
 OTP send/verify/resend cycle against `otp_verifications`, saving a product's/request's location,
 etc.) need to be verified by actually running the app against a real Supabase project, the same way
@@ -322,11 +392,19 @@ the same way the rest of this app's UI has been throughout this project.
 
 ## Next steps toward a real product
 
-A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
-deployment (see the note in "Testing" — this repo has never been deployed to a live host), and a
-real seller ID/document verification system (currently admin approval is a judgment call, not a
-document check). Phone verification (OTP) at signup and password reset is fully built (see
-"Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
-path has not been tested against Termii's live API from this environment (no network access here to
-termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
-documentation, not tested against a live account) — verify it end-to-end once a key is added.
+A real Nigerian payment processor for the **escrow flow** specifically — order checkout still shows
+a simulated held-funds state, `escrow_status` moves through `held → released/disputed/refunded`
+with no money actually changing hands yet. (Store subscriptions are a separate flow and already
+Paystack-ready — see "Store subscriptions" above; the same `lib/paystack.ts` wrapper is the natural
+place to plug real escrow payments in too.) Also needed: real hosting/deployment (see the note in
+"Testing" — this repo has never been deployed to a live host), and a real seller ID/document
+verification system (currently admin approval is a judgment call, not a document check). Phone
+verification (OTP) at signup and password reset is fully built (see "Security" above) but needs a
+real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver path has not been tested against
+Termii's live API from this environment (no network access here to termii.com — the integration in
+`lib/sms.ts` is built from Termii's current published v4 API documentation, not tested against a
+live account) — verify it end-to-end once a key is added. On the Store subscription side specifically
+(see "Store subscriptions" above for the full list): an admin plan-editor screen, real per-seller
+storage metering, tier-themed public storefronts, FindIt Pro's own screen, and boost/featured-listing
+purchases with platform transaction fees are all designed for (the database/plan-config shape has
+room for them) but not built.

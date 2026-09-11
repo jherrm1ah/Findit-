@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
 import { normalizeE164 } from "./phone";
+import { ensureDefaultStoreSubscription } from "./subscriptions";
 
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
@@ -86,13 +87,21 @@ export async function createUser(input: {
   assertNoError(insertResult, "creating account");
 
   if (input.role === "seller") {
+    const sellerId = "seller_" + id;
     const sellerResult = await db.from("sellers").insert({
-      id: "seller_" + id,
+      id: sellerId,
       user_id: id,
       name: input.businessName || input.name,
       status: "pending",
     });
     assertNoError(sellerResult, "creating seller verification record");
+    // Every store starts on Free — see lib/subscriptions.ts. Not fatal if
+    // this fails: the first read of the seller's subscription
+    // (getSellerSubscription) creates it lazily too, same as it does for
+    // stores that existed before this feature did.
+    await ensureDefaultStoreSubscription(sellerId).catch((err) =>
+      console.error("[auth] couldn't provision default Free subscription", err)
+    );
   }
 
   const row = assertNoError(
@@ -180,6 +189,7 @@ export async function becomeSeller(userId: string, businessName: string): Promis
   // keeps its buyer role rather than becoming a seller nobody can review.
   const existingSellerResult = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
   const existingSeller = assertNoError(existingSellerResult, "checking seller record") as Row | null;
+  const sellerId = "seller_" + userId;
   if (existingSeller) {
     assertNoError(
       await db.from("sellers").update({ name: trimmed, status: "pending" }).eq("user_id", userId),
@@ -188,7 +198,7 @@ export async function becomeSeller(userId: string, businessName: string): Promis
   } else {
     assertNoError(
       await db.from("sellers").insert({
-        id: "seller_" + userId,
+        id: sellerId,
         user_id: userId,
         name: trimmed,
         status: "pending",
@@ -196,6 +206,10 @@ export async function becomeSeller(userId: string, businessName: string): Promis
       "creating seller verification record"
     );
   }
+  // Every store starts on Free — see lib/subscriptions.ts.
+  await ensureDefaultStoreSubscription(sellerId).catch((err) =>
+    console.error("[auth] couldn't provision default Free subscription", err)
+  );
 
   assertNoError(
     await db.from("users").update({ role: "seller", business_name: trimmed }).eq("id", userId),
