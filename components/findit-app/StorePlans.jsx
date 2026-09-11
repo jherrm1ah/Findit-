@@ -1,20 +1,28 @@
 "use client";
 
 import { useState } from "react";
-import { Check, Crown, Store, Loader2 } from "lucide-react";
+import { Check, Clock, Crown, Store, Loader2 } from "lucide-react";
 import { naira } from "./data";
 
 const TIER_ICONS = { store_free: Store, store_basic: Store, store_business: Store, store_pro: Crown };
 
-const FEATURE_ROWS = (plan) => [
-  plan.productLimit === null ? "Unlimited active products" : `Up to ${plan.productLimit} active products`,
-  plan.storageLimitMb ? `${plan.storageLimitMb.toLocaleString("en-NG")} MB photo storage` : null,
-  plan.analyticsLevel !== "none" ? `${cap(plan.analyticsLevel)} analytics` : null,
-  plan.customizationLevel !== "none" ? `${cap(plan.customizationLevel)} store customization` : null,
-  plan.featuredListingAccess ? "Featured product placement" : null,
-  plan.prioritySupport ? "Priority support" : null,
-  plan.proBadge ? "Pro Store badge" : null,
-].filter(Boolean);
+// Every row here is either live today (real, backend-enforced functionality
+// — see the dashboard's Store analytics/branding cards and the public
+// storefront) or explicitly marked "Coming soon." Nothing is listed as
+// included that a seller can't actually see or use once they upgrade —
+// storage limits aren't metered anywhere yet, so that claim isn't made at
+// all rather than shown as delivered.
+const FEATURE_ROWS = (plan) =>
+  [
+    plan.productLimit === null
+      ? { text: "Unlimited active products", live: true }
+      : { text: `Up to ${plan.productLimit} active products`, live: true },
+    plan.analyticsLevel !== "none" ? { text: `${cap(plan.analyticsLevel)} store analytics`, live: true } : null,
+    plan.customizationLevel !== "none" ? { text: "Store logo & banner customization", live: true } : null,
+    plan.featuredListingAccess ? { text: "Featured placement on Home & Browse", live: true } : null,
+    plan.proBadge ? { text: "Pro Store badge", live: true } : null,
+    plan.prioritySupport ? { text: "Priority support", live: false } : null,
+  ].filter(Boolean);
 
 function cap(s) {
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -103,8 +111,14 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
 
               <ul className="space-y-1.5 mb-3">
                 {FEATURE_ROWS(plan).map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-[11.5px] text-[#514B67]">
-                    <Check size={12} className="text-[#10B981] shrink-0" /> {f}
+                  <li key={f.text} className={`flex items-center gap-2 text-[11.5px] ${f.live ? "text-[#514B67]" : "text-[#8A8372]"}`}>
+                    {f.live ? (
+                      <Check size={12} className="text-[#10B981] shrink-0" />
+                    ) : (
+                      <Clock size={12} className="text-[#B45309] shrink-0" />
+                    )}
+                    {f.text}
+                    {!f.live && <span className="text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full">Coming soon</span>}
                   </li>
                 ))}
               </ul>

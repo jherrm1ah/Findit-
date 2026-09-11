@@ -79,7 +79,13 @@ create table if not exists sellers (
   user_id text not null unique references users(id) on delete cascade,
   name text not null,
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected')),
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Real backing for the Store subscription "customization" feature (see
+  -- subscription_plans.customization_level below) — settable only when the
+  -- seller's current plan allows it (lib/subscriptions.ts#assertCanCustomizeStore),
+  -- and rendered on the public storefront (SellerProfile.jsx). Null until set.
+  logo_url text,
+  banner_url text
 );
 
 -- ---------------------------------------------------------------------------

@@ -219,25 +219,42 @@ async function getRawSubscription(ownerType: "store" | "platform", ownerId: stri
   return row ? rowToSubscription(row) : null;
 }
 
+// Pure: has this subscription's paid-for period actually run out? This is
+// the one check standing between "still Pro" and "quietly still showing Pro
+// after it lapsed" — the exact trust failure a subscription system can't
+// afford in either direction. Used both by the writing path below
+// (resolveEffectiveSubscription, which then really moves the row to Free)
+// and by the batched, read-only path (getStorePlanDisplayMap) that joins
+// tier info onto every product listing without writing anything on a public
+// read.
+export function isSubscriptionLapsed(
+  sub: { status: SubscriptionStatus; trialEndsAt: string | null; currentPeriodEnd: string | null },
+  planPriceMonthly: number,
+  now: number = Date.now()
+): boolean {
+  if (sub.status === "trialing" && sub.trialEndsAt && new Date(sub.trialEndsAt).getTime() <= now) {
+    return true;
+  }
+  if (
+    (sub.status === "active" || sub.status === "past_due") &&
+    sub.currentPeriodEnd &&
+    new Date(sub.currentPeriodEnd).getTime() <= now &&
+    planPriceMonthly > 0
+  ) {
+    return true;
+  }
+  return false;
+}
+
 // Lazily expires a trial or an unpaid billing period back to Free — this app
 // has no background job runner, so instead of a cron sweeping stale
 // subscriptions, every read resolves the true current state at read time.
 // Per spec: trial/period expiry never deletes the store or its listings,
 // it only drops back to Free (which in turn re-enforces Free's limits).
 async function resolveEffectiveSubscription(sub: Subscription): Promise<Subscription> {
-  const now = Date.now();
-  if (sub.status === "trialing" && sub.trialEndsAt && new Date(sub.trialEndsAt).getTime() <= now) {
-    return downgradeToFree(sub, "trial_ended");
-  }
-  if (
-    (sub.status === "active" || sub.status === "past_due") &&
-    sub.currentPeriodEnd &&
-    new Date(sub.currentPeriodEnd).getTime() <= now
-  ) {
-    const plan = await getPlan(sub.planId);
-    if (plan && plan.priceMonthly > 0) {
-      return downgradeToFree(sub, "expired");
-    }
+  const plan = await getPlan(sub.planId);
+  if (plan && isSubscriptionLapsed(sub, plan.priceMonthly)) {
+    return downgradeToFree(sub, sub.status === "trialing" ? "trial_ended" : "expired");
   }
   return sub;
 }
@@ -307,6 +324,63 @@ export async function getStorePlanOverview(sellerId: string) {
   };
 }
 
+export type StorePlanDisplay = {
+  planId: string;
+  planName: string;
+  proBadge: boolean;
+  featuredListingAccess: boolean;
+  customizationLevel: SubscriptionPlan["customizationLevel"];
+};
+
+const DEFAULT_DISPLAY: StorePlanDisplay = {
+  planId: FREE_STORE_PLAN_ID,
+  planName: "Free Seller",
+  proBadge: false,
+  featuredListingAccess: false,
+  customizationLevel: "none",
+};
+
+// One batched, READ-ONLY pass over every seller's subscription — used to
+// join tier info (Pro badge, featured placement, branding permission) onto
+// every product row at listing time. Deliberately does not write anything:
+// listProducts() runs on every public page load, and lazily "fixing" every
+// lapsed trial/period on every one of those reads would turn a catalogue
+// browse into a burst of subscription writes. The one-row writing path
+// (getSellerSubscription -> resolveEffectiveSubscription) still runs
+// whenever that specific seller's own subscription is read, which is what
+// actually flips the row to Free — this only ever affects what buyers see
+// in the meantime, never what's stored, and it can only ever show a lapsed
+// seller as Free (undercrediting), never show an active seller as anything
+// but their real plan.
+export async function getStorePlanDisplayMap(): Promise<Map<string, StorePlanDisplay>> {
+  const db = getDb();
+  const [subsResult, plans] = await Promise.all([
+    db.from("subscriptions").select("*").eq("owner_type", "store"),
+    listAllPlansForAdmin(),
+  ]);
+  const subs = assertNoError(subsResult, "loading store subscriptions") as Row[];
+  const planById = new Map(plans.map((p) => [p.id, p]));
+  const now = Date.now();
+
+  const map = new Map<string, StorePlanDisplay>();
+  for (const row of subs) {
+    const sub = rowToSubscription(row);
+    const plan = planById.get(sub.planId);
+    if (!plan) continue;
+    const display = isSubscriptionLapsed(sub, plan.priceMonthly, now)
+      ? DEFAULT_DISPLAY
+      : {
+          planId: plan.id,
+          planName: plan.name,
+          proBadge: plan.proBadge,
+          featuredListingAccess: plan.featuredListingAccess,
+          customizationLevel: plan.customizationLevel,
+        };
+    map.set(sub.ownerId, display);
+  }
+  return map;
+}
+
 // Throws a ValidationError naming the plan a seller would need, rather than
 // a bare "limit reached" — the upgrade-experience requirement from the spec.
 // Called before a listing is created or reactivated so the limit is real,
@@ -320,6 +394,20 @@ export async function assertCanActivateProduct(sellerId: string): Promise<void> 
     throw new ValidationError(
       `You've reached the ${plan.name} plan's limit of ${plan.productLimit} active products.${suggestion}`
     );
+  }
+}
+
+// Same pattern as assertCanActivateProduct — real server-side gate, not a
+// hidden button. A seller on Free/Basic (customization_level "none") who
+// PATCHes /api/sellers/me/branding directly gets rejected here, not just
+// hidden from in the UI.
+export async function assertCanCustomizeStore(sellerId: string): Promise<void> {
+  const { plan } = await getSellerSubscription(sellerId);
+  if (plan.customizationLevel === "none") {
+    const plans = await listPlans("store");
+    const next = plans.find((p) => p.sortOrder > plan.sortOrder && p.customizationLevel !== "none");
+    const suggestion = next ? ` Available on ${next.name} and above.` : "";
+    throw new ValidationError(`Store branding isn't available on the ${plan.name} plan.${suggestion}`);
   }
 }
 

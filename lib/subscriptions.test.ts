@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectProductsToDeactivate, formatUsageLabel } from "./subscriptions";
+import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed } from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
 // lib/subscriptions.ts (getSellerSubscription, changeStorePlan, etc.) need a
@@ -50,5 +50,54 @@ describe("formatUsageLabel", () => {
 
   it("singularizes a single product on an unlimited plan", () => {
     expect(formatUsageLabel(1, null)).toBe("1 product");
+  });
+});
+
+// This is the one check standing between "still Pro" and "quietly still
+// showing Pro after it lapsed" — the exact trust failure ("I paid for Pro
+// but I'm still seeing the Free version," or its inverse: seeing Pro
+// benefits after the seller stopped paying) a subscription system can't
+// afford in either direction.
+describe("isSubscriptionLapsed", () => {
+  const NOW = new Date("2026-06-15T12:00:00Z").getTime();
+
+  it("is not lapsed while a trial is still running", () => {
+    const sub = { status: "trialing" as const, trialEndsAt: "2026-06-20T00:00:00Z", currentPeriodEnd: null };
+    expect(isSubscriptionLapsed(sub, 5000, NOW)).toBe(false);
+  });
+
+  it("is lapsed the instant a trial's end date passes", () => {
+    const sub = { status: "trialing" as const, trialEndsAt: "2026-06-15T00:00:00Z", currentPeriodEnd: null };
+    expect(isSubscriptionLapsed(sub, 5000, NOW)).toBe(true);
+  });
+
+  it("is not lapsed while an active paid period is still current", () => {
+    const sub = { status: "active" as const, trialEndsAt: null, currentPeriodEnd: "2026-07-01T00:00:00Z" };
+    expect(isSubscriptionLapsed(sub, 5000, NOW)).toBe(false);
+  });
+
+  it("is lapsed once a paid period's end date passes with no renewal", () => {
+    const sub = { status: "active" as const, trialEndsAt: null, currentPeriodEnd: "2026-06-01T00:00:00Z" };
+    expect(isSubscriptionLapsed(sub, 5000, NOW)).toBe(true);
+  });
+
+  it("past_due (a failed renewal charge) still lapses once the period end passes", () => {
+    const sub = { status: "past_due" as const, trialEndsAt: null, currentPeriodEnd: "2026-06-01T00:00:00Z" };
+    expect(isSubscriptionLapsed(sub, 5000, NOW)).toBe(true);
+  });
+
+  it("Free never lapses — a null period end with price 0 is the normal, permanent state", () => {
+    const sub = { status: "active" as const, trialEndsAt: null, currentPeriodEnd: null };
+    expect(isSubscriptionLapsed(sub, 0, NOW)).toBe(false);
+  });
+
+  it("a plan with a past currentPeriodEnd but price 0 never lapses (defends the Free-plan invariant even with bad data)", () => {
+    const sub = { status: "active" as const, trialEndsAt: null, currentPeriodEnd: "2026-01-01T00:00:00Z" };
+    expect(isSubscriptionLapsed(sub, 0, NOW)).toBe(false);
+  });
+
+  it("cancelled and expired are already-resolved terminal states, not checked here", () => {
+    expect(isSubscriptionLapsed({ status: "cancelled" as const, trialEndsAt: null, currentPeriodEnd: "2026-01-01T00:00:00Z" }, 5000, NOW)).toBe(false);
+    expect(isSubscriptionLapsed({ status: "expired" as const, trialEndsAt: null, currentPeriodEnd: "2026-01-01T00:00:00Z" }, 5000, NOW)).toBe(false);
   });
 });

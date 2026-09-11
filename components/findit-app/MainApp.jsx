@@ -74,6 +74,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // permanently for any account that's never been a seller.
   const [storePlan, setStorePlan] = useState(null);
   const [changingPlan, setChangingPlan] = useState(false);
+  // { logoUrl, bannerUrl } | null — real backing for the plan's
+  // "customization" benefit; see PATCH /api/sellers/me/branding.
+  const [storeBranding, setStoreBranding] = useState(null);
+  const [savingBranding, setSavingBranding] = useState(false);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -135,6 +139,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     if (isSeller) {
       api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
+      api.getMyStoreBranding().then(setStoreBranding).catch(() => {});
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
@@ -376,6 +381,24 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       showToast(err.message || "Couldn't change your store plan — try again.", "error");
     } finally {
       setChangingPlan(false);
+    }
+  };
+
+  const handleUpdateStoreBranding = async (logoUrl, bannerUrl) => {
+    setSavingBranding(true);
+    try {
+      await api.updateStoreBranding(logoUrl, bannerUrl);
+      setStoreBranding({ logoUrl, bannerUrl });
+      // Every one of this seller's own listings carries these fields too
+      // (see rowToProduct in lib/repo.ts) — refresh so their own storefront
+      // preview and the public one both show the change immediately.
+      api.getProducts().then(setProducts).catch(() => {});
+      showToast("Store branding updated.");
+    } catch (err) {
+      showToast(err.message || "Couldn't update your store branding — try again.", "error");
+      throw err;
+    } finally {
+      setSavingBranding(false);
     }
   };
 
@@ -685,6 +708,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onMessageBuyer={handleMessageBuyer}
               myLocation={myLocation}
               storePlan={storePlan}
+              storeBranding={storeBranding}
+              onUpdateBranding={handleUpdateStoreBranding}
+              savingBranding={savingBranding}
               go={go}
             />
           ) : (

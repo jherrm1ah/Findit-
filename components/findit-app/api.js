@@ -59,6 +59,7 @@ export const api = {
   },
 
   getMySellerStatus: () => request("/api/sellers/me").then((d) => d.status),
+  getMyStoreBranding: () => request("/api/sellers/me").then((d) => ({ logoUrl: d.logoUrl, bannerUrl: d.bannerUrl })),
 
   getSavedIds: () => request("/api/saved").then((d) => d.productIds),
   saveItem: (productId) =>
@@ -270,6 +271,12 @@ export const api = {
       body: JSON.stringify({ planId, billingPeriod }),
     }),
   cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  updateStoreBranding: (logoUrl, bannerUrl) =>
+    request("/api/sellers/me/branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logoUrl, bannerUrl }),
+    }),
 
   getConversations: () => request("/api/messages").then((d) => d.conversations),
   startConversation: (sellerBusinessName) =>

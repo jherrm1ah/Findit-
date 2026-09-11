@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, Star, BadgeCheck, MessageCircle, Package, MapPin } from "lucide-react";
+import { ChevronLeft, Star, BadgeCheck, MessageCircle, Package, MapPin, Crown } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -14,10 +14,16 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
   );
 
   // Every listing from the same seller already carries the same computed
-  // rating/verified values (see getSellerStatsMap in lib/repo.ts) — no need
-  // to re-aggregate them here.
+  // rating/verified/tier values (see getSellerStatsMap in lib/repo.ts) — no
+  // need to re-aggregate them here. proBadge/logo/banner are real Store
+  // subscription benefits, live off the seller's current plan — see the
+  // "Golden Rule" audit in lib/subscriptions.ts: this is the actual public
+  // face of "pay for Pro, get Pro," not a cosmetic label.
   const avgRating = listings[0]?.rating ?? null;
   const verified = listings[0]?.verified ?? false;
+  const proBadge = listings[0]?.sellerProBadge ?? false;
+  const logoUrl = listings[0]?.sellerLogoUrl ?? null;
+  const bannerUrl = listings[0]?.sellerBannerUrl ?? null;
   const km = myLocation && listings[0]?.lat != null && listings[0]?.lng != null
     ? haversineKm(myLocation.lat, myLocation.lng, listings[0].lat, listings[0].lng)
     : null;
@@ -29,17 +35,28 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
         <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
       </div>
 
+      {bannerUrl && (
+        <div className="h-28 w-full mb-[-2.5rem] overflow-hidden">
+          <img src={bannerUrl} alt="" className="w-full h-full object-cover" />
+        </div>
+      )}
+
       <div className="px-5">
         <div className="flex items-center gap-3 mb-4">
           <div
-            className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-white text-[20px] font-bold"
+            className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-white text-[20px] font-bold overflow-hidden border-2 border-white shadow-md"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            {sellerName?.[0]?.toUpperCase() || "?"}
+            {logoUrl ? <img src={logoUrl} alt="" className="w-full h-full object-cover" /> : sellerName?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
-            <p className="text-[17px] font-bold text-[#1E1B4B] truncate" style={{ fontFamily: "Fraunces, serif" }}>
+            <p className="text-[17px] font-bold text-[#1E1B4B] truncate flex items-center gap-1.5" style={{ fontFamily: "Fraunces, serif" }}>
               {sellerName}
+              {proBadge && (
+                <span className="flex items-center gap-1 text-[9.5px] font-bold text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+                  <Crown size={9} /> PRO
+                </span>
+              )}
             </p>
             <div className="flex items-center gap-1.5 flex-wrap mt-1">
               {avgRating && (

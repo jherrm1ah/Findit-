@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -170,12 +170,199 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
   );
 }
 
+// Real backing for the plan's "customization" benefit — a Free/Basic seller
+// sees exactly why this is locked and what unlocks it; a Business/Pro
+// seller can actually set the images that show on their public storefront
+// (see SellerProfile.jsx). The server enforces the same gate independently
+// (assertCanCustomizeStore) — this UI gate is a convenience, not the
+// security boundary.
+function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage, go }) {
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const locked = !plan || plan.customizationLevel === "none";
+
+  const upload = async (file, kind) => {
+    const setUploading = kind === "logo" ? setUploadingLogo : setUploadingBanner;
+    setUploading(true);
+    try {
+      const url = await onUploadImage(file);
+      await onUpdateBranding(
+        kind === "logo" ? url : branding?.logoUrl ?? null,
+        kind === "banner" ? url : branding?.bannerUrl ?? null
+      );
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
+      <div className="flex items-center gap-2 mb-3">
+        <Palette size={14} className="text-[#7C3AED]" />
+        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Store branding</p>
+      </div>
+      {locked ? (
+        <div className="flex items-start gap-3 bg-[#F5F2FC] rounded-xl p-3">
+          <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-[12px] text-[#514B67] mb-2">
+              Add a store logo and banner on Basic Store and above — they show on your public storefront.
+            </p>
+            <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
+              See upgrade options
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { key: "logo", label: "Logo", url: branding?.logoUrl, uploading: uploadingLogo, className: "w-16 h-16 rounded-full" },
+            { key: "banner", label: "Banner", url: branding?.bannerUrl, uploading: uploadingBanner, className: "w-full h-16 rounded-lg" },
+          ].map(({ key, label, url, uploading, className }) => (
+            <div key={key}>
+              <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide mb-1.5">{label}</p>
+              <div className={`bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
+                {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
+              </div>
+              <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || uploading ? "opacity-50 pointer-events-none" : ""}`}>
+                {uploading ? "Uploading…" : url ? "Change" : "Upload"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={saving || uploading}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) upload(file, key);
+                  }}
+                />
+              </label>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const REVENUE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Real, tiered analytics computed from this seller's own real order data —
+// nothing fabricated, nothing shown that a higher plan doesn't actually
+// unlock. Free sees the upsell; Basic gets this-month totals; Business/Pro
+// add a top product and a real week-by-week trend.
+function StoreAnalytics({ plan, orders, go }) {
+  const level = plan?.analyticsLevel ?? "none";
+
+  const data = useMemo(() => {
+    const now = Date.now();
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const thisMonth = orders.filter((o) => new Date(o.createdAt).getTime() >= monthStart);
+    const revenueByProduct = new Map();
+    for (const o of orders) revenueByProduct.set(o.item, (revenueByProduct.get(o.item) || 0) + o.price);
+    const topProduct = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+
+    const weeks = [0, 1, 2, 3].map((i) => {
+      const end = now - i * REVENUE_MS;
+      const start = end - REVENUE_MS;
+      const revenue = orders
+        .filter((o) => {
+          const t = new Date(o.createdAt).getTime();
+          return t >= start && t < end;
+        })
+        .reduce((sum, o) => sum + o.price, 0);
+      return revenue;
+    }).reverse();
+
+    return {
+      monthOrders: thisMonth.length,
+      monthRevenue: thisMonth.reduce((sum, o) => sum + o.price, 0),
+      avgOrderValue: orders.length ? Math.round(orders.reduce((sum, o) => sum + o.price, 0) / orders.length) : 0,
+      topProduct,
+      weeks,
+    };
+  }, [orders]);
+
+  if (level === "none") {
+    return (
+      <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-7 flex items-start gap-3">
+        <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Store analytics</p>
+          <p className="text-[11.5px] text-[#6B6483] mb-2">Unlock real sales analytics on Basic Store and above.</p>
+          <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
+            See upgrade options
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const maxWeek = Math.max(1, ...data.weeks);
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
+      <div className="flex items-center gap-2 mb-3">
+        <BarChart3 size={14} className="text-[#7C3AED]" />
+        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Store analytics</p>
+      </div>
+      <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="bg-[#F5F2FC] rounded-xl p-3">
+          <p className="text-[14px] font-bold text-[#1E1B4B]">{naira(data.monthRevenue)}</p>
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">This month's revenue</p>
+        </div>
+        <div className="bg-[#F5F2FC] rounded-xl p-3">
+          <p className="text-[14px] font-bold text-[#1E1B4B]">{data.monthOrders}</p>
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Orders this month</p>
+        </div>
+      </div>
+
+      {(level === "advanced" || level === "full") && (
+        <div className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3 mb-3">
+          <div className="min-w-0">
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide mb-0.5">Top product by revenue</p>
+            <p className="text-[12.5px] font-semibold text-[#1E1B4B] truncate">{data.topProduct ? data.topProduct[0] : "No sales yet"}</p>
+          </div>
+          {data.topProduct && <p className="text-[12.5px] font-bold text-[#1E1B4B] shrink-0">{naira(data.topProduct[1])}</p>}
+        </div>
+      )}
+
+      {level === "full" && (
+        <div>
+          <div className="flex items-center gap-1.5 mb-2">
+            <TrendingUp size={11} className="text-[#7C3AED]" />
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Revenue, last 4 weeks</p>
+          </div>
+          <div className="flex items-end gap-2 h-16">
+            {data.weeks.map((rev, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                <div
+                  className="w-full rounded-t-md"
+                  style={{ height: `${Math.max(4, (rev / maxWeek) * 56)}px`, background: "linear-gradient(180deg,#A855F7,#7C3AED)" }}
+                  title={naira(rev)}
+                />
+                <p className="text-[8.5px] text-[#8A8372]">W{i + 1}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[9.5px] text-[#8A8372] mt-2">Average order value: {naira(data.avgOrderValue)}</p>
+    </div>
+  );
+}
+
 export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
   onMessageBuyer,
   myLocation,
   storePlan, go,
+  storeBranding, onUpdateBranding, savingBranding,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -290,7 +477,14 @@ export default function SellerDashboard({
         <LayoutDashboard size={17} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Seller dashboard</h1>
       </div>
-      <p className="text-[12px] text-[#6B6483] mb-5">{user.businessName}</p>
+      <p className="text-[12px] text-[#6B6483] mb-5 flex items-center gap-1.5">
+        {user.businessName}
+        {plan?.proBadge && (
+          <span className="flex items-center gap-1 text-[9.5px] font-bold text-white px-1.5 py-0.5 rounded-full" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+            <Crown size={9} /> PRO STORE
+          </span>
+        )}
+      </p>
 
       {plan && (
         <button
@@ -321,6 +515,9 @@ export default function SellerDashboard({
           </div>
         ))}
       </div>
+
+      <StoreAnalytics plan={plan} orders={myOrders} go={go} />
+      <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My listings</p>

@@ -22,10 +22,15 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
       if (q && !p.name.toLowerCase().includes(q)) return false;
       return true;
     });
-    if (!myLocation) return filtered;
-    return filtered
-      .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
-      .sort((a, b) => a._km - b._km);
+    // Same stable "featured first" pass as Home — real placement for the
+    // Store subscription benefit, layered on top of (never replacing)
+    // distance sort when a location is known.
+    const sorted = myLocation
+      ? filtered
+          .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
+          .sort((a, b) => a._km - b._km)
+      : filtered;
+    return [...sorted].sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured));
   }, [products, group, query, verifiedOnly, myLocation]);
 
   return (

@@ -1,6 +1,6 @@
 import { getDb, assertNoError } from "./db";
 import { CATEGORY_LABELS } from "./categories";
-import { assertCanActivateProduct } from "./subscriptions";
+import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
 
 export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
@@ -48,6 +48,13 @@ export type Product = {
   // still exists with all its data, it's just hidden from buyers until the
   // seller upgrades again or another listing is deactivated in its place.
   active: boolean;
+  // Real, server-computed Store subscription benefits — see SellerStats in
+  // the Products section below. All derived from the seller's LIVE plan at
+  // read time, never from anything a client sent.
+  sellerProBadge: boolean; // Pro Store plan only
+  sellerFeatured: boolean; // Business/Pro — real placement boost, see listProducts()
+  sellerLogoUrl: string | null; // set only when the seller's plan allows branding
+  sellerBannerUrl: string | null;
 };
 
 export type Order = {
@@ -149,7 +156,19 @@ function timeAgo(iso: string): string {
 /*  real approval status (sellers.status) and real order reviews.       */
 /* ------------------------------------------------------------------ */
 
-type SellerStats = { verified: boolean; rating: number | null; orderCount: number };
+type BaseSellerStats = { verified: boolean; rating: number | null; orderCount: number };
+
+type SellerStats = BaseSellerStats & {
+  // Live Store-subscription-derived display fields — computed server-side
+  // from the seller's current plan (see getStorePlanDisplayMap in
+  // lib/subscriptions.ts), never accepted from a client. A seller whose
+  // plan lapses stops showing these on their very next listing read, same
+  // as their own dashboard.
+  proBadge: boolean;
+  featured: boolean;
+  logoUrl: string | null;
+  bannerUrl: string | null;
+};
 
 // Pure — takes already-fetched rows and computes the stats map. Split out
 // from getSellerStatsMap() so this (the actual business logic: how a
@@ -159,8 +178,8 @@ type SellerStats = { verified: boolean; rating: number | null; orderCount: numbe
 export function computeSellerStatsMap(
   sellerRows: Array<{ name: string; status: string }>,
   reviewedOrderRows: Array<{ seller: string; my_rating: number | null }>
-): Map<string, SellerStats> {
-  const map = new Map<string, SellerStats>();
+): Map<string, BaseSellerStats> {
+  const map = new Map<string, BaseSellerStats>();
 
   for (const row of sellerRows) {
     map.set(row.name, { verified: row.status === "approved", rating: null, orderCount: 0 });
@@ -184,10 +203,16 @@ export function computeSellerStatsMap(
   return map;
 }
 
+// seller_id is what actually keys getStorePlanDisplayMap (it's a real FK,
+// not a mutable text name) — but computeSellerStatsMap above is keyed by
+// business_name, the same pre-existing convention every other seller-facing
+// read in this app still uses. If two different seller accounts share a
+// name (the exact scenario migration 009 exists for), the last one wins
+// here too — an existing limitation of name-keyed stats, not a new one.
 async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
   const db = getDb();
 
-  const sellersResult = await db.from("sellers").select("name, status");
+  const sellersResult = await db.from("sellers").select("id, name, status, logo_url, banner_url");
   const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
 
   const ordersResult = await db
@@ -196,14 +221,54 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
     .eq("reviewed", true);
   const orderRows = assertNoError(ordersResult, "loading order reviews") as Row[];
 
-  return computeSellerStatsMap(
-    sellerRows.map((r) => ({ name: r.name as string, status: r.status as string })),
-    orderRows.map((r) => ({ seller: r.seller as string, my_rating: r.my_rating as number | null }))
-  );
+  const [baseMap, displayMap] = await Promise.all([
+    Promise.resolve(
+      computeSellerStatsMap(
+        sellerRows.map((r) => ({ name: r.name as string, status: r.status as string })),
+        orderRows.map((r) => ({ seller: r.seller as string, my_rating: r.my_rating as number | null }))
+      )
+    ),
+    getStorePlanDisplayMap(),
+  ]);
+
+  const map = new Map<string, SellerStats>();
+  for (const row of sellerRows) {
+    const name = row.name as string;
+    const base = baseMap.get(name) ?? { verified: false, rating: null, orderCount: 0 };
+    const display = displayMap.get(row.id as string);
+    map.set(name, {
+      ...base,
+      proBadge: display?.proBadge ?? false,
+      featured: display?.featuredListingAccess ?? false,
+      logoUrl: (row.logo_url as string | null) ?? null,
+      bannerUrl: (row.banner_url as string | null) ?? null,
+    });
+  }
+  // A name that shows up only via order rows (no matching sellers-table
+  // row) — same "Ghost Seller" edge case computeSellerStatsMap already
+  // handles — has no plan to speak of, so it gets the same falsy defaults
+  // statsFor() would give it anyway.
+  for (const [name, base] of baseMap) {
+    if (!map.has(name)) {
+      map.set(name, { ...base, proBadge: false, featured: false, logoUrl: null, bannerUrl: null });
+    }
+  }
+
+  return map;
 }
 
+const DEFAULT_SELLER_STATS: SellerStats = {
+  verified: false,
+  rating: null,
+  orderCount: 0,
+  proBadge: false,
+  featured: false,
+  logoUrl: null,
+  bannerUrl: null,
+};
+
 function statsFor(map: Map<string, SellerStats>, seller: string): SellerStats {
-  return map.get(seller) ?? { verified: false, rating: null, orderCount: 0 };
+  return map.get(seller) ?? DEFAULT_SELLER_STATS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -226,7 +291,22 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     verified: stats.verified,
     rating: stats.rating,
     active: row.active !== false,
+    sellerProBadge: stats.proBadge,
+    sellerFeatured: stats.featured,
+    sellerLogoUrl: stats.logoUrl,
+    sellerBannerUrl: stats.bannerUrl,
   };
+}
+
+// Real placement for the Store subscription "featured listing" benefit
+// (Business/Pro plans) — a stable sort keeps everything else in its
+// existing recency order, it just pulls featured sellers' listings to the
+// front as a group. Buyers with a real location still see the app's other
+// core promise — "near you" — respected within each group, since Home/
+// Browse layer their own distance sort on top of whatever order this
+// returns; see the "featured" stable-sort note in those two components.
+function sortFeaturedFirst(products: Product[]): Product[] {
+  return [...products].sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured));
 }
 
 export async function listProducts(): Promise<Product[]> {
@@ -234,7 +314,7 @@ export async function listProducts(): Promise<Product[]> {
   const result = await db.from("products").select("*").order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing products") as Row[];
   const stats = await getSellerStatsMap();
-  return rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string)));
+  return sortFeaturedFirst(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -938,11 +1018,41 @@ export async function getSellerStatusForUser(userId: string): Promise<Seller["st
 // account that somehow has no sellers row yet (shouldn't happen given
 // createUser/becomeSeller always create one, but this is a lookup, not an
 // assumption, so it degrades to "no seller_id recorded" rather than throwing).
+export async function getSellerBrandingForUser(
+  userId: string
+): Promise<{ logoUrl: string | null; bannerUrl: string | null } | null> {
+  const db = getDb();
+  const result = await db.from("sellers").select("logo_url, banner_url").eq("user_id", userId).maybeSingle();
+  const row = assertNoError(result, "loading store branding") as Row | null;
+  if (!row) return null;
+  return { logoUrl: (row.logo_url as string | null) ?? null, bannerUrl: (row.banner_url as string | null) ?? null };
+}
+
 export async function getSellerIdForUser(userId: string): Promise<string | null> {
   const db = getDb();
   const result = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
   const row = assertNoError(result, "looking up seller id") as Row | null;
   return (row?.id as string | undefined) ?? null;
+}
+
+// Real backing for the "customization" Store subscription benefit — gated
+// server-side (assertCanCustomizeStore) so a Free/Basic seller can't set
+// these just by knowing the endpoint exists. logoUrl/bannerUrl null clears
+// that image; undefined leaves it untouched.
+export async function updateSellerBranding(
+  sellerId: string,
+  patch: { logoUrl?: string | null; bannerUrl?: string | null }
+): Promise<void> {
+  await assertCanCustomizeStore(sellerId);
+
+  const columns: Record<string, unknown> = {};
+  if (patch.logoUrl !== undefined) columns.logo_url = patch.logoUrl;
+  if (patch.bannerUrl !== undefined) columns.banner_url = patch.bannerUrl;
+  if (Object.keys(columns).length === 0) return;
+
+  const db = getDb();
+  const result = await db.from("sellers").update(columns).eq("id", sellerId);
+  assertNoError(result, "updating store branding");
 }
 
 export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {

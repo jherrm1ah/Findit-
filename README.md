@@ -93,8 +93,10 @@ data. A brand-new project doesn't need this — `schema.sql` already includes th
 `supabase/migrations/010_store_subscriptions.sql` (SQL Editor → paste → Run). It adds the
 `subscription_plans`/`subscriptions`/`subscription_events`/`payments` tables (seeded with the real
 plan prices/limits) and a `products.active` column defaulting to `true` — every existing listing
-keeps showing exactly as it does today. A brand-new project doesn't need this — `schema.sql`
-already includes it.
+keeps showing exactly as it does today. Then also run
+`supabase/migrations/011_store_branding.sql`, which adds `logo_url`/`banner_url` to `sellers` (real
+backing for the plan's customization benefit — see "Store subscriptions" below). A brand-new
+project doesn't need either — `schema.sql` already includes both.
 
 ### 2. Configure environment variables
 
@@ -319,12 +321,28 @@ change a price or limit without touching code:
   edit any plan's price, limits, or features — no deploy needed. There's no dedicated admin screen
   for this yet (see "Next steps" below); the API is real and usable from a script or a REST client
   today.
+- **Pay for it, get it — every plan feature is either real or explicitly not.** Beyond the product
+  limit, four more plan features are actually wired to real functionality, computed server-side from
+  the seller's *live* plan (`getStorePlanDisplayMap` in `lib/subscriptions.ts`), not shown from
+  anything a client sent: **analytics** (a real Store analytics card on the dashboard, computed from
+  that seller's own order data — Basic gets this-month totals, Business adds a top product, Pro adds
+  a 4-week revenue chart), **store customization** (a real logo/banner upload, gated server-side by
+  `assertCanCustomizeStore` and rendered on the public storefront), **featured placement** (Business/
+  Pro sellers' listings are stably sorted to the front of Home and Browse — a real reordering buyers
+  actually see, layered on top of, not replacing, "near you" distance sort), and the **Pro Store
+  badge** (shown next to the seller's name on their own dashboard and their public storefront). A
+  plan whose subscription lapses (see "Trials" above) loses every one of these on its very next
+  read — nothing lingers past what was actually paid for. **Priority support** has no real system
+  behind it yet (no support-ticket routing exists to prioritize) and is shown as "Coming soon" on
+  the plan-comparison screen rather than a checkmark — see `components/findit-app/StorePlans.jsx`.
 
 **Not built yet, deliberately out of scope for this pass:** an admin plan-editor screen, real
 per-seller storage (MB) metering (`storage_limit_mb` exists on each plan as config/display data
-only — nothing in the upload path measures usage against it), tier-themed public storefront pages,
-FindIt Pro's own screen and its combined-benefit resolution alongside a Store plan, and
-boost/featured-listing purchases and platform transaction fees (their pricing has an obvious home —
+only — nothing in the upload path measures usage against it, and it isn't claimed as a feature to
+sellers for exactly that reason), a real priority-support system, deeper tier-themed storefront
+layouts beyond the real logo/banner/Pro badge described above, FindIt Pro's own screen and its
+combined-benefit resolution alongside a Store plan, and boost/featured-listing purchases and
+platform transaction fees (their pricing has an obvious home —
 another admin-editable `subscription_plans`-style table — but no purchase flow exists yet).
 
 ## Image uploads
