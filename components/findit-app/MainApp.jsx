@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User,
+  Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
-import { Logo, Wordmark, RoleGate } from "./shared";
+import { Logo, Wordmark, RoleGate, IconButton } from "./shared";
 import { api } from "./api";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import Home from "./Home";
@@ -147,7 +147,20 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   }, [user?.id]);
 
-  const go = (s, group) => {
+  // Real back-navigation, not just "tap the logo to jump to Home": every
+  // screen the user actually visited gets pushed here, so the header's back
+  // arrow returns to wherever they came from — Profile -> Account details ->
+  // back goes to Profile, not all the way to Home. Capped defensively so a
+  // very long session doesn't grow this without bound.
+  const historyRef = useRef([]);
+  const MAX_HISTORY = 30;
+
+  // The actual screen switch + its side effects — shared by both forward
+  // navigation (go) and back navigation (goBack), but only `go` touches the
+  // history stack. If goBack() called `go()` here instead, going back would
+  // re-push the screen just left, and a second "back" tap would bounce you
+  // right back to it instead of continuing further back.
+  const navigateTo = (s, group) => {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
@@ -165,6 +178,19 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     if (s === "myRequests" && user) {
       api.getMyRequests().then(setMyRequests).catch(() => {});
     }
+  };
+
+  const go = (s, group) => {
+    if (s !== screen) {
+      historyRef.current.push(screen);
+      if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift();
+    }
+    navigateTo(s, group);
+  };
+
+  const goBack = () => {
+    const previous = historyRef.current.pop();
+    navigateTo(previous || "home");
   };
 
   const handleToggleSaved = async (productId) => {
@@ -203,9 +229,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       const order = await api.createOrder({ productId: prod.id, qty });
       setOrders((os) => [order, ...os]);
       setCheckoutOrder({ product: prod, qty, condition });
-      setProduct(null);
-      setScreen("checkout");
-      window.scrollTo?.(0, 0);
+      go("checkout");
     } catch (err) {
       showToast(err.message || "Couldn't place that order — try again.", "error");
     }
@@ -499,7 +523,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
       {screen !== "home" && (
-        <header className="sticky top-0 z-30 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 py-3 flex items-center justify-between">
+        <header className="sticky top-0 z-30 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 py-3 flex items-center gap-2">
+          <IconButton onClick={goBack} aria-label="Back">
+            <ChevronLeft size={18} className="text-[#1E1B4B]" />
+          </IconButton>
           <button onClick={() => go("home")} className="flex items-center gap-2">
             <Logo size={26} />
             <Wordmark />
