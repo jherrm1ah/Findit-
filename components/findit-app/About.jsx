@@ -10,7 +10,6 @@ export default function About() {
         <div className="mt-3">
           <Wordmark size="text-[22px]" />
         </div>
-        <p className="text-[12px] text-[#8A8372] mt-1">Naija</p>
       </div>
 
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-5 mb-4">

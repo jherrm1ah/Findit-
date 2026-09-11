@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "FindIt Naija",
+  title: "FindIt",
   description:
     "Request-first marketplace connecting buyers to verified sellers, starting in Nigeria.",
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "FindIt" },
