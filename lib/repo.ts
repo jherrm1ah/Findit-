@@ -1362,7 +1362,10 @@ export async function findUserByBusinessName(name: string): Promise<PublicUser |
   return row ? rowToPublicUser(row) : null;
 }
 
-async function getPublicUser(id: string): Promise<PublicUser | null> {
+// Exported so a seller-initiated conversation (see
+// app/api/orders/[id]/message/route.ts) can look up the buyer's
+// display name — never their phone, password, or anything else private.
+export async function getPublicUser(id: string): Promise<PublicUser | null> {
   const db = getDb();
   const result = await db.from("users").select("*").eq("id", id).maybeSingle();
   const row = assertNoError(result, "loading user") as Row | null;

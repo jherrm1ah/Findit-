@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -173,6 +173,7 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
 export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
+  onMessageBuyer,
   myLocation,
 }) {
   const [offeringId, setOfferingId] = useState(null);
@@ -182,6 +183,18 @@ export default function SellerDashboard({
   const [editingId, setEditingId] = useState(null);
   const [savingListing, setSavingListing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [messagingId, setMessagingId] = useState(null);
+
+  const messageBuyer = async (order) => {
+    setMessagingId(order.id);
+    try {
+      await onMessageBuyer(order);
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setMessagingId(null);
+    }
+  };
 
   const myOrders = orders.filter((o) => o.seller === user.businessName);
   const myListings = products.filter((p) => p.seller === user.businessName);
@@ -354,6 +367,13 @@ export default function SellerDashboard({
                 <Pill tone={statusTone(o.status)}>{o.status}</Pill>
               </div>
               <p className="text-[11px] text-[#6B6483] mb-3">{o.id} · {naira(o.price)}</p>
+              <button
+                onClick={() => messageBuyer(o)}
+                disabled={messagingId !== null}
+                className={`flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] mb-2.5 ${messagingId !== null ? "opacity-60" : ""}`}
+              >
+                <MessageCircle size={13} /> {messagingId === o.id ? "Opening…" : "Message buyer"}
+              </button>
               {nextStatus ? (
                 <button
                   onClick={() => advance(o)}

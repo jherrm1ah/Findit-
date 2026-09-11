@@ -121,6 +121,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ apply: Boolean(apply) }),
     }),
+  messageBuyerAboutOrder: (orderId) =>
+    request(`/api/orders/${orderId}/message`, { method: "POST" }),
   resolveOrderIssue: (orderId, outcome) =>
     request("/api/admin/disputes", {
       method: "POST",

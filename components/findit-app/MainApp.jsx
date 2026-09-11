@@ -489,6 +489,35 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  // The seller side of contacting the other party — scoped to a real order
+  // of theirs (enforced server-side too), not a free-form "message any
+  // buyer" search.
+  const handleMessageBuyer = async (order) => {
+    try {
+      const { conversationId, buyer } = await api.messageBuyerAboutOrder(order.id);
+      setActiveThread({ id: conversationId, otherParty: buyer });
+      setThreadLoading(true);
+      const messages = await api.getMessages(conversationId);
+      setThreadMessages(messages);
+    } catch (err) {
+      showToast(err.message || "Couldn't start that conversation — try again.", "error");
+      throw err; // let the button know so it can stop its own loading state
+    } finally {
+      setThreadLoading(false);
+    }
+  };
+
+  // A reply doesn't show up on its own otherwise — getMessages only ever
+  // ran once, when the thread was first opened. Polling is a simple, safe
+  // way to make an open conversation feel live without a websocket.
+  useEffect(() => {
+    if (!activeThread) return;
+    const interval = setInterval(() => {
+      api.getMessages(activeThread.id).then(setThreadMessages).catch(() => {});
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeThread?.id]);
+
   const handleContactSeller = async (product) => {
     if (!user) {
       showToast("Log in to message a seller.", "error");
@@ -577,6 +606,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onUpdateProduct={handleUpdateProduct}
               onDeleteProduct={handleDeleteProduct}
               onUploadImage={handleUploadImage}
+              onMessageBuyer={handleMessageBuyer}
               myLocation={myLocation}
             />
           ) : (
