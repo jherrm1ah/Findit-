@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -363,6 +363,7 @@ export default function SellerDashboard({
   myLocation,
   storePlan, go,
   storeBranding, onUpdateBranding, savingBranding,
+  verification,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -504,6 +505,41 @@ export default function SellerDashboard({
             </div>
           </div>
           <span className="text-[11px] font-semibold text-[#7C3AED] shrink-0">Manage</span>
+        </button>
+      )}
+
+      {verification && verification.status !== "approved" && (
+        <button
+          onClick={() => go?.("sellerOnboarding")}
+          className="w-full flex items-center justify-between gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5 text-left"
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+              {verification.status === "rejected" || verification.status === "needs_info" ? (
+                <ShieldAlert size={16} className="text-[#C22468]" />
+              ) : (
+                <ShieldCheck size={16} className="text-[#7C3AED]" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">
+                {{
+                  incomplete: "Complete your seller verification",
+                  pending: "Verification under review",
+                  needs_info: "FindIt needs more information",
+                  rejected: "Verification wasn't approved",
+                }[verification.status]}
+              </p>
+              <p className="text-[11px] text-[#6B6483]">
+                {verification.status === "incomplete"
+                  ? "Get the Verified badge on your storefront"
+                  : verification.status === "pending"
+                    ? "We'll notify you once it's reviewed"
+                    : "Tap to review and resubmit"}
+              </p>
+            </div>
+          </div>
+          {verification.status === "incomplete" && <span className="text-[11px] font-semibold text-[#7C3AED] shrink-0">Start</span>}
         </button>
       )}
 

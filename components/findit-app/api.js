@@ -131,6 +131,13 @@ export const api = {
       body: JSON.stringify({ orderId, outcome }),
     }).then((d) => d.order),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
+  getSellerVerifications: () => request("/api/admin/seller-verifications").then((d) => d.submissions),
+  reviewSellerVerification: (sellerId, action, reason) =>
+    request(`/api/admin/seller-verifications/${sellerId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason }),
+    }),
   lookupUserByPhone: (phone) =>
     request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),
   promoteToAdmin: (phone) =>
@@ -271,6 +278,15 @@ export const api = {
       body: JSON.stringify({ planId, billingPeriod }),
     }),
   cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  getMyVerification: () => request("/api/sellers/me/verification"),
+  submitVerification: (fields, photosByKind) => {
+    const fd = new FormData();
+    fd.append("fields", JSON.stringify(fields));
+    for (const [kind, files] of Object.entries(photosByKind || {})) {
+      for (const file of files) fd.append(`photo_${kind}`, file);
+    }
+    return request("/api/sellers/me/verification", { method: "POST", body: fd });
+  },
   updateStoreBranding: (logoUrl, bannerUrl) =>
     request("/api/sellers/me/branding", {
       method: "PATCH",

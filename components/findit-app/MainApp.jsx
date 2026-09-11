@@ -12,6 +12,7 @@ import Browse from "./Browse";
 import RequestForm from "./RequestForm";
 import SellerDashboard from "./SellerDashboard";
 import StorePlans from "./StorePlans";
+import SellerOnboarding from "./SellerOnboarding";
 import AdminQueue from "./AdminQueue";
 import BecomeSeller from "./BecomeSeller";
 import Profile from "./Profile";
@@ -68,6 +69,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [adminActions, setAdminActions] = useState([]);
   const [otpStats, setOtpStats] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
+  const [sellerVerifications, setSellerVerifications] = useState([]);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
   // { subscription, plan, usage: { activeProducts, label }, plans } | null —
   // see GET /api/sellers/me/subscription. null until the first fetch, or
@@ -78,6 +80,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // "customization" benefit; see PATCH /api/sellers/me/branding.
   const [storeBranding, setStoreBranding] = useState(null);
   const [savingBranding, setSavingBranding] = useState(false);
+  // { status, rejectionReason, ... } | null — see GET /api/sellers/me/verification.
+  // Drives the dashboard's "Complete verification" prompt; the wizard
+  // itself (SellerOnboarding.jsx) fetches its own full copy when opened.
+  const [verification, setVerification] = useState(null);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -140,12 +146,14 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
       api.getMyStoreBranding().then(setStoreBranding).catch(() => {});
+      api.getMyVerification().then(setVerification).catch(() => {});
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
       api.getAdminActions().then(setAdminActions).catch(() => {});
       api.getOtpStats().then(setOtpStats).catch(() => {});
       api.getReportedOrders().then(setReportedOrders).catch(() => {});
+      api.getSellerVerifications().then(setSellerVerifications).catch(() => {});
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
@@ -186,6 +194,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if ((s === "seller" || s === "storePlans") && isSeller) {
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
+    }
+    if ((s === "seller" || s === "sellerOnboarding") && isSeller) {
+      api.getMyVerification().then(setVerification).catch(() => {});
     }
     if (s === "messages" && user) {
       api.getConversations().then(setConversations).catch(() => {});
@@ -487,6 +498,20 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleReviewSellerVerification = async (sellerId, action, reason) => {
+    try {
+      await api.reviewSellerVerification(sellerId, action, reason);
+      setSellerVerifications((subs) => subs.filter((s) => s.sellerId !== sellerId));
+      showToast(
+        action === "approved" ? "Seller verified." : action === "needs_info" ? "Asked the seller for more information." : "Verification rejected."
+      );
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+    } catch (err) {
+      showToast(err.message || "Couldn't update that verification — try again.", "error");
+      throw err;
+    }
+  };
+
   const handleSellerStatusChange = async (id, status) => {
     const seller = sellers.find((s) => s.id === id);
     setSellers((ss) => ss.map((s) => (s.id === id ? { ...s, status } : s)));
@@ -686,6 +711,18 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             />
           )
         )}
+        {screen === "sellerOnboarding" && (
+          isSeller ? (
+            <SellerOnboarding go={go} showToast={showToast} />
+          ) : (
+            <RoleGate
+              title="Seller access needed"
+              message="Seller verification belongs to seller accounts."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
+        )}
         {screen === "request" && (
           <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
         )}
@@ -711,6 +748,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               storeBranding={storeBranding}
               onUpdateBranding={handleUpdateStoreBranding}
               savingBranding={savingBranding}
+              verification={verification}
               go={go}
             />
           ) : (
@@ -740,6 +778,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onDemoteFromAdmin={handleDemoteFromAdmin}
               currentAdminId={user.id}
               showToast={showToast}
+              sellerVerifications={sellerVerifications}
+              onReviewSellerVerification={handleReviewSellerVerification}
             />
           ) : (
             <RoleGate

@@ -45,6 +45,11 @@ create table if not exists users (
   location_updated_at timestamptz,
   avatar_url text,
   notifications_enabled boolean not null default true,
+  -- Optional — this app is phone-first, and most accounts have no email.
+  -- Collected during seller onboarding (lib/sellerVerification.ts) mainly
+  -- so Paystack transactions can use a real address instead of a synthetic
+  -- one; never required for login.
+  email text,
   -- Set only when promoteToAdmin() overwrites role to 'admin' — records
   -- what the account actually was (buyer/seller) so demoteFromAdmin() can
   -- restore it exactly rather than guessing. Null for every account that
@@ -65,13 +70,13 @@ create index if not exists sessions_user_id_idx on sessions(user_id);
 -- ---------------------------------------------------------------------------
 -- sellers — the admin-verification record for a seller account.
 -- Properly linked to users now (the old SQLite version only linked these by
--- an "id starts with seller_" naming convention, which this fixes). Dropped
--- the old city/docs columns: city was never really collected from the
--- seller, and docs was always the literal string "Pending review" — a
--- placeholder pretending to be a real document-verification field with no
--- actual upload behind it. There is no real ID/document verification system
--- yet; admin approval is currently a judgment call based on the seller's
--- account and phone number, not a document check.
+-- an "id starts with seller_" naming convention, which this fixes). `status`
+-- is the original, minimal admin gate (pending/approved/rejected) and still
+-- controls whether a seller can transact at all — only 'rejected' blocks
+-- listing today. `verification_status` below is a separate, richer layer
+-- (who is this seller, what evidence backs that up) that drives the public
+-- New/Verified/Trusted badge — see lib/sellerVerification.ts and migration
+-- 012. It never gates selling on its own; it's trust information for buyers.
 -- ---------------------------------------------------------------------------
 
 create table if not exists sellers (
@@ -85,8 +90,60 @@ create table if not exists sellers (
   -- seller's current plan allows it (lib/subscriptions.ts#assertCanCustomizeStore),
   -- and rendered on the public storefront (SellerProfile.jsx). Null until set.
   logo_url text,
-  banner_url text
+  banner_url text,
+  -- ---- Seller trust & verification (migration 012) ----
+  -- Public-safe profile fields — see seller_verification_details below for
+  -- the private ones (exact address/coordinates), kept in a separate table
+  -- specifically so a `select('*')` on this table (this codebase has
+  -- several) can never accidentally leak them.
+  seller_type text
+    check (seller_type in ('physical_store', 'online_business', 'home_based', 'both', 'individual', 'other')),
+  category text,
+  description text,
+  years_selling text,
+  social_links jsonb,
+  has_physical_store boolean,
+  public_state text,
+  public_city text,
+  public_area text,
+  verification_status text not null default 'incomplete'
+    check (verification_status in ('incomplete', 'pending', 'approved', 'rejected', 'needs_info')),
+  verification_submitted_at timestamptz,
+  verification_reviewed_at timestamptz,
+  verification_reviewed_by text references users(id),
+  verification_rejection_reason text
 );
+
+-- ---------------------------------------------------------------------------
+-- seller_verification_details / seller_verification_evidence — the private
+-- half of seller trust & verification. Kept out of `sellers` on purpose
+-- (see the note above); RLS enabled with no policies, same as every other
+-- table here (no Supabase Auth session to key a real policy on — see the
+-- top of this file) — real access control (owning seller + admins only,
+-- evidence served via signed URLs from a private bucket) lives in the
+-- Next.js API layer. See lib/sellerVerification.ts.
+-- ---------------------------------------------------------------------------
+
+create table if not exists seller_verification_details (
+  seller_id text primary key references sellers(id) on delete cascade,
+  shop_address text,
+  lat double precision,
+  lng double precision,
+  website text,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists seller_verification_evidence (
+  id text primary key,
+  seller_id text not null references sellers(id) on delete cascade,
+  kind text not null check (kind in ('product_photo', 'shop_photo', 'business_page', 'social_link', 'other')),
+  storage_path text,
+  text_value text,
+  note text,
+  created_at timestamptz not null default now(),
+  check ((storage_path is not null) <> (text_value is not null))
+);
+create index if not exists seller_verification_evidence_seller_id_idx on seller_verification_evidence(seller_id);
 
 -- ---------------------------------------------------------------------------
 -- products
@@ -423,6 +480,10 @@ alter table subscription_plans enable row level security;
 alter table subscriptions enable row level security;
 alter table subscription_events enable row level security;
 alter table payments enable row level security;
+alter table seller_verification_details enable row level security;
+alter table seller_verification_evidence enable row level security;
+
+create unique index if not exists users_email_unique_idx on users(email) where email is not null;
 
 -- ---------------------------------------------------------------------------
 -- Seed data — the ONE deliberate exception to "no seed data" above. These

@@ -13,6 +13,8 @@ export type Role = "buyer" | "seller" | "admin";
 export type User = {
   id: string;
   phone: string;
+  // Optional — this app is phone-first; most accounts have no email.
+  email: string | null;
   name: string;
   role: Role;
   businessName: string | null;
@@ -32,6 +34,7 @@ function rowToUser(row: Row): User {
   return {
     id: row.id as string,
     phone: row.phone as string,
+    email: (row.email as string | null) ?? null,
     name: row.name as string,
     role: row.role as Role,
     businessName: (row.business_name as string | null) ?? null,
@@ -53,6 +56,11 @@ export function hashPassword(password: string, salt: string): string {
 // "+2348012345678" are always the same account, never three different ones.
 export const normalizePhone = normalizeE164;
 
+// Loose but real — this only ever gates what gets stored, never blocks
+// login (email isn't a credential here, phone is). Good enough to catch a
+// typo without the false-rejection risk of a stricter RFC5322 regex.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function createUser(input: {
   phone: string;
   password: string;
@@ -60,14 +68,26 @@ export async function createUser(input: {
   role: Role;
   businessName: string | null;
   phoneVerified: boolean;
+  email?: string | null;
 }): Promise<User> {
   const db = getDb();
   const phone = normalizePhone(input.phone);
+  const email = input.email?.trim() || null;
+  if (email && !EMAIL_RE.test(email)) {
+    throw new ValidationError("Enter a valid email address, or leave it blank.");
+  }
 
   const existingResult = await db.from("users").select("id").eq("phone", phone).maybeSingle();
   const existing = assertNoError(existingResult, "checking for an existing account") as Row | null;
   if (existing) {
     throw new ValidationError("An account with this phone number already exists.");
+  }
+  if (email) {
+    const existingEmailResult = await db.from("users").select("id").eq("email", email).maybeSingle();
+    const existingEmail = assertNoError(existingEmailResult, "checking for an existing account") as Row | null;
+    if (existingEmail) {
+      throw new ValidationError("An account with this email address already exists.");
+    }
   }
 
   const id = "u_" + crypto.randomBytes(12).toString("hex");
@@ -77,6 +97,7 @@ export async function createUser(input: {
   const insertResult = await db.from("users").insert({
     id,
     phone,
+    email,
     password_hash: passwordHash,
     password_salt: salt,
     name: input.name,

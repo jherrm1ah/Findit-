@@ -105,11 +105,12 @@ export async function POST(req: NextRequest) {
     });
     assertNoError(insertResult, "recording pending payment");
 
-    // This app has no email field anywhere — accounts are phone-only — but
-    // Paystack's initialize endpoint requires one. This synthetic address is
-    // never sent anything; it exists purely to satisfy that field.
+    // Most accounts have no email (this app is phone-first) — Paystack's
+    // initialize endpoint requires one regardless, so this synthetic
+    // address (never sent anything) is the fallback when the seller hasn't
+    // given us a real one during verification.
     const { authorizationUrl } = await initializeTransaction({
-      email: `${ctx.user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+      email: ctx.user.email || `${ctx.user.phone.replace(/[^0-9]/g, "")}@findit.local`,
       amountNaira: amount,
       reference,
       metadata: { sellerId: ctx.sellerId, planId: plan.id, billingPeriod },

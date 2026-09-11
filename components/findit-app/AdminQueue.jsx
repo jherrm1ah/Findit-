@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
+import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 
 function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
@@ -327,6 +328,138 @@ function SellerIdentityMigration({ onCheckStatus, onPreview, onApply, showToast 
   );
 }
 
+// The richer trust-verification queue — separate from the basic pending/
+// approved/rejected account gate above (that one controls whether a seller
+// can transact at all; this one drives the public New/Verified/Trusted
+// badge). Evidence images are short-lived signed URLs generated fresh on
+// every load of this queue — never stored, never public.
+function VerificationSubmissions({ submissions, onReview, showToast }) {
+  const [reviewingId, setReviewingId] = useState(null);
+  const [reasonPromptFor, setReasonPromptFor] = useState(null); // { sellerId, action } | null
+  const [reason, setReason] = useState("");
+
+  const act = async (sellerId, action, actionReason) => {
+    setReviewingId(sellerId);
+    try {
+      await onReview(sellerId, action, actionReason);
+      setReasonPromptFor(null);
+      setReason("");
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setReviewingId(null);
+    }
+  };
+
+  if (submissions.length === 0) {
+    return <p className="text-[12px] text-[#6B6483] mb-7">No verification submissions waiting on review.</p>;
+  }
+
+  return (
+    <div className="space-y-3 mb-7">
+      {submissions.map(({ sellerId, sellerName, phone, overview }) => (
+        <div key={sellerId} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-[13px] font-semibold text-[#1E1B4B]">{sellerName}</p>
+            {overview.status === "needs_info" ? (
+              <Pill tone="gold"><HelpCircle size={11} /> Needs info</Pill>
+            ) : (
+              <Pill tone="gold"><Clock size={11} /> Pending</Pill>
+            )}
+          </div>
+          <p className="text-[11px] text-[#6B6483] mb-2">
+            {phone || "No phone on file"} · {SELLER_TYPES.find((t) => t.value === overview.sellerType)?.label || "Seller type not set"} · {overview.category}
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 text-[11px] text-[#514B67] bg-[#F5F2FC] rounded-xl p-3 mb-3">
+            <div><span className="text-[#8A8372]">Location:</span> {[overview.publicArea, overview.publicCity, overview.publicState].filter(Boolean).join(", ") || "—"}</div>
+            <div><span className="text-[#8A8372]">Physical store:</span> {overview.hasPhysicalStore ? "Yes" : "No"}</div>
+            {overview.hasPhysicalStore && overview.shopAddress && (
+              <div className="col-span-2"><span className="text-[#8A8372]">Shop address (private):</span> {overview.shopAddress}</div>
+            )}
+            {overview.description && <div className="col-span-2"><span className="text-[#8A8372]">Description:</span> {overview.description}</div>}
+          </div>
+
+          {overview.evidence.length > 0 && (
+            <div className="mb-3">
+              <p className="text-[10.5px] font-semibold text-[#8A8372] uppercase tracking-wide mb-1.5">Evidence</p>
+              <div className="flex flex-wrap gap-2">
+                {overview.evidence.map((ev, i) =>
+                  ev.url ? (
+                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
+                      <img src={ev.url} alt={ev.kind} className="w-full h-full object-cover" />
+                    </a>
+                  ) : (
+                    <a
+                      key={i}
+                      href={ev.textValue}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] bg-white border border-[#ECE9F7] rounded-lg px-2 py-1.5"
+                    >
+                      {ev.note || ev.kind} <ExternalLink size={10} />
+                    </a>
+                  )
+                )}
+              </div>
+            </div>
+          )}
+
+          {reasonPromptFor?.sellerId === sellerId ? (
+            <div className="space-y-2">
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                rows={2}
+                placeholder={reasonPromptFor.action === "needs_info" ? "What's missing?" : "Why isn't this approved?"}
+                className="w-full border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12px] outline-none resize-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => act(sellerId, reasonPromptFor.action, reason)}
+                  disabled={!reason.trim() || reviewingId !== null}
+                  className="flex-1 text-white text-[12px] font-semibold py-2 rounded-xl disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {reviewingId === sellerId ? "Sending…" : "Send"}
+                </button>
+                <button onClick={() => { setReasonPromptFor(null); setReason(""); }} className="px-3 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl">
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => act(sellerId, "approved", null)}
+                disabled={reviewingId !== null}
+                className="flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                <BadgeCheck size={13} /> {reviewingId === sellerId ? "Working…" : "Approve"}
+              </button>
+              <button
+                onClick={() => setReasonPromptFor({ sellerId, action: "needs_info" })}
+                disabled={reviewingId !== null}
+                className="flex-1 bg-white border border-[#ECE9F7] text-[#514B67] text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
+              >
+                Need more info
+              </button>
+              <button
+                onClick={() => setReasonPromptFor({ sellerId, action: "rejected" })}
+                disabled={reviewingId !== null}
+                className="flex-1 bg-white border border-[#ECE9F7] text-[#E64980] text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
+              >
+                Reject
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -343,6 +476,8 @@ export default function AdminQueue({
   onApplySellerIdentityBackfill,
   currentAdminId,
   showToast,
+  sellerVerifications = [],
+  onReviewSellerVerification,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
 
@@ -383,6 +518,19 @@ export default function AdminQueue({
           </div>
         ))}
       </div>
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+        <BadgeCheck size={13} className="text-[#7C3AED]" /> Seller trust verification
+        {sellerVerifications.length > 0 && (
+          <span className="ml-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-[#7C3AED] text-white text-[10px] font-bold flex items-center justify-center">
+            {sellerVerifications.length}
+          </span>
+        )}
+      </p>
+      <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+        Separate from basic account approval above — this drives the public New/Verified/Trusted badge.
+      </p>
+      <VerificationSubmissions submissions={sellerVerifications} onReview={onReviewSellerVerification} showToast={showToast} />
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Unmatched requests</p>
       <div className="space-y-3">

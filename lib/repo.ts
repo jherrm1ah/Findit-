@@ -1,6 +1,7 @@
 import { getDb, assertNoError } from "./db";
 import { CATEGORY_LABELS } from "./categories";
 import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
+import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
 
 export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
@@ -55,6 +56,13 @@ export type Product = {
   sellerFeatured: boolean; // Business/Pro — real placement boost, see listProducts()
   sellerLogoUrl: string | null; // set only when the seller's plan allows branding
   sellerBannerUrl: string | null;
+  // Seller trust & verification — see computeVerificationLevel in
+  // lib/sellerVerificationLevels.ts. sellerLocation is the coarse, public-
+  // safe area a seller entered during verification (never the private
+  // shop address); null until they've submitted it.
+  sellerVerificationLevel: VerificationLevel;
+  sellerLocation: string | null;
+  sellerMemberSince: string | null;
 };
 
 export type Order = {
@@ -168,6 +176,12 @@ type SellerStats = BaseSellerStats & {
   featured: boolean;
   logoUrl: string | null;
   bannerUrl: string | null;
+  // Seller trust & verification (migration 012) — see
+  // lib/sellerVerification.ts#computeVerificationLevel. Never claims
+  // Verified/Trusted without a real admin review behind it.
+  verificationLevel: VerificationLevel;
+  publicLocation: string | null;
+  memberSince: string | null;
 };
 
 // Pure — takes already-fetched rows and computes the stats map. Split out
@@ -212,7 +226,9 @@ export function computeSellerStatsMap(
 async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
   const db = getDb();
 
-  const sellersResult = await db.from("sellers").select("id, name, status, logo_url, banner_url");
+  const sellersResult = await db
+    .from("sellers")
+    .select("id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
   const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
 
   const ordersResult = await db
@@ -220,6 +236,20 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
     .select("seller, my_rating, reviewed")
     .eq("reviewed", true);
   const orderRows = assertNoError(ordersResult, "loading order reviews") as Row[];
+
+  // Separate from the reviewed-order rating above: "Trusted" (see
+  // computeVerificationLevel) needs a real completed-order count, and most
+  // buyers never leave a review, so the rating-based orderCount would
+  // massively undercount it.
+  const escrowResult = await db.from("orders").select("seller, escrow_status").in("escrow_status", ["released", "disputed"]);
+  const escrowRows = assertNoError(escrowResult, "loading order outcomes") as Row[];
+  const completedBySeller = new Map<string, number>();
+  const disputedBySeller = new Map<string, number>();
+  for (const row of escrowRows) {
+    const seller = row.seller as string;
+    if (row.escrow_status === "released") completedBySeller.set(seller, (completedBySeller.get(seller) ?? 0) + 1);
+    if (row.escrow_status === "disputed") disputedBySeller.set(seller, (disputedBySeller.get(seller) ?? 0) + 1);
+  }
 
   const [baseMap, displayMap] = await Promise.all([
     Promise.resolve(
@@ -236,12 +266,23 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
     const name = row.name as string;
     const base = baseMap.get(name) ?? { verified: false, rating: null, orderCount: 0 };
     const display = displayMap.get(row.id as string);
+    const publicLocation = [row.public_area, row.public_city, row.public_state]
+      .filter((v): v is string => Boolean(v && String(v).trim()))
+      .join(", ") || null;
     map.set(name, {
       ...base,
       proBadge: display?.proBadge ?? false,
       featured: display?.featuredListingAccess ?? false,
       logoUrl: (row.logo_url as string | null) ?? null,
       bannerUrl: (row.banner_url as string | null) ?? null,
+      verificationLevel: computeVerificationLevel({
+        verificationStatus: row.verification_status as VerificationStatus,
+        orderCount: completedBySeller.get(name) ?? 0,
+        disputeCount: disputedBySeller.get(name) ?? 0,
+        avgRating: base.rating,
+      }),
+      publicLocation,
+      memberSince: (row.created_at as string | null) ?? null,
     });
   }
   // A name that shows up only via order rows (no matching sellers-table
@@ -250,21 +291,28 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
   // statsFor() would give it anyway.
   for (const [name, base] of baseMap) {
     if (!map.has(name)) {
-      map.set(name, { ...base, proBadge: false, featured: false, logoUrl: null, bannerUrl: null });
+      map.set(name, { ...base, ...DEFAULT_TIER_FIELDS });
     }
   }
 
   return map;
 }
 
-const DEFAULT_SELLER_STATS: SellerStats = {
-  verified: false,
-  rating: null,
-  orderCount: 0,
+const DEFAULT_TIER_FIELDS = {
   proBadge: false,
   featured: false,
   logoUrl: null,
   bannerUrl: null,
+  verificationLevel: "new" as VerificationLevel,
+  publicLocation: null,
+  memberSince: null,
+};
+
+const DEFAULT_SELLER_STATS: SellerStats = {
+  verified: false,
+  rating: null,
+  orderCount: 0,
+  ...DEFAULT_TIER_FIELDS,
 };
 
 function statsFor(map: Map<string, SellerStats>, seller: string): SellerStats {
@@ -295,6 +343,9 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     sellerFeatured: stats.featured,
     sellerLogoUrl: stats.logoUrl,
     sellerBannerUrl: stats.bannerUrl,
+    sellerVerificationLevel: stats.verificationLevel,
+    sellerLocation: stats.publicLocation,
+    sellerMemberSince: stats.memberSince,
   };
 }
 

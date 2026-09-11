@@ -1,10 +1,37 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronLeft, Star, BadgeCheck, MessageCircle, Package, MapPin, Crown } from "lucide-react";
+import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
+
+const LEVEL_TONE = { new: "stone", verified: "brand", trusted: "green" };
+const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldCheck };
+
+// Tap-to-explain, per spec: never just a bare label. Never claims a level
+// FindIt hasn't actually reviewed — see computeVerificationLevel in
+// lib/sellerVerificationLevels.ts, which this badge reflects exactly.
+function VerificationBadge({ level }) {
+  const [open, setOpen] = useState(false);
+  const copy = VERIFICATION_LEVEL_COPY[level] ?? VERIFICATION_LEVEL_COPY.new;
+  const Icon = LEVEL_ICON[level] ?? BadgeCheck;
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((o) => !o)}>
+        <Pill tone={LEVEL_TONE[level] ?? "stone"}>
+          <Icon size={10} /> {copy.label}
+        </Pill>
+      </button>
+      {open && (
+        <div className="absolute z-10 top-full left-0 mt-1.5 w-56 bg-white border border-[#ECE9F7] rounded-xl p-3 shadow-lg shadow-[#4C1D95]/10">
+          <p className="text-[11px] text-[#514B67] leading-relaxed">{copy.explanation}</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function SellerProfile({ sellerName, products, onBack, onOpenProduct, onContact, myLocation }) {
   const [contacting, setContacting] = useState(false);
@@ -20,10 +47,14 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
   // "Golden Rule" audit in lib/subscriptions.ts: this is the actual public
   // face of "pay for Pro, get Pro," not a cosmetic label.
   const avgRating = listings[0]?.rating ?? null;
-  const verified = listings[0]?.verified ?? false;
+  const verificationLevel = listings[0]?.sellerVerificationLevel ?? "new";
   const proBadge = listings[0]?.sellerProBadge ?? false;
   const logoUrl = listings[0]?.sellerLogoUrl ?? null;
   const bannerUrl = listings[0]?.sellerBannerUrl ?? null;
+  const location = listings[0]?.sellerLocation ?? null;
+  const memberSince = listings[0]?.sellerMemberSince
+    ? new Date(listings[0].sellerMemberSince).toLocaleDateString("en-NG", { month: "short", year: "numeric" })
+    : null;
   const km = myLocation && listings[0]?.lat != null && listings[0]?.lng != null
     ? haversineKm(myLocation.lat, myLocation.lng, listings[0].lat, listings[0].lng)
     : null;
@@ -68,12 +99,18 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
               {km != null && (
                 <span className="flex items-center gap-0.5 text-[11px] text-[#7C3AED] font-medium"><MapPin size={10} /> {formatDistanceKm(km)}</span>
               )}
-              {verified ? (
-                <Pill tone="green"><BadgeCheck size={10} /> Verified</Pill>
-              ) : (
-                <Pill tone="stone">Unverified</Pill>
-              )}
+              <VerificationBadge level={verificationLevel} />
             </div>
+            {(location || memberSince) && (
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {location && (
+                  <span className="flex items-center gap-0.5 text-[10.5px] text-[#8A8372]"><MapPin size={9} /> {location}</span>
+                )}
+                {memberSince && (
+                  <span className="flex items-center gap-0.5 text-[10.5px] text-[#8A8372]"><Calendar size={9} /> On FindIt since {memberSince}</span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

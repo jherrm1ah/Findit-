@@ -2,9 +2,16 @@ import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { ValidationError } from "./repo";
 
 const BUCKET = "product-images";
+// Verification evidence (product/shop photos submitted for seller trust
+// review) is NOT public — unlike product images, this can include a home-
+// based seller's shop interior or other material they only intended an
+// admin to see. Served only via short-lived signed URLs, only to the owning
+// seller or an admin — see getSignedEvidenceUrl and
+// app/api/sellers/me/verification and app/api/admin/seller-verifications.
+const EVIDENCE_BUCKET = "seller-verification";
 
 let client: SupabaseClient | null = null;
-let bucketEnsured = false;
+const bucketsEnsured = new Set<string>();
 
 function getSupabase(): SupabaseClient {
   const url = process.env.SUPABASE_URL;
@@ -20,22 +27,22 @@ function getSupabase(): SupabaseClient {
   return client;
 }
 
-// Creates the bucket on first use so there's no manual dashboard setup step,
+// Creates a bucket on first use so there's no manual dashboard setup step,
 // the same way lib/db.ts creates tables on first use.
-async function ensureBucket(supabase: SupabaseClient) {
-  if (bucketEnsured) return;
+async function ensureBucket(supabase: SupabaseClient, bucket: string, isPublic: boolean) {
+  if (bucketsEnsured.has(bucket)) return;
   const { data: buckets, error: listError } = await supabase.storage.listBuckets();
   if (listError) throw new Error(listError.message);
-  if (!buckets?.some((b) => b.name === BUCKET)) {
-    const { error: createError } = await supabase.storage.createBucket(BUCKET, {
-      public: true,
+  if (!buckets?.some((b) => b.name === bucket)) {
+    const { error: createError } = await supabase.storage.createBucket(bucket, {
+      public: isPublic,
       fileSizeLimit: "5MB",
     });
     if (createError && !/already exists/i.test(createError.message)) {
       throw new Error(createError.message);
     }
   }
-  bucketEnsured = true;
+  bucketsEnsured.add(bucket);
 }
 
 // Real file-signature ("magic bytes") checks — the multipart Content-Type a
@@ -80,7 +87,7 @@ export async function uploadProductImage(
   }
 
   const supabase = getSupabase();
-  await ensureBucket(supabase);
+  await ensureBucket(supabase, BUCKET, true);
 
   // The stored path never uses the client-supplied filename at all — only a
   // random id plus an extension WE choose from the verified type. This
@@ -95,4 +102,42 @@ export async function uploadProductImage(
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+// Same validation as uploadProductImage, but into the PRIVATE evidence
+// bucket and returning a storage PATH, never a public URL — nothing calls
+// getPublicUrl on this bucket, because it isn't public. Scoped under
+// `${sellerId}/` so an admin browsing evidence can tell at a glance whose
+// submission a file belongs to, and so a compromised path can't collide
+// across sellers.
+export async function uploadVerificationEvidence(
+  buffer: Buffer,
+  declaredType: string,
+  sellerId: string
+): Promise<string> {
+  if (!matchesDeclaredImageType(buffer, declaredType)) {
+    throw new ValidationError("That file doesn't look like a valid image.");
+  }
+
+  const supabase = getSupabase();
+  await ensureBucket(supabase, EVIDENCE_BUCKET, false);
+
+  const path = `${sellerId}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${EXTENSIONS[declaredType]}`;
+  const { error: uploadError } = await supabase.storage
+    .from(EVIDENCE_BUCKET)
+    .upload(path, buffer, { contentType: declaredType, upsert: false });
+  if (uploadError) throw new Error(uploadError.message);
+  return path;
+}
+
+// Short-lived (10 minute) signed URL — the only way anything outside the
+// service role can ever read a file in the private evidence bucket. Callers
+// (app/api/sellers/me/verification, app/api/admin/seller-verifications) are
+// responsible for checking the caller is the owning seller or an admin
+// BEFORE calling this; it does no authorization of its own.
+export async function getSignedEvidenceUrl(path: string): Promise<string | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.storage.from(EVIDENCE_BUCKET).createSignedUrl(path, 600);
+  if (error) return null;
+  return data.signedUrl;
 }

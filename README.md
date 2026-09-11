@@ -66,6 +66,10 @@ funds UI as a simulated state) — see "Next steps" below.
   gates what their store can do — currently the number of active listings, backend-enforced, not
   just hidden buttons. A "Store plan" card on the Seller Dashboard links to a plan-comparison screen
   to upgrade, start a trial, or cancel. See "Store subscriptions" below.
+- **Seller trust & verification** — a multi-step wizard (business info, location, evidence, review)
+  that a seller can complete any time from their dashboard, reviewed by an admin, driving a public
+  New/Verified/Trusted badge on their storefront. Doesn't block selling — it's trust information for
+  buyers, not a gate. See "Seller trust & verification" below.
 
 ## Stack
 
@@ -97,6 +101,14 @@ keeps showing exactly as it does today. Then also run
 `supabase/migrations/011_store_branding.sql`, which adds `logo_url`/`banner_url` to `sellers` (real
 backing for the plan's customization benefit — see "Store subscriptions" below). A brand-new
 project doesn't need either — `schema.sql` already includes both.
+
+**If you already had this app running before seller trust & verification was added:** run
+`supabase/migrations/012_seller_verification.sql`, which adds `email` to `users`; seller-type/
+category/description/location/verification-status columns to `sellers`; and two new tables,
+`seller_verification_details` and `seller_verification_evidence` (see "Seller trust &
+verification" below). Nothing existing changes — every seller's `verification_status` starts at
+`'incomplete'`, the same as a freshly signed-up one. A brand-new project doesn't need this —
+`schema.sql` already includes it.
 
 ### 2. Configure environment variables
 
@@ -345,6 +357,56 @@ combined-benefit resolution alongside a Store plan, and boost/featured-listing p
 platform transaction fees (their pricing has an obvious home —
 another admin-editable `subscription_plans`-style table — but no purchase flow exists yet).
 
+## Seller trust & verification
+
+Separate from the original pending/approved/rejected admin gate on `sellers.status` (which still
+controls whether a seller can transact at all — only `rejected` blocks it) is a richer trust layer:
+who is this seller, what do they sell, where do they operate, and what real evidence backs that up.
+It drives a public **New / Verified / Trusted** badge; it never blocks selling on its own — a brand
+new seller can list immediately, exactly as before.
+
+- **The wizard** (`components/findit-app/SellerOnboarding.jsx`, reached from a "Complete your seller
+  verification" card on the dashboard) collects seller type, category, description, social/website
+  links, location, and evidence (product/shop photos or a business page link) across a few real
+  steps with a progress indicator, then submits everything in one call
+  (`POST /api/sellers/me/verification`) — nothing is force-required beyond one real detail plus one
+  piece of evidence (`canSubmitVerification` in `lib/sellerVerificationLevels.ts`), so a legitimate
+  home-based seller with a single product photo and a WhatsApp handle clears it easily.
+- **Private data is physically separate, not just RLS-flagged.** A precise shop address, exact
+  coordinates, and uploaded evidence live in `seller_verification_details` /
+  `seller_verification_evidence` — never on `sellers` itself — specifically because this codebase
+  already runs several `select('*')` queries against `sellers`, and this is the one guarantee that
+  can't regress by accident later. Evidence photos go into a **private** Supabase Storage bucket
+  (`seller-verification`) and are only ever served as short-lived (10 minute) signed URLs, generated
+  fresh for the owning seller or an admin — never a public URL, never cached.
+- **RLS is enabled with no policies** on both new tables, the same as every other table in this
+  schema, for the same reason: no Supabase Auth session here means no `auth.uid()` to key a real
+  policy on. The actual boundary — a seller sees only their own submission, evidence reaches only
+  the owning seller or an admin — is enforced in the Next.js API layer.
+- **Trusted is computed, not declared.** `computeVerificationLevel` (`lib/sellerVerificationLevels.ts`,
+  unit tested) requires an actual admin approval first, then a real track record on top: at least 10
+  completed orders (by escrow outcome, not just reviewed ones — most buyers never leave a review),
+  zero disputed orders ever, and a buyer rating of 4+ where one exists. A seller who racks up orders
+  without ever being reviewed stays "New," never "Trusted" — the whole point is never claiming a
+  level FindIt hasn't actually earned or checked.
+- **Admin review** is a separate queue in the Admin Queue screen ("Seller trust verification," below
+  the basic account-approval list) — approve, ask for more information, or reject, each with a
+  reason shown back to the seller (never a silent rejection) and logged to the admin audit trail
+  like every other high-impact admin action here.
+- **Public display**: the storefront (`SellerProfile.jsx`) shows the New/Verified/Trusted badge
+  (tap it for what it means), a coarse public area/city/state (never the private shop address), and
+  "On FindIt since" from the account's real creation date.
+- **Email** (`users.email`, optional) was added mainly so a real address can back Paystack
+  transactions instead of the synthetic one `lib/paystack.ts` falls back to — this app is still
+  phone-first, email is never required to log in.
+
+**Not built yet, deliberately out of scope for this pass:** a map-picker for coordinates (a "use my
+current location" button covers the common case), a resubmission-history view beyond "reopen the
+wizard, see the last rejection reason," ID/document verification specifically (evidence today is
+photos and links, not a government ID upload), and admin-configurable Trusted thresholds
+(`TRUSTED_MIN_ORDERS`/`TRUSTED_MIN_RATING` are constants for now, not a `subscription_plans`-style
+editable row — revisit once there's enough real order volume to tune them against).
+
 ## Image uploads
 
 Product photos are stored in Supabase Storage. The `product-images` bucket is created
@@ -397,10 +459,13 @@ project rather than a local SQLite file, and this environment may not have netwo
 Supabase, the automated tests cover the real business logic that doesn't require a live database —
 input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
 math, password hashing, phone normalization (`lib/phone.ts`), OTP code generation/hashing/config
-(`lib/otp.ts`), the real-world distance math behind "near you", and which listings a Store plan
+(`lib/otp.ts`), the real-world distance math behind "near you", which listings a Store plan
 downgrade deactivates (`selectProductsToDeactivate` in `lib/subscriptions.ts` — oldest kept active
-first, nothing ever deleted) — extracted into pure, directly-testable functions in
-`lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`/`lib/subscriptions.ts`.
+first, nothing ever deleted), and how a seller's New/Verified/Trusted level and minimum-evidence bar
+are computed (`computeVerificationLevel`/`canSubmitVerification` in
+`lib/sellerVerificationLevels.ts`) — extracted into pure, directly-testable functions in
+`lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`/`lib/subscriptions.ts`/
+`lib/sellerVerificationLevels.ts`.
 The database-touching paths (signup/login, creating orders, accepting offers, messaging, the full
 OTP send/verify/resend cycle against `otp_verifications`, saving a product's/request's location,
 etc.) need to be verified by actually running the app against a real Supabase project, the same way
