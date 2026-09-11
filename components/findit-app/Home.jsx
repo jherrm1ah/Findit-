@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
-  ArrowRight, X, ChevronRight, Home as HomeIcon, Sparkles,
+  ArrowRight, X, ChevronRight, Home as HomeIcon,
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
   LayoutDashboard, MapPin,
 } from "lucide-react";
