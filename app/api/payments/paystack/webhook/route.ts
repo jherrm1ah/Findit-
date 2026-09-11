@@ -30,7 +30,11 @@ export async function POST(req: NextRequest) {
   }
 
   const db = getDb();
-  const paymentResult = await db.from("payments").select("*").eq("provider_reference", reference).maybeSingle();
+  const paymentResult = await db
+    .from("payments")
+    .select("id, status, amount, metadata, subscription_id")
+    .eq("provider_reference", reference)
+    .maybeSingle();
   const payment = assertNoError(paymentResult, "loading payment") as Row | null;
   if (!payment) {
     // A reference we never created a pending payment row for — nothing to

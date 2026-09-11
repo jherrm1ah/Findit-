@@ -2,6 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { listOrders, createOrderFromProduct } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+const MAX_ORDERS = 20;
+const WINDOW_MS = 60 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser(req);
@@ -31,6 +35,14 @@ export async function POST(req: NextRequest) {
 
   if (!body.productId) {
     return NextResponse.json({ error: "productId is required" }, { status: 400 });
+  }
+
+  const { allowed, retryAfterSeconds } = checkRateLimit(`order:${user.id}`, MAX_ORDERS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many orders placed recently. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
   }
 
   // item/seller/price are NEVER taken from the client here — only which

@@ -131,6 +131,7 @@ export const api = {
       body: JSON.stringify({ orderId, outcome }),
     }).then((d) => d.order),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
+  getAdminOverview: () => request("/api/admin/overview").then((d) => d.overview),
   getSellerVerifications: () => request("/api/admin/seller-verifications").then((d) => d.submissions),
   reviewSellerVerification: (sellerId, action, reason) =>
     request(`/api/admin/seller-verifications/${sellerId}`, {

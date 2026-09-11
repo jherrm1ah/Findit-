@@ -208,6 +208,18 @@ export async function submitVerification(sellerId: string, input: SubmitVerifica
   }
 }
 
+// Real counts for the admin overview.
+export async function getVerificationQueueCounts(): Promise<{ pending: number; needsInfo: number }> {
+  const db = getDb();
+  const [pending, needsInfo] = await Promise.all([
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("verification_status", "pending"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("verification_status", "needs_info"),
+  ]);
+  if (pending.error) throw new Error(`counting pending verifications: ${pending.error.message}`);
+  if (needsInfo.error) throw new Error(`counting needs-info verifications: ${needsInfo.error.message}`);
+  return { pending: pending.count ?? 0, needsInfo: needsInfo.count ?? 0 };
+}
+
 export async function listPendingVerifications(): Promise<Array<{ sellerId: string; sellerName: string; phone: string | null; overview: VerificationOverview }>> {
   const db = getDb();
   const result = await db

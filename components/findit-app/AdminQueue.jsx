@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -570,12 +570,99 @@ function SellerAccountList({ sellers, onStatusChange }) {
   );
 }
 
+// Every number here comes straight from /api/admin/overview, which only
+// computes (and only returns) a section when the requesting admin's role
+// actually grants that permission domain — a scoped admin never even
+// receives counts outside their own domains, let alone sees them rendered.
+// A card only navigates to another tab when a real, working screen exists
+// there; finance/user counts have no admin management screen yet (that's
+// later phases), so those render as plain numbers, not dead links.
+function StatCard({ label, value, onClick }) {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag
+      onClick={onClick}
+      className={`bg-white border border-[#ECE9F7] rounded-xl px-3.5 py-3 text-left ${onClick ? "hover:border-[#D8CFF5] cursor-pointer" : ""}`}
+    >
+      <div className="flex items-center justify-between gap-1">
+        <p className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+        {onClick && <ChevronRight size={14} className="text-[#A79FC7]" />}
+      </div>
+      <p className="text-[10.5px] text-[#6B6483] mt-0.5">{label}</p>
+    </Tag>
+  );
+}
+
+function OverviewSection({ icon: Icon, title, children }) {
+  return (
+    <div className="mb-6">
+      <p className="text-[11px] font-semibold text-[#8A8372] uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <Icon size={12} /> {title}
+      </p>
+      <div className="grid grid-cols-2 gap-2.5">{children}</div>
+    </div>
+  );
+}
+
+function AdminOverview({ overview, onNavigate }) {
+  if (!overview) {
+    return <p className="text-[12px] text-[#6B6483]">Loading overview…</p>;
+  }
+  const hasAnySection = overview.users || overview.sellers || overview.verification || overview.moderation || overview.finance;
+  if (!hasAnySection) {
+    return <p className="text-[12px] text-[#6B6483]">Your admin role doesn't have any dashboard stats yet.</p>;
+  }
+  return (
+    <div>
+      {overview.sellers && (
+        <OverviewSection icon={Store} title="Sellers">
+          <StatCard label="Pending review" value={overview.sellers.pending} onClick={() => onNavigate("sellers")} />
+          <StatCard label="Approved" value={overview.sellers.approved} onClick={() => onNavigate("sellers")} />
+          <StatCard label="Suspended" value={overview.sellers.suspended} onClick={() => onNavigate("sellers")} />
+          <StatCard label="Rejected" value={overview.sellers.rejected} onClick={() => onNavigate("sellers")} />
+        </OverviewSection>
+      )}
+
+      {overview.verification && (
+        <OverviewSection icon={BadgeCheck} title="Trust verification">
+          <StatCard label="Pending" value={overview.verification.pending} onClick={() => onNavigate("verification")} />
+          <StatCard label="Needs info" value={overview.verification.needsInfo} onClick={() => onNavigate("verification")} />
+        </OverviewSection>
+      )}
+
+      {overview.moderation && (
+        <OverviewSection icon={PackageX} title="Disputes">
+          <StatCard label="Payments held on a reported problem" value={overview.moderation.openDisputes} onClick={() => onNavigate("sellers")} />
+        </OverviewSection>
+      )}
+
+      {overview.users && (
+        <OverviewSection icon={Users} title="Users">
+          <StatCard label="Total accounts" value={overview.users.total} />
+          <StatCard label="Buyers" value={overview.users.buyers} />
+          <StatCard label="Seller accounts" value={overview.users.sellers} />
+          <StatCard label="Admins" value={overview.users.admins} />
+        </OverviewSection>
+      )}
+
+      {overview.finance && (
+        <OverviewSection icon={CreditCard} title="Subscriptions">
+          <StatCard label="Paid store plans" value={overview.finance.paidStoreSubscriptions} />
+          <StatCard label="Free store plans" value={overview.finance.freeStoreSubscriptions} />
+          <StatCard label="FindIt Pro (buyers)" value={overview.finance.activePlatformSubscriptions} />
+        </OverviewSection>
+      )}
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
   onSellerStatusChange,
   adminActions = [],
   otpStats = null,
+  overview = null,
   onLookupUser,
   onPromoteToAdmin,
   onDemoteFromAdmin,
@@ -594,11 +681,28 @@ export default function AdminQueue({
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
   const isSuperAdmin = currentAdminRole === "super_admin";
 
+  // Every tab here backs a real, already-working screen — there's
+  // deliberately no Payments/Transactions/Boosts/Categories tab yet, since
+  // those systems don't exist in the app below this UI. Adding a tab for a
+  // system that isn't built would be exactly the "looks complete but isn't"
+  // problem this dashboard exists to avoid.
+  const TABS = [
+    { key: "overview", label: "Overview", icon: LayoutGrid },
+    can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
+    can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
+    { key: "requests", label: "Requests", icon: AlertTriangle },
+    isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
+    { key: "activity", label: "Activity", icon: ShieldCheck },
+  ].filter(Boolean);
+
+  const [tab, setTab] = useState("overview");
+  const activeTab = TABS.some((t) => t.key === tab) ? tab : TABS[0].key;
+
   return (
     <div className="px-5 pt-6 pb-10">
-      <div className="flex items-center gap-2 mb-5">
+      <div className="flex items-center gap-2 mb-4">
         <ClipboardList size={17} className="text-[#7C3AED]" />
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Admin queue</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Admin dashboard</h1>
         {currentAdminRole && !isSuperAdmin && (
           <span className="text-[10px] font-semibold text-[#7C3AED] bg-[#F5F2FC] px-2 py-1 rounded-full">
             {ADMIN_ROLES.find((r) => r.value === currentAdminRole)?.label}
@@ -606,7 +710,24 @@ export default function AdminQueue({
         )}
       </div>
 
-      {can("moderation") && (
+      <div className="flex gap-1.5 overflow-x-auto pb-4 mb-1 -mx-5 px-5">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full whitespace-nowrap shrink-0 ${
+              activeTab === t.key ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
+            }`}
+            style={activeTab === t.key ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
+          >
+            <t.icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "overview" && <AdminOverview overview={overview} onNavigate={setTab} />}
+
+      {activeTab === "sellers" && can("moderation") && (
         <>
           <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <PackageX size={13} className="text-[#D97706]" /> Reported problems
@@ -627,7 +748,7 @@ export default function AdminQueue({
         </>
       )}
 
-      {can("verification") && (
+      {activeTab === "verification" && can("verification") && (
         <>
           <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <BadgeCheck size={13} className="text-[#7C3AED]" /> Seller trust verification
@@ -638,31 +759,48 @@ export default function AdminQueue({
             )}
           </p>
           <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
-            Separate from basic account approval above — this drives the public New/Verified/Trusted badge.
+            Separate from basic account approval — this drives the public New/Verified/Trusted badge.
           </p>
           <VerificationSubmissions submissions={sellerVerifications} onReview={onReviewSellerVerification} showToast={showToast} />
         </>
       )}
 
-      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Unmatched requests</p>
-      <div className="space-y-3">
-        {unmatched.length === 0 && (
-          <p className="text-[12px] text-[#6B6483]">Every open request has at least one offer.</p>
-        )}
-        {unmatched.map((r) => (
-          <div key={r.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 flex items-start gap-3 shadow-sm shadow-[#4C1D95]/5">
-            <AlertTriangle size={15} className="text-[#F59E0B] mt-0.5 shrink-0" />
-            <div>
-              <p className="text-[13px] font-semibold text-[#1E1B4B]">{r.title}</p>
-              <p className="text-[11px] text-[#6B6483]">{r.posted}, no match yet</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {isSuperAdmin && (
+      {activeTab === "requests" && (
         <>
-          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Unmatched requests</p>
+          <div className="space-y-3">
+            {unmatched.length === 0 && (
+              <p className="text-[12px] text-[#6B6483]">Every open request has at least one offer.</p>
+            )}
+            {unmatched.map((r) => (
+              <div key={r.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 flex items-start gap-3 shadow-sm shadow-[#4C1D95]/5">
+                <AlertTriangle size={15} className="text-[#F59E0B] mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-[13px] font-semibold text-[#1E1B4B]">{r.title}</p>
+                  <p className="text-[11px] text-[#6B6483]">{r.posted}, no match yet</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {activeTab === "admin" && isSuperAdmin && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <UserPlus size={13} className="text-[#7C3AED]" /> Team & admin access
+          </p>
+          <div className="mb-7">
+            <TeamAccess
+              onLookupUser={onLookupUser}
+              onPromoteToAdmin={onPromoteToAdmin}
+              onDemoteFromAdmin={onDemoteFromAdmin}
+              currentAdminId={currentAdminId}
+              showToast={showToast}
+            />
+          </div>
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
             <Link2 size={13} className="text-[#7C3AED]" /> Seller identity migration
           </p>
           <SellerIdentityMigration
@@ -674,63 +812,52 @@ export default function AdminQueue({
         </>
       )}
 
-      {isSuperAdmin && (
+      {activeTab === "activity" && (
         <>
-          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
-            <UserPlus size={13} className="text-[#7C3AED]" /> Team & admin access
-          </p>
-          <TeamAccess
-            onLookupUser={onLookupUser}
-            onPromoteToAdmin={onPromoteToAdmin}
-            onDemoteFromAdmin={onDemoteFromAdmin}
-            currentAdminId={currentAdminId}
-            showToast={showToast}
-          />
-        </>
-      )}
+          {otpStats && (
+            <>
+              <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+                <MessageSquareText size={13} className="text-[#7C3AED]" /> OTP activity (last {otpStats.windowDays} days)
+              </p>
+              <div className="grid grid-cols-3 gap-2.5 mb-2">
+                {[
+                  ["Codes sent", otpStats.totalRequested],
+                  ["Verified", otpStats.totalVerified],
+                  ["Expired unused", otpStats.totalExpiredUnverified],
+                  ["Wrong attempts", otpStats.totalFailedAttempts],
+                  ["Resends", otpStats.totalResends],
+                  ["Signup / Reset", `${otpStats.signupRequests} / ${otpStats.resetRequests}`],
+                ].map(([label, value]) => (
+                  <div key={label} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
+                    <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+                    <p className="text-[10.5px] text-[#6B6483]">{label}</p>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
-      {otpStats && (
-        <>
           <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
-            <MessageSquareText size={13} className="text-[#7C3AED]" /> OTP activity (last {otpStats.windowDays} days)
+            <ShieldCheck size={13} className="text-[#7C3AED]" /> Admin activity log
           </p>
-          <div className="grid grid-cols-3 gap-2.5 mb-2">
-            {[
-              ["Codes sent", otpStats.totalRequested],
-              ["Verified", otpStats.totalVerified],
-              ["Expired unused", otpStats.totalExpiredUnverified],
-              ["Wrong attempts", otpStats.totalFailedAttempts],
-              ["Resends", otpStats.totalResends],
-              ["Signup / Reset", `${otpStats.signupRequests} / ${otpStats.resetRequests}`],
-            ].map(([label, value]) => (
-              <div key={label} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
-                <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
-                <p className="text-[10.5px] text-[#6B6483]">{label}</p>
+          <div className="space-y-2">
+            {adminActions.length === 0 && (
+              <p className="text-[12px] text-[#6B6483]">No admin actions recorded yet.</p>
+            )}
+            {adminActions.map((a) => (
+              <div key={a.id} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[12px] text-[#1E1B4B] truncate">{describeAction(a)}</p>
+                  <p className="text-[10.5px] text-[#8A8372]">by {a.adminName || "an admin"}</p>
+                </div>
+                <span className="text-[10px] text-[#8A8372] whitespace-nowrap shrink-0">
+                  {new Date(a.createdAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+                </span>
               </div>
             ))}
           </div>
         </>
       )}
-
-      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
-        <ShieldCheck size={13} className="text-[#7C3AED]" /> Admin activity log
-      </p>
-      <div className="space-y-2">
-        {adminActions.length === 0 && (
-          <p className="text-[12px] text-[#6B6483]">No admin actions recorded yet.</p>
-        )}
-        {adminActions.map((a) => (
-          <div key={a.id} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5 flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-[12px] text-[#1E1B4B] truncate">{describeAction(a)}</p>
-              <p className="text-[10.5px] text-[#8A8372]">by {a.adminName || "an admin"}</p>
-            </div>
-            <span className="text-[10px] text-[#8A8372] whitespace-nowrap shrink-0">
-              {new Date(a.createdAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
-            </span>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

@@ -607,3 +607,31 @@ export async function markSubscriptionPastDue(subscriptionId: string): Promise<v
   assertNoError(result, "marking subscription past due");
   await logEvent(subscriptionId, "payment_failed");
 }
+
+// Real counts for the admin overview — no MRR/churn math yet (that needs a
+// transaction history this app doesn't have), just what plan every store
+// and platform subscription is actually on right now.
+export async function getSubscriptionOverviewCounts(): Promise<{
+  paidStoreSubscriptions: number;
+  freeStoreSubscriptions: number;
+  activePlatformSubscriptions: number;
+}> {
+  const db = getDb();
+  const activeStatuses = ["active", "trialing"];
+  const [paidResult, freeResult, platformResult] = await Promise.all([
+    db.from("subscriptions").select("id", { count: "exact", head: true })
+      .eq("owner_type", "store").neq("plan_id", FREE_STORE_PLAN_ID).in("status", activeStatuses),
+    db.from("subscriptions").select("id", { count: "exact", head: true })
+      .eq("owner_type", "store").eq("plan_id", FREE_STORE_PLAN_ID),
+    db.from("subscriptions").select("id", { count: "exact", head: true })
+      .eq("owner_type", "platform").in("status", activeStatuses),
+  ]);
+  if (paidResult.error) throw new Error(`counting paid store subscriptions: ${paidResult.error.message}`);
+  if (freeResult.error) throw new Error(`counting free store subscriptions: ${freeResult.error.message}`);
+  if (platformResult.error) throw new Error(`counting platform subscriptions: ${platformResult.error.message}`);
+  return {
+    paidStoreSubscriptions: paidResult.count ?? 0,
+    freeStoreSubscriptions: freeResult.count ?? 0,
+    activePlatformSubscriptions: platformResult.count ?? 0,
+  };
+}

@@ -68,6 +68,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [myRequests, setMyRequests] = useState([]);
   const [adminActions, setAdminActions] = useState([]);
   const [otpStats, setOtpStats] = useState(null);
+  const [adminOverview, setAdminOverview] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
@@ -154,6 +155,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getOtpStats().then(setOtpStats).catch(() => {});
       api.getReportedOrders().then(setReportedOrders).catch(() => {});
       api.getSellerVerifications().then(setSellerVerifications).catch(() => {});
+      api.getAdminOverview().then(setAdminOverview).catch(() => {});
     }
     if (user) {
       api.getSavedIds().then(setSavedIds).catch(() => {});
@@ -769,6 +771,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onSellerStatusChange={handleSellerStatusChange}
               adminActions={adminActions}
               otpStats={otpStats}
+              overview={adminOverview}
               reportedOrders={reportedOrders}
               onResolveOrderIssue={handleResolveOrderIssue}
               onCheckSellerIdentityStatus={handleCheckSellerIdentityStatus}

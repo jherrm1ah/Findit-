@@ -1055,6 +1055,37 @@ export async function listSellers(): Promise<Seller[]> {
   return rows.map(rowToSeller);
 }
 
+// Real counts for the admin overview — one query per lifecycle status,
+// nothing inferred or cached.
+export async function getSellerStatusCounts(): Promise<{ pending: number; approved: number; rejected: number; suspended: number }> {
+  const db = getDb();
+  const [pending, approved, rejected, suspended] = await Promise.all([
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "approved"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "rejected"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+  ]);
+  for (const [label, result] of [["pending", pending], ["approved", approved], ["rejected", rejected], ["suspended", suspended]] as const) {
+    if (result.error) throw new Error(`counting ${label} sellers: ${result.error.message}`);
+  }
+  return {
+    pending: pending.count ?? 0,
+    approved: approved.count ?? 0,
+    rejected: rejected.count ?? 0,
+    suspended: suspended.count ?? 0,
+  };
+}
+
+// Real count for the admin overview — orders a buyer flagged that no admin
+// has resolved yet (see resolveOrderIssue, which clears escrow_status off
+// 'disputed').
+export async function countDisputedOrders(): Promise<number> {
+  const db = getDb();
+  const result = await db.from("orders").select("id", { count: "exact", head: true }).eq("escrow_status", "disputed");
+  if (result.error) throw new Error(`counting disputed orders: ${result.error.message}`);
+  return result.count ?? 0;
+}
+
 // Used to gate every restricted seller action (new listings, uploads,
 // offers) against the seller's real lifecycle state — otherwise an admin's
 // approve/reject/suspend click has no actual effect, since role alone

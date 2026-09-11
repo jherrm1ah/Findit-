@@ -493,6 +493,26 @@ export async function demoteFromAdmin(actingAdminId: string, phone: string): Pro
   return rowToUser(updatedRow);
 }
 
+// Real counts for the admin overview — a plain role tally, nothing derived.
+export async function getUserCounts(): Promise<{ total: number; buyers: number; sellers: number; admins: number }> {
+  const db = getDb();
+  const [total, buyers, sellers, admins] = await Promise.all([
+    db.from("users").select("id", { count: "exact", head: true }),
+    db.from("users").select("id", { count: "exact", head: true }).eq("role", "buyer"),
+    db.from("users").select("id", { count: "exact", head: true }).eq("role", "seller"),
+    db.from("users").select("id", { count: "exact", head: true }).eq("role", "admin"),
+  ]);
+  for (const [label, result] of [["total", total], ["buyers", buyers], ["sellers", sellers], ["admins", admins]] as const) {
+    if (result.error) throw new Error(`counting ${label} users: ${result.error.message}`);
+  }
+  return {
+    total: total.count ?? 0,
+    buyers: buyers.count ?? 0,
+    sellers: sellers.count ?? 0,
+    admins: admins.count ?? 0,
+  };
+}
+
 export async function createSession(userId: string): Promise<string> {
   const db = getDb();
   const token = crypto.randomBytes(32).toString("hex");
