@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -17,6 +17,8 @@ function describeAction(a) {
   if (a.action === "user.reactivated") return `Reactivated account "${a.detail?.name ?? a.targetId}"`;
   if (a.action === "order.refunded") return `Refunded the buyer for "${a.detail?.item ?? a.targetId}"`;
   if (a.action === "order.payment_released") return `Released payment to ${a.detail?.seller ?? "the seller"} for "${a.detail?.item ?? a.targetId}"`;
+  if (a.action === "admin_session_started") return a.detail?.issuedSession ? "Signed in on the staff screen" : "Opened an admin session";
+  if (a.action === "admin_session_ended") return "Left admin mode";
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
@@ -1880,6 +1882,7 @@ export default function AdminQueue({
   onLoadAnalytics,
   onLoadAlerts,
   onSendBroadcast,
+  onLeaveAdmin,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -1924,6 +1927,14 @@ export default function AdminQueue({
           <span className="text-[10px] font-semibold text-[#7C3AED] bg-[#F5F2FC] px-2 py-1 rounded-full">
             {ADMIN_ROLES.find((r) => r.value === currentAdminRole)?.label}
           </span>
+        )}
+        {onLeaveAdmin && (
+          <button
+            onClick={onLeaveAdmin}
+            className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-full border border-[#ECE9F7] bg-white shrink-0"
+          >
+            <LogOut size={11} /> Leave admin
+          </button>
         )}
       </div>
 

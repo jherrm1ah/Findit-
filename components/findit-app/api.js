@@ -19,6 +19,20 @@ export function setSessionExpiredHandler(fn) {
   sessionExpiredHandler = fn;
 }
 
+// The server's answer when the caller is a real admin on a valid session but
+// hasn't signed in on the staff screen, or their unlock has aged out. Kept in
+// sync with ADMIN_UNLOCK_REQUIRED in lib/adminRoles.ts.
+export const ADMIN_UNLOCK_REQUIRED = "admin_unlock_required";
+
+// Same idea as the session-expired handler above, for the admin step-up: any
+// admin call can come back needing a fresh staff sign-in, and every one of
+// them should land on the same screen rather than each caller inventing its
+// own error message.
+let adminLockedHandler = null;
+export function setAdminLockedHandler(fn) {
+  adminLockedHandler = fn;
+}
+
 async function request(url, options) {
   const res = await fetch(url, options);
   if (!res.ok) {
@@ -31,6 +45,13 @@ async function request(url, options) {
     if (res.status === 401 && !PUBLIC_AUTH_ROUTES.some((route) => url.startsWith(route))) {
       err.sessionExpired = true;
       sessionExpiredHandler?.();
+    }
+    // A missing admin unlock is NOT an expired session — the person stays
+    // logged in as themselves and only needs to sign in on the staff screen,
+    // so this never goes near the session-expired path above.
+    if (body.code === ADMIN_UNLOCK_REQUIRED) {
+      err.adminLocked = true;
+      adminLockedHandler?.();
     }
     throw err;
   }
@@ -114,6 +135,18 @@ export const api = {
     request("/api/notifications/read-all", { method: "POST" }).then((d) => d.notifications),
 
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
+  // Staff sign-in. Being logged in as an admin isn't enough to reach any of
+  // the admin calls below — the server requires a per-session unlock that
+  // ages out, and answers ADMIN_UNLOCK_REQUIRED until it's granted.
+  getAdminSession: () => request("/api/admin/session"),
+  startAdminSession: (phone, password) =>
+    request("/api/admin/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, password }),
+    }),
+  endAdminSession: () => request("/api/admin/session", { method: "DELETE" }),
+
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
   getSellerIdentityReport: () => request("/api/admin/seller-identity"),

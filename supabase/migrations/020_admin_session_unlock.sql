@@ -1,0 +1,26 @@
+-- ---------------------------------------------------------------------------
+-- 020 — Staff sign-in: a second, explicit authentication before the Admin
+-- Queue opens.
+--
+-- Before this, holding a logged-in session for an account whose role is
+-- 'admin' was the whole check. Anyone with that person's unlocked phone —
+-- or a session cookie lifted from one — reached every admin capability with
+-- no further challenge, because the session lasts 30 days.
+--
+-- This adds a per-session admin unlock. Signing in on the staff screen
+-- re-verifies the password and stamps this column; every admin API route
+-- then requires a stamp newer than ADMIN_UNLOCK_MINUTES (default 60). The
+-- stamp deliberately lives on the SESSION row rather than a separate
+-- cookie so that:
+--   - "leave admin mode" is one database write, not a cookie the client
+--     could simply decline to clear,
+--   - logging out destroys the unlock along with the session,
+--   - an admin unlocked on their laptop is NOT unlocked on their phone.
+--
+-- Null means locked, which is the correct default for every session that
+-- already exists: nobody is silently granted admin access by this
+-- migration running. Existing admins sign in once more on the staff screen
+-- and carry on.
+-- ---------------------------------------------------------------------------
+
+alter table sessions add column if not exists admin_unlocked_at timestamptz;

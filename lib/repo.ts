@@ -855,6 +855,18 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   if (existing.escrowStatus === "refunded") {
     throw new ValidationError("This order was refunded, so it can't be confirmed as delivered.");
   }
+  // Releasing escrow on an order nobody paid for would schedule a payout of
+  // money FindIt never collected. The status checks above only prove the
+  // seller said they dispatched it, which is not the same thing — an order
+  // created before the payment flow existed, or one advanced by a seller
+  // while the charge was still pending, reaches here unpaid. Migration 021
+  // also refuses this at the database level; this check exists so the buyer
+  // gets an explanation instead of a constraint violation.
+  if (existing.paymentStatus !== "paid") {
+    throw new ValidationError(
+      "This order hasn't been paid for yet, so there's nothing to release. Pay for it first, then confirm delivery."
+    );
+  }
 
   const now = new Date().toISOString();
   const db = getDb();
@@ -976,6 +988,15 @@ export async function resolveOrderIssue(
   if (!existing) return null;
   if (existing.escrowStatus !== "disputed") {
     throw new ValidationError("There's no open problem on that order.");
+  }
+  // Same reasoning as confirmDelivery: "released" pays the seller, and an
+  // order can be disputed without ever having been paid. Refunding one is
+  // still allowed — it closes the report and returns the buyer to a truthful
+  // state — but releasing it would pay out money that was never collected.
+  if (outcome === "released" && existing.paymentStatus !== "paid") {
+    throw new ValidationError(
+      "This order was never paid for, so there are no funds to release. Resolve it as refunded instead."
+    );
   }
 
   const db = getDb();

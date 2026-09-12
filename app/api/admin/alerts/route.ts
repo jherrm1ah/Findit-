@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser } from "@/lib/auth";
+import { requireAnyAdmin } from "@/lib/adminRoles";
 import { hasAdminPermission, AdminPermission } from "@/lib/adminRolesLevels";
 import { getAdminAlerts } from "@/lib/alerts";
 import { errorResponse } from "@/lib/errors";
@@ -16,10 +16,11 @@ const ALERT_PERMISSION: Record<string, AdminPermission> = {
 };
 
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser(req);
-  if (!user || user.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  // requireAnyAdmin rather than a hand-rolled role check: this route serves
+  // every admin role and scopes the BODY below, but it must still inherit
+  // every guarantee the shared guard carries (staff unlock, suspension).
+  const user = await requireAnyAdmin(req);
+  if (user instanceof NextResponse) return user;
 
   try {
     const alerts = await getAdminAlerts();

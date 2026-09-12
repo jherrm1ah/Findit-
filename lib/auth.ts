@@ -711,3 +711,100 @@ export function setSessionCookie(res: NextResponse, token: string): void {
 export function clearSessionCookie(res: NextResponse): void {
   res.cookies.set(SESSION_COOKIE, "", { path: "/", maxAge: 0 });
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Staff sign-in — step-up authentication for the Admin Queue                 */
+/* -------------------------------------------------------------------------- */
+
+// Holding a session for an account whose role is 'admin' is deliberately NOT
+// enough to reach an admin route. The staff screen re-verifies the password
+// and stamps sessions.admin_unlocked_at (migration 020); requireAdmin then
+// refuses anything older than this window. A session lasts 30 days — an
+// admin capability should not.
+const DEFAULT_ADMIN_UNLOCK_MINUTES = 60;
+
+// The unlock slides forward while an admin is actually working, so nobody is
+// thrown out mid-review. Writing that on every single admin request would be
+// a database write per read, so the stamp is only refreshed once it's this
+// old — the window is measured in tens of minutes, so a few minutes of drift
+// costs nothing.
+const ADMIN_UNLOCK_REFRESH_AFTER_MS = 5 * 60 * 1000;
+
+export function adminUnlockMinutes(): number {
+  const raw = Number(process.env.ADMIN_UNLOCK_MINUTES);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_ADMIN_UNLOCK_MINUTES;
+}
+
+// Pure, so the expiry rule itself is unit-testable without a database or a
+// request. Anything unparseable is treated as locked rather than unlocked —
+// a corrupt timestamp must never grant access.
+export function isUnlockFresh(unlockedAt: string | Date | null, now: Date = new Date()): boolean {
+  if (!unlockedAt) return false;
+  const stamped = unlockedAt instanceof Date ? unlockedAt : new Date(unlockedAt);
+  const ms = stamped.getTime();
+  if (!Number.isFinite(ms)) return false;
+  const age = now.getTime() - ms;
+  // A stamp from the future is as suspect as a corrupt one.
+  if (age < 0) return false;
+  return age < adminUnlockMinutes() * 60 * 1000;
+}
+
+export function sessionTokenFromRequest(req: NextRequest): string | undefined {
+  return req.cookies.get(SESSION_COOKIE)?.value;
+}
+
+export async function unlockAdminSession(token: string): Promise<void> {
+  const result = await getDb()
+    .from("sessions")
+    .update({ admin_unlocked_at: new Date().toISOString() })
+    .eq("token", token);
+  assertNoError(result, "starting admin session");
+}
+
+// Leaving admin mode clears only the unlock — the person stays logged in as
+// themselves, exactly like stepping out of an admin area rather than out of
+// the app.
+export async function lockAdminSession(token: string): Promise<void> {
+  const result = await getDb()
+    .from("sessions")
+    .update({ admin_unlocked_at: null })
+    .eq("token", token);
+  assertNoError(result, "leaving admin session");
+}
+
+// Reads the unlock stamp for this request's session and slides it forward if
+// it's still valid. Returns false for a missing cookie, an unknown session,
+// or a stamp outside the window.
+export async function isAdminSessionUnlocked(req: NextRequest): Promise<boolean> {
+  const token = sessionTokenFromRequest(req);
+  if (!token) return false;
+
+  const result = await getDb()
+    .from("sessions")
+    .select("admin_unlocked_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  // 42703 = undefined_column: migration 020 hasn't been applied to this
+  // database. Fail CLOSED (no admin access) but say so plainly — migrations
+  // here are applied by hand, and the failure this produced otherwise was a
+  // generic 500 on every admin route with nothing pointing at the cause.
+  // See scripts/check-schema.mjs, which catches this before a deploy.
+  if (result.error?.code === "42703") {
+    console.error(
+      "[admin-session] sessions.admin_unlocked_at is missing — apply supabase/migrations/020_admin_session_unlock.sql. Admin access stays closed until then."
+    );
+    return false;
+  }
+
+  const row = assertNoError(result, "checking admin session") as Row | null;
+  if (!row) return false;
+
+  const unlockedAt = (row.admin_unlocked_at as string | null) ?? null;
+  if (!isUnlockFresh(unlockedAt)) return false;
+
+  if (unlockedAt && Date.now() - new Date(unlockedAt).getTime() > ADMIN_UNLOCK_REFRESH_AFTER_MS) {
+    await unlockAdminSession(token);
+  }
+  return true;
+}
