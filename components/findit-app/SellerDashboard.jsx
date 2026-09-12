@@ -465,6 +465,7 @@ export default function SellerDashboard({
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
   myStore, onClaimStore, claimingStore,
+  transactionRecords = [],
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -861,6 +862,30 @@ export default function SellerDashboard({
                 <Pill tone={statusTone(o.status)}>{o.status}</Pill>
               </div>
               <p className="text-[11px] text-[#6B6483] mb-3">{o.id} · {naira(o.price)}</p>
+              {/* The verified record for this sale, once it exists. Only
+                  rendered when the server actually created one — never
+                  inferred from the order's own status. */}
+              {(() => {
+                const record = transactionRecords.find((r) => r.orderId === o.id);
+                if (!record) return null;
+                const refunded = record.status === "refunded";
+                return (
+                  <div className="flex items-center gap-2 flex-wrap mb-2.5">
+                    <span className={`text-[11px] font-semibold ${refunded ? "text-[#B45309]" : "text-[#15803D]"}`}>
+                      {refunded ? "\u26a0 Refunded" : "\u2713 Completed"}
+                    </span>
+                    <span className="text-[11px] text-[#6B6483] font-mono">{record.code}</span>
+                    <a
+                      href={`/verify/${record.code}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] font-semibold text-[#7C3AED]"
+                    >
+                      View record
+                    </a>
+                  </div>
+                );
+              })()}
               <button
                 onClick={() => messageBuyer(o)}
                 disabled={messagingId !== null}

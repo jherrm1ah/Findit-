@@ -1,4 +1,10 @@
 import { getDb, assertNoError } from "./db";
+import {
+  recordCompletedTransaction,
+  markTransactionDisputed,
+  markTransactionRefunded,
+  markTransactionDisputeResolved,
+} from "./transactionRecord";
 import { ValidationError } from "./errors";
 import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
@@ -934,6 +940,12 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   if (!row) throw new ValidationError("You've already confirmed this order.");
   const order = rowToOrder(row);
 
+  // The one moment an order is genuinely complete. Creating the verified
+  // record HERE, rather than in the route, means any future release path
+  // gets one automatically. Never throws: a completion the buyer has already
+  // been shown must not fail because a record couldn't be written.
+  await recordCompletedTransaction(order);
+
   const seller = await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
@@ -990,6 +1002,12 @@ export async function reportOrderIssue(
     .maybeSingle();
   const row = assertNoError(result, "reporting an order problem") as Row | null;
   if (!row) throw new ValidationError("You've already reported a problem with this order.");
+
+  // No-op today: reportOrderIssue refuses an order whose escrow is already
+  // 'released', and a record only exists once it is, so a dispute always
+  // precedes the record. Wired anyway so the history stays correct the day a
+  // post-completion dispute path exists.
+  await markTransactionDisputed(id, userId, trimmed);
   const order = rowToOrder(row);
 
   const seller = await findUserByBusinessName(order.seller);
@@ -1059,6 +1077,16 @@ export async function resolveOrderIssue(
   const row = assertNoError(result, "resolving an order problem") as Row | null;
   if (!row) throw new ValidationError("That problem has already been resolved.");
   const order = rowToOrder(row);
+
+  if (outcome === "released") {
+    // A dispute settled in the seller's favour is a real completion, so it
+    // earns a real record — and the history says it was disputed first
+    // rather than presenting it as an uneventful sale.
+    await recordCompletedTransaction(order);
+    await markTransactionDisputeResolved(id, null, "Dispute resolved in the seller's favour.");
+  } else {
+    await markTransactionRefunded(id, null, "Refunded after a reported problem.");
+  }
 
   await notifyBestEffort({
     userId: order.userId,

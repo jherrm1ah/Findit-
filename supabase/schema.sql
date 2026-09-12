@@ -492,6 +492,69 @@ create table if not exists admin_actions (
 create index if not exists admin_actions_created_at_idx on admin_actions(created_at desc);
 
 -- ---------------------------------------------------------------------------
+-- Verified Transaction Records (migration 024)
+--
+-- Created exactly once, when an order reaches escrow_status 'released' — the
+-- only state this app treats as genuinely complete, and one that migration
+-- 021 makes unreachable without a confirmed payment. The snapshot columns say
+-- what was true at completion and are never recomputed; everything that
+-- happens afterwards is appended to transaction_record_events instead.
+-- ---------------------------------------------------------------------------
+
+create table if not exists transaction_records (
+  id text primary key,
+  -- Public, random, non-sequential. Not derived from any internal id, order
+  -- reference or phone number.
+  code text not null unique,
+  -- One record per order. This constraint is what makes creation idempotent.
+  order_id text not null unique references orders(id) on delete restrict,
+  buyer_user_id text not null references users(id) on delete restrict,
+  seller_id text references sellers(id),
+  seller_name text not null,
+  item_name text not null,
+  product_id text references products(id) on delete set null,
+  amount integer not null check (amount >= 0),
+  currency text not null default 'NGN',
+  seller_verification_level text not null default 'new'
+    check (seller_verification_level in ('new', 'verified', 'trusted')),
+  paid_at timestamptz,
+  completed_at timestamptz not null,
+  status text not null default 'completed'
+    check (status in ('completed', 'disputed', 'refunded')),
+  -- Foundation for future item-level identity. Every record today is
+  -- listing-scope: a generic listing must not become a permanently trackable
+  -- physical object.
+  record_scope text not null default 'listing'
+    check (record_scope in ('listing', 'item')),
+  created_at timestamptz not null default now()
+);
+create index if not exists transaction_records_buyer_idx on transaction_records(buyer_user_id);
+create index if not exists transaction_records_seller_idx on transaction_records(seller_id);
+create index if not exists transaction_records_seller_name_idx on transaction_records(seller_name);
+create index if not exists transaction_records_completed_at_idx on transaction_records(completed_at desc);
+alter table transaction_records enable row level security;
+
+-- Append-only history. A dispute, refund or admin correction adds a row here
+-- and moves transaction_records.status; nothing rewrites the snapshot. This
+-- is also the extension point for ownership transfer, warranty and repair
+-- history, which are events against a transaction rather than new tables.
+create table if not exists transaction_record_events (
+  id text primary key,
+  transaction_record_id text not null references transaction_records(id) on delete cascade,
+  event_type text not null
+    check (event_type in ('completed', 'dispute_opened', 'dispute_resolved', 'refunded', 'admin_correction')),
+  actor_type text not null check (actor_type in ('system', 'buyer', 'seller', 'admin')),
+  actor_id text references users(id) on delete set null,
+  reason text,
+  previous_value jsonb,
+  new_value jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists transaction_record_events_record_idx
+  on transaction_record_events(transaction_record_id, created_at);
+alter table transaction_record_events enable row level security;
+
+-- ---------------------------------------------------------------------------
 -- otp_verifications — self-managed phone-verification codes (see lib/otp.ts
 -- and lib/sms.ts). FindIt generates and hashes the code itself and sends it
 -- as a plain SMS through Termii — Termii never sees or manages the code.

@@ -976,6 +976,125 @@ const PAYOUT_STATUS_PILL = {
 // The fee editor writes an append-only history row (never an update), and
 // "Mark paid" is only ever an admin recording a real off-platform transfer
 // they already made, never a claim this app made one itself.
+
+// Look up a verified transaction by its public code. Read-only by design:
+// the only write here appends an explaining correction, which is why there
+// is no form that edits the record's own fields.
+function TransactionLookup({ onLookup, onCorrect, showToast }) {
+  const [code, setCode] = useState("");
+  const [record, setRecord] = useState(undefined); // undefined = not searched, null = not found
+  const [busy, setBusy] = useState(false);
+  const [reason, setReason] = useState("");
+  const [correcting, setCorrecting] = useState(false);
+
+  const search = async () => {
+    if (!code.trim() || busy) return;
+    setBusy(true);
+    setRecord(undefined);
+    try {
+      setRecord((await onLookup(code.trim())) ?? null);
+    } catch {
+      setRecord(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const correct = async () => {
+    if (reason.trim().length < 5 || correcting) return;
+    setCorrecting(true);
+    try {
+      await onCorrect(record.code, reason.trim());
+      showToast?.("Correction recorded.");
+      setReason("");
+      setRecord(await onLookup(record.code));
+    } catch (err) {
+      showToast?.(err.message || "Couldn't record that correction.", "error");
+    } finally {
+      setCorrecting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
+      <div className="flex gap-2 mb-3">
+        <input
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()}
+          placeholder="FI-XXXXXXXX"
+          className="input flex-1 font-mono"
+        />
+        <button
+          onClick={search}
+          disabled={busy}
+          className="text-[12px] font-semibold text-white px-4 rounded-xl disabled:opacity-60"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {busy ? "\u2026" : "Find"}
+        </button>
+      </div>
+
+      {record === null && <p className="text-[12px] text-[#6B6483]">No transaction record with that code.</p>}
+
+      {record && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-2 text-[11.5px]">
+            {[
+              ["Code", record.code],
+              ["Status", record.status],
+              ["Item", record.itemName],
+              ["Seller", record.sellerName],
+              ["Amount", naira(record.amount)],
+              ["Order", record.orderId],
+              ["Completed", new Date(record.completedAt).toLocaleString("en-NG")],
+              ["Seller level at the time", record.sellerVerificationLevel],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <p className="text-[10px] uppercase tracking-wide text-[#8A8372]">{label}</p>
+                <p className="text-[#1E1B4B] break-words">{value}</p>
+              </div>
+            ))}
+          </div>
+
+          <div>
+            <p className="text-[10px] uppercase tracking-wide text-[#8A8372] mb-1 mt-2">History</p>
+            <div className="space-y-1">
+              {record.events.map((e, i) => (
+                <p key={i} className="text-[11px] text-[#514B67]">
+                  {e.eventType} \u00b7 {e.actorType} \u00b7 {new Date(e.createdAt).toLocaleString("en-NG")}
+                  {e.reason ? ` \u2014 ${e.reason}` : ""}
+                </p>
+              ))}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-[#ECE9F7]">
+            <p className="text-[11px] text-[#6B6483] mb-1.5">
+              A correction is appended to the history. It never alters what the record says happened.
+            </p>
+            <div className="flex gap-2">
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="Reason for the correction"
+                className="input flex-1"
+              />
+              <button
+                onClick={correct}
+                disabled={correcting || reason.trim().length < 5}
+                className="text-[12px] font-semibold text-[#7C3AED] px-3 disabled:opacity-40"
+              >
+                {correcting ? "\u2026" : "Add"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkPayoutPaid, showToast }) {
   const [feeConfig, setFeeConfig] = useState(null);
   const [feeInput, setFeeInput] = useState("");
@@ -1895,6 +2014,8 @@ export default function AdminQueue({
   onLoadAlerts,
   onSendBroadcast,
   onLeaveAdmin,
+  onLookupTransaction,
+  onCorrectTransaction,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -2037,6 +2158,13 @@ export default function AdminQueue({
           <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
             Fee changes only affect orders paid from now on — past orders keep the fee that was in force when they were paid.
           </p>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Verify a transaction</p>
+          <TransactionLookup
+            onLookup={onLookupTransaction}
+            onCorrect={onCorrectTransaction}
+            showToast={showToast}
+          />
+
           <PaymentsAdmin
             onLoadFeeConfig={onLoadFeeConfig}
             onSetFeeConfig={onSetFeeConfig}

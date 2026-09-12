@@ -134,6 +134,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // the answer.
   const [myStore, setMyStore] = useState(null);
   const [claimingStore, setClaimingStore] = useState(false);
+  // Verified transaction records this person is a party to, as buyer or
+  // seller. Created server-side at completion; the UI only reflects what
+  // exists, never asserts a record from an order's status.
+  const [transactionRecords, setTransactionRecords] = useState([]);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -272,6 +276,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if (s === "seller" && isSeller) {
       api.getMyStore().then(setMyStore).catch(() => {});
+    }
+    if (s === "account" || s === "seller") {
+      api.getMyTransactionRecords().then(setTransactionRecords).catch(() => {});
     }
     if (s === "findItPro" && user) {
       api.getFindItPro().then(setFindItPro).catch(() => {});
@@ -1170,6 +1177,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onSavePayoutAccount={handleSavePayoutAccount}
               savingPayoutAccount={savingPayoutAccount}
               boostPlans={boostPlans}
+            transactionRecords={transactionRecords}
             myStore={myStore}
             onClaimStore={handleClaimStore}
             claimingStore={claimingStore}
@@ -1229,6 +1237,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onLoadAlerts={handleLoadAlerts}
               onSendBroadcast={handleSendBroadcast}
               onLeaveAdmin={handleLeaveAdmin}
+              onLookupTransaction={(code) => api.lookupTransactionRecord(code)}
+              onCorrectTransaction={(code, reason) => api.correctTransactionRecord(code, reason)}
             />
           ) : (
             <RoleGate
@@ -1296,6 +1306,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
         )}
         {screen === "account" && (
           <Account
+            transactionRecords={transactionRecords}
             openProduct={setProduct}
             orders={orders}
             products={products}

@@ -134,6 +134,10 @@ export const api = {
   markAllNotificationsRead: () =>
     request("/api/notifications/read-all", { method: "POST" }).then((d) => d.notifications),
 
+  // Verified transaction records the signed-in person is a party to, as
+  // buyer or seller. Ownership is enforced server-side.
+  getMyTransactionRecords: () => request("/api/transactions").then((d) => d.records),
+
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
 
   // A seller's PUBLIC storefront. No session needed — a logged-out visitor
@@ -153,6 +157,18 @@ export const api = {
       body: JSON.stringify({ phone, password }),
     }),
   endAdminSession: () => request("/api/admin/session", { method: "DELETE" }),
+
+  // Admin investigation of a verified transaction. Read-only: there is no
+  // endpoint that rewrites a record's snapshot, only one that appends an
+  // explaining correction.
+  lookupTransactionRecord: (code) =>
+    request(`/api/admin/transaction-records?code=${encodeURIComponent(code)}`).then((d) => d.record),
+  correctTransactionRecord: (code, reason) =>
+    request("/api/admin/transaction-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, reason }),
+    }),
 
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
