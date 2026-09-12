@@ -204,6 +204,16 @@ export async function refundTransaction(input: {
 // pattern as password verification in lib/auth.ts.
 export function verifyWebhookSignature(rawBody: string, signatureHeader: string | null): boolean {
   if (!signatureHeader) return false;
+  // With no key configured there is nothing to verify against, so no caller
+  // can be trusted — refuse rather than letting secretKey() throw. The
+  // outcome was already fail-closed (an exception processes nothing), but it
+  // surfaced as an unhandled 500, which Paystack treats as a transient
+  // failure and retries indefinitely. A deployment with no key is exactly
+  // the state this repo ships in, so this is the common path, not the edge.
+  if (!isPaystackConfigured()) {
+    console.error("[paystack] webhook received but PAYSTACK_SECRET_KEY isn't set — rejecting unverifiable delivery");
+    return false;
+  }
   const expected = crypto.createHmac("sha512", secretKey()).update(rawBody).digest("hex");
   const expectedBuf = Buffer.from(expected, "hex");
   const actualBuf = Buffer.from(signatureHeader, "hex");

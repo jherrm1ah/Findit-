@@ -40,6 +40,23 @@ export async function requireAdmin(req: NextRequest, permission: AdminPermission
   return user;
 }
 
+// For the handful of admin routes that legitimately serve EVERY admin role
+// and do their own per-domain scoping on the response body (the Overview and
+// Alerts tabs, which show each admin only the sections their role covers).
+// Those routes used to hand-roll `getSessionUser` + `role !== "admin"`, which
+// meant they silently sat outside every guarantee added to requireAdmin —
+// the staff-unlock check among them. Anything that gates on a single
+// permission should use requireAdmin instead; this is not a lighter guard,
+// only a less specific one.
+export async function requireAnyAdmin(req: NextRequest): Promise<User | NextResponse> {
+  const user = await getSessionUser(req);
+  if (!user || user.role !== "admin") {
+    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
+  }
+  if (!(await isAdminSessionUnlocked(req))) return unlockRequired();
+  return user;
+}
+
 // The two admin-creation actions are checked directly against super_admin
 // rather than through hasAdminPermission — granting/revoking admin access
 // itself is categorically more sensitive than any single permission

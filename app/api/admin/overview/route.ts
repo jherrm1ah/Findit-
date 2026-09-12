@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser, getUserCounts } from "@/lib/auth";
+import { getUserCounts } from "@/lib/auth";
+import { requireAnyAdmin } from "@/lib/adminRoles";
 import { hasAdminPermission } from "@/lib/adminRolesLevels";
 import { getSellerStatusCounts, countDisputedOrders } from "@/lib/repo";
 import { getVerificationQueueCounts } from "@/lib/sellerVerification";
@@ -12,10 +13,10 @@ import { errorResponse } from "@/lib/errors";
 // role actually grants that permission domain, so a scoped admin never sees
 // data outside what they're allowed to act on.
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser(req);
-  if (!user || user.role !== "admin") {
-    return NextResponse.json({ error: "Admin access required." }, { status: 403 });
-  }
+  // See admin/alerts: every admin role may call this, but the response is
+  // scoped per domain below. The shared guard still applies.
+  const user = await requireAnyAdmin(req);
+  if (user instanceof NextResponse) return user;
   const can = (permission: Parameters<typeof hasAdminPermission>[1]) => hasAdminPermission(user.adminRole, permission);
 
   try {
