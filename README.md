@@ -659,6 +659,25 @@ you'd test any app whose database lives outside your own machine. The OTP UI flo
 countdown, resend, error states) was verified end-to-end with mocked API responses via Playwright,
 the same way the rest of this app's UI has been throughout this project.
 
+**Integration tests for the riskiest multi-step flows** (`lib/orderFlows.integration.test.ts`) run
+the actual `acceptOffer`/`confirmOrderPayment` functions — not reimplemented test-only logic —
+against `lib/testing/fakeSupabase.ts`, a minimal in-memory stand-in for the Supabase client (just
+enough of `.from()/.select()/.insert()/.update()/.eq()/...` to run real multi-table flows). These
+specifically regression-test the two race conditions a security audit found and fixed in this
+codebase: double-accepting the same offer, and a Paystack webhook redelivering the same "payment
+succeeded" event twice. It's not a substitute for testing against a real Postgres database — no
+RLS, no real constraint enforcement, no network failures — but it catches a regression in the
+*business logic* of these flows without needing one. Extend it with more flows (escrow release,
+disputed-order resolution) following the same pattern before reaching for more unit tests of
+already-pure logic.
+
+**Continuous integration** (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, and
+`npm run build` on every push and pull request — the same three checks that have been run manually
+before every commit throughout this project, now enforced automatically instead of by discipline
+alone. It needs no secrets/environment variables: the production build never touches the database
+at build time (every API route is server-rendered on demand, not statically evaluated), so a
+missing `SUPABASE_URL` only ever matters once a route actually runs, not while it compiles.
+
 ## Next steps toward a real product
 
 Real hosting/deployment (see the note in "Testing" — this repo has never been deployed to a live
