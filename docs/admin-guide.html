@@ -1,0 +1,437 @@
+<title>FindIt Admin Handbook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root {
+    --ground: #FBFAFD;
+    --surface: #FFFFFF;
+    --ink: #1E1B4B;
+    --muted: #6B6483;
+    --faint: #8A84A0;
+    --accent: #7C3AED;
+    --accent-soft: #F1ECFD;
+    --line: #E7E3F4;
+    --line-strong: #D6D0EA;
+    --ok: #15803D;
+    --ok-soft: #E8F5ED;
+    --warn: #B45309;
+    --warn-soft: #FBF0E2;
+    --stop: #B91C1C;
+    --stop-soft: #FBEAEA;
+    --display: "Fraunces", Georgia, "Times New Roman", serif;
+    --body: "Public Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #15131F;
+      --surface: #1D1A2B;
+      --ink: #EEEBF8;
+      --muted: #A49CBC;
+      --faint: #857D9E;
+      --accent: #A98BF5;
+      --accent-soft: #2A2340;
+      --line: #2E2A42;
+      --line-strong: #3D3757;
+      --ok: #6EE7A0;
+      --ok-soft: #17301F;
+      --warn: #F0B35E;
+      --warn-soft: #35270F;
+      --stop: #F59B9B;
+      --stop-soft: #38191A;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #15131F;
+    --surface: #1D1A2B;
+    --ink: #EEEBF8;
+    --muted: #A49CBC;
+    --faint: #857D9E;
+    --accent: #A98BF5;
+    --accent-soft: #2A2340;
+    --line: #2E2A42;
+    --line-strong: #3D3757;
+    --ok: #6EE7A0;
+    --ok-soft: #17301F;
+    --warn: #F0B35E;
+    --warn-soft: #35270F;
+    --stop: #F59B9B;
+    --stop-soft: #38191A;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 820px;
+    margin: 0 auto;
+    padding-inline: 24px;
+    padding-block: 56px 88px;
+    display: flex;
+    flex-direction: column;
+    gap: 56px;
+  }
+
+  /* ---- masthead ---- */
+  .masthead { display: flex; flex-direction: column; gap: 14px; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .masthead h1 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: clamp(34px, 6vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.015em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    font-size: 17px;
+    color: var(--muted);
+    margin: 0;
+    max-width: 60ch;
+  }
+  .rule { height: 1px; background: var(--line-strong); border: 0; margin: 0; }
+
+  /* ---- section scaffolding ---- */
+  section { display: flex; flex-direction: column; gap: 22px; }
+  .sec-head { display: flex; flex-direction: column; gap: 7px; }
+  .sec-head h2 {
+    font-family: var(--display);
+    font-weight: 600;
+    font-size: 25px;
+    letter-spacing: -0.01em;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .sec-head p { margin: 0; color: var(--muted); font-size: 15px; max-width: 62ch; }
+
+  /* ---- ordered start sequence ---- */
+  ol.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; counter-reset: s; }
+  ol.steps li {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 34px 1fr;
+    gap: 16px;
+    padding-block: 18px;
+    border-top: 1px solid var(--line);
+  }
+  ol.steps li:last-child { border-bottom: 1px solid var(--line); }
+  ol.steps li::before {
+    content: counter(s);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border-radius: 999px;
+    width: 26px; height: 26px;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 2px;
+  }
+  ol.steps .st { display: flex; flex-direction: column; gap: 4px; }
+  ol.steps strong { font-weight: 600; font-size: 16px; }
+  ol.steps p { margin: 0; color: var(--muted); font-size: 14.5px; }
+
+  /* ---- tab reference ---- */
+  .tabs { display: flex; flex-direction: column; gap: 0; }
+  .tab {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+    padding-block: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .tabs .tab:last-child { border-bottom: 1px solid var(--line); }
+  .tab-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .tab-name { font-family: var(--display); font-weight: 600; font-size: 19px; letter-spacing: -0.005em; }
+  .chip {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+  .chip.all { background: var(--ok-soft); color: var(--ok); }
+  .chip.sup { background: var(--warn-soft); color: var(--warn); }
+  .tab p { margin: 0; font-size: 15px; }
+  .tab .not { color: var(--muted); font-size: 14px; }
+  .tab .not b { color: var(--ink); font-weight: 600; }
+
+  /* ---- roles table ---- */
+  .scroller { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  thead th {
+    text-align: left;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  tbody td { padding: 13px 16px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody td:first-child { font-weight: 600; white-space: nowrap; }
+  tbody td.sees { color: var(--muted); }
+
+  /* ---- confusions ---- */
+  .traps { display: flex; flex-direction: column; gap: 14px; }
+  .trap {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 16px 18px;
+    display: flex; flex-direction: column; gap: 5px;
+  }
+  .trap h3 { margin: 0; font-size: 15.5px; font-weight: 600; }
+  .trap p { margin: 0; color: var(--muted); font-size: 14.5px; }
+  .trap p b { color: var(--ink); font-weight: 600; }
+
+  /* ---- pending config ---- */
+  .pending { display: flex; flex-direction: column; gap: 0; }
+  .pend-row {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    gap: 18px;
+    padding-block: 14px;
+    border-top: 1px solid var(--line);
+    align-items: baseline;
+  }
+  .pending .pend-row:last-child { border-bottom: 1px solid var(--line); }
+  .pend-row .k { font-family: var(--mono); font-size: 12.5px; color: var(--ink); word-break: break-word; }
+  .pend-row .v { color: var(--muted); font-size: 14.5px; }
+
+  footer { color: var(--faint); font-size: 13px; border-top: 1px solid var(--line); padding-top: 20px; }
+  footer p { margin: 0 0 6px; }
+
+  @media (max-width: 560px) {
+    .wrap { padding-block: 40px 64px; gap: 44px; }
+    .pend-row { grid-template-columns: 1fr; gap: 4px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="masthead">
+    <span class="eyebrow">FindIt · Operations</span>
+    <h1>The Admin Handbook</h1>
+    <p class="standfirst">What every tab in the Admin Queue actually does, what it deliberately does not do, and the five distinctions that trip up every new administrator.</p>
+  </header>
+
+  <hr class="rule">
+
+  <section>
+    <div class="sec-head">
+      <h2>Your first run through</h2>
+      <p>These six are a real sequence. Each one unblocks the next, so work them in order before you invite anyone else in.</p>
+    </div>
+    <ol class="steps">
+      <li><div class="st"><strong>Approve your own seller account</strong><p>Open <b>Sellers</b>, find your account under Seller accounts, set it to Approved. Until you do, you cannot list a product, send an offer, or upload an image, because pending genuinely blocks all three.</p></div></li>
+      <li><div class="st"><strong>Set the platform fee</strong><p>Open <b>Payments</b> and set the percentage FindIt keeps on each order. Do this before your first real sale. The fee is frozen onto each order at the moment it is paid, so orders already paid keep the old rate forever.</p></div></li>
+      <li><div class="st"><strong>Check your plan prices</strong><p>Open <b>Plans</b>. Every Store tier and FindIt Pro is an editable card, and boost prices sit on the same tab. Prices live in the database, not in code, so nothing here needs a deploy.</p></div></li>
+      <li><div class="st"><strong>Shape your categories</strong><p>Open <b>Categories</b>. Create the ones you want sellers to list under and deactivate the ones you do not. Buyers and sellers see this list immediately.</p></div></li>
+      <li><div class="st"><strong>Add your team</strong><p>Open <b>Admin tools</b>, look a person up by phone number, and promote them with the narrowest role that fits their job. Only a super admin sees this tab.</p></div></li>
+      <li><div class="st"><strong>Then work from Alerts every day</strong><p><b>Alerts</b> is the daily driver. It gathers every count that needs a human decision and each one clicks straight through to the tab that owns it.</p></div></li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>The fourteen tabs</h2>
+      <p>Which tabs you see depends on your admin role. The label on each says who it appears for.</p>
+    </div>
+
+    <div class="tabs">
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Overview</span><span class="chip all">Every admin</span></div>
+        <p>Live counts across sellers, verification, users and money, each tile clickable through to the tab that owns it. Includes monthly recurring revenue and the last thirty days of cancellations and expirations.</p>
+        <p class="not"><b>Not:</b> a projection. Every figure is counted from real rows at the moment you load it.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Alerts</span><span class="chip all">Every admin</span></div>
+        <p>A single "what needs attention" queue. Failed items, pending verifications, open disputes and anything else waiting on a decision.</p>
+        <p class="not"><b>Not:</b> a new signal. Everything here already exists on its own tab. This is the shortcut, not a separate system.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Sellers</span><span class="chip">Moderation</span></div>
+        <p>Two jobs. Reported problems, where a buyer has raised an issue and you decide refund or release. And Seller accounts, where you move a seller between pending, approved, rejected and suspended.</p>
+        <p class="not"><b>This is the gate.</b> Only Approved sellers can list, send offers, or upload images.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Verification</span><span class="chip">Verification</span></div>
+        <p>Trust submissions from the seller onboarding wizard, with their evidence photos served as short-lived signed links. Approving here drives the public New, Verified and Trusted badge.</p>
+        <p class="not"><b>Not:</b> the selling gate. A verification decision never grants or removes the right to sell. That is the Sellers tab.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Users</span><span class="chip sup">Support</span></div>
+        <p>Every account on the platform, searchable and filterable by role. Suspend or reactivate an account outright.</p>
+        <p class="not"><b>Not:</b> the same as seller suspension. Suspending here locks the whole account, buyer side included.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Payments</span><span class="chip">Finance</span></div>
+        <p>The platform fee configuration, and the seller payout queue with the ability to mark a payout settled.</p>
+        <p class="not"><b>Forward only.</b> Changing the fee never rewrites an order that was already paid.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Plans</span><span class="chip">Finance</span></div>
+        <p>The editor for every subscription plan, Store tiers and FindIt Pro alike, plus boost pricing. Name, price, limits, features and active state.</p>
+        <p class="not"><b>Not:</b> retroactive. An active subscriber keeps what they are on until it renews.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Analytics</span><span class="chip">Finance</span></div>
+        <p>Real daily totals for orders, users and sellers over seven, thirty or ninety days.</p>
+        <p class="not"><b>Not:</b> a forecast. There is no projected trend anywhere in this tab.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Categories</span><span class="chip">Moderation</span></div>
+        <p>Create, rename, activate and deactivate the categories sellers list under.</p>
+        <p class="not"><b>Safe to edit.</b> Deactivating a category leaves existing listings alone. It only stops new ones choosing it.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Risk</span><span class="chip">Moderation</span></div>
+        <p>Sellers whose real dispute rate warrants a look, computed from actual order outcomes.</p>
+        <p class="not"><b>Not:</b> an accusation or a score. A seller needs at least three real orders before any rate appears at all.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Support</span><span class="chip sup">Support</span></div>
+        <p>Real tickets raised from Help and support inside the app. Reply in thread and mark resolved.</p>
+        <p class="not"><b>Reopening is automatic.</b> If the user replies to a resolved ticket, it reopens itself.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Requests</span><span class="chip all">Every admin</span></div>
+        <p>Buyer requests that no seller has offered on yet. Your supply gap, in one list.</p>
+        <p class="not"><b>Not:</b> actionable in place. It tells you where demand is going unmet.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Admin tools</span><span class="chip">Super admin</span></div>
+        <p>Promote and demote administrators by phone number, run the seller identity migration, and send a broadcast notification to every matching account.</p>
+        <p class="not"><b>Broadcast is real.</b> It sends immediately, is rate limited, and respects each recipient's own notification preference.</p>
+      </article>
+
+      <article class="tab">
+        <div class="tab-top"><span class="tab-name">Activity</span><span class="chip">Super admin</span></div>
+        <p>The audit log of every admin action with who did it and when, plus verification code statistics over the recent window.</p>
+        <p class="not"><b>Append only.</b> Nothing in this log can be edited from the interface.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Who sees what</h2>
+      <p>Roles are enforced on the server, not by hiding buttons. A restricted admin calling an endpoint directly is refused the same way.</p>
+    </div>
+    <div class="scroller">
+      <table>
+        <thead>
+          <tr><th>Role</th><th>Tabs beyond the shared three</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Super Admin</td><td class="sees">Everything, including Admin tools and Activity</td></tr>
+          <tr><td>Moderation Admin</td><td class="sees">Sellers, Categories, Risk</td></tr>
+          <tr><td>Verification Admin</td><td class="sees">Verification</td></tr>
+          <tr><td>Finance Admin</td><td class="sees">Payments, Plans, Analytics</td></tr>
+          <tr><td>Support Admin</td><td class="sees">Support, Users</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin:0;color:var(--muted);font-size:14.5px;">Overview, Alerts and Requests are shared. Every admin sees those three whatever their role.</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Five distinctions worth learning once</h2>
+      <p>Nearly every mistake a new administrator makes comes from conflating one of these pairs.</p>
+    </div>
+    <div class="traps">
+
+      <article class="trap">
+        <h3>Seller status is not the verification badge</h3>
+        <p><b>Status</b> on the Sellers tab decides whether someone can sell at all. <b>Verification</b> decides what badge buyers see next to their name. Approving a verification does not let a pending seller list anything.</p>
+      </article>
+
+      <article class="trap">
+        <h3>Suspending a user is not suspending a seller</h3>
+        <p>The Users tab locks an entire account, so the person cannot buy either. The Sellers tab removes selling privileges while leaving the rest of their account working.</p>
+      </article>
+
+      <article class="trap">
+        <h3>A fee change never reaches the past</h3>
+        <p>The rate is stamped onto each order the moment payment is confirmed. Drop the fee tomorrow and every order paid today still reports what it actually charged.</p>
+      </article>
+
+      <article class="trap">
+        <h3>Trusted cannot be granted</h3>
+        <p>It needs admin approval plus a real record: at least ten completed orders, no disputes ever, and a rating of four or above where ratings exist. There is no button that makes someone Trusted.</p>
+      </article>
+
+      <article class="trap">
+        <h3>Marking a payout paid does not move money</h3>
+        <p>With no payment provider configured, payouts land as <b>manual required</b>. Marking one paid records that <b>you</b> sent the money outside FindIt. The system never claims a transfer happened when none did.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <h2>Not yet connected</h2>
+      <p>These are built in code and waiting on an external account or key. Until each is configured, the matching feature reports that it is unavailable rather than pretending to work.</p>
+    </div>
+    <div class="pending">
+      <div class="pend-row"><span class="k">PAYSTACK_SECRET_KEY</span><span class="v">Order payments, subscriptions, boosts and refunds. Nothing can be charged without it.</span></div>
+      <div class="pend-row"><span class="k">Paystack webhook URL</span><span class="v">Register your live domain so a completed payment actually marks the order paid.</span></div>
+      <div class="pend-row"><span class="k">Paystack Transfers</span><span class="v">Automatic seller payouts. Needs business verification on your Paystack account.</span></div>
+      <div class="pend-row"><span class="k">TERMII_API_KEY</span><span class="v">Verification codes by text at signup and password reset. Signup works without it, with no code step.</span></div>
+      <div class="pend-row"><span class="k">GEMINI_API_KEY</span><span class="v">The optional AI suggestion button on the buyer request form.</span></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>Describes the Admin Queue as it stands in the current build. Delivery management, returns, a full reviews system and eight further admin sections are planned, not present.</p>
+    <p>Roles, gates and every figure here are enforced and counted server side.</p>
+  </footer>
+
+</div>
