@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createFakeSupabase, type FakeSupabase } from "./testing/fakeSupabase";
-import { acceptOffer, listOrders } from "./repo";
+import { acceptOffer, confirmDelivery, listOrders, resolveOrderIssue } from "./repo";
 import { confirmOrderPayment } from "./payments";
 
 // These exercise the ACTUAL lib/repo.ts / lib/payments.ts functions against
@@ -185,5 +185,78 @@ describe("listOrders — business-name collision", () => {
 
     const ids = orders.map((o) => o.id).sort();
     expect(ids).toEqual(["ORD-2", "ORD-3"]);
+  });
+});
+
+describe("releasing escrow on an order nobody paid for", () => {
+  // The state every order on this platform was in before the payment flow
+  // existed: escrow said "held" while payment_status said "pending" and no
+  // payment row existed at all. Migration 021 backfills those to 'unpaid' and
+  // then forbids the combination outright, but the code must refuse it too —
+  // a database constraint firing is a 500, not an explanation.
+  function seedUnpaidDispatchedOrder(overrides: Record<string, unknown> = {}) {
+    fakeDb.reset({
+      orders: [
+        {
+          id: "ORD-1",
+          user_id: "buyer_1",
+          item: "Blender",
+          seller: "Kemi's Kitchen",
+          seller_id: "seller_1",
+          price: 15000,
+          status: "Out for delivery",
+          escrow_status: "unpaid",
+          payment_status: "pending",
+          buyer_confirmed_at: null,
+          created_at: new Date().toISOString(),
+          ...overrides,
+        },
+      ],
+    });
+  }
+
+  it("refuses to confirm delivery on an unpaid order", async () => {
+    seedUnpaidDispatchedOrder();
+
+    await expect(confirmDelivery("ORD-1", "buyer_1")).rejects.toThrow(/hasn't been paid for/i);
+
+    // And crucially, nothing moved: no release, no payout to schedule.
+    const [order] = fakeDb.dump("orders");
+    expect(order.escrow_status).toBe("unpaid");
+    expect(order.buyer_confirmed_at).toBeNull();
+  });
+
+  it("still confirms delivery normally once the order is actually paid", async () => {
+    seedUnpaidDispatchedOrder({
+      escrow_status: "held",
+      payment_status: "paid",
+      platform_fee_bps: 200,
+      platform_fee_amount: 300,
+      seller_payout_amount: 14700,
+    });
+
+    const order = await confirmDelivery("ORD-1", "buyer_1");
+
+    expect(order?.escrowStatus).toBe("released");
+    expect(order?.status).toBe("Delivered");
+  });
+
+  it("refuses to resolve a dispute as released when the order was never paid", async () => {
+    seedUnpaidDispatchedOrder({ escrow_status: "disputed", issue_reported_at: new Date().toISOString() });
+
+    await expect(resolveOrderIssue("ORD-1", "released")).rejects.toThrow(/never paid for/i);
+
+    const [order] = fakeDb.dump("orders");
+    expect(order.escrow_status).toBe("disputed");
+  });
+
+  it("still allows refunding a disputed order that was never paid", async () => {
+    // Refunding is the honest resolution here: it closes the report and
+    // leaves the order in a state that matches reality.
+    seedUnpaidDispatchedOrder({ escrow_status: "disputed", issue_reported_at: new Date().toISOString() });
+
+    const order = await resolveOrderIssue("ORD-1", "refunded");
+
+    expect(order?.escrowStatus).toBe("refunded");
   });
 });
