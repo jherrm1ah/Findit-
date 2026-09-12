@@ -179,6 +179,30 @@ create table if not exists seller_verification_evidence (
 create index if not exists seller_verification_evidence_seller_id_idx on seller_verification_evidence(seller_id);
 
 -- ---------------------------------------------------------------------------
+-- categories
+--
+-- The real, admin-editable product/request category taxonomy (see
+-- lib/categoryCatalog.ts and migration 017) — replaces a hardcoded object.
+-- icon_key names a lucide-react icon looked up client-side against a fixed,
+-- known set; an unrecognized value just falls back to a generic icon.
+-- Seeded with the same 15 categories the app already shipped with.
+-- ---------------------------------------------------------------------------
+
+create table if not exists categories (
+  id text primary key,
+  label text not null,
+  icon_key text not null default 'Package',
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists categories_active_idx on categories(active);
+alter table categories enable row level security;
+-- Seeded in the centralized "Seed data" section near the bottom of this
+-- file, alongside subscription_plans/platform_fee_config/boost_plans.
+
+-- ---------------------------------------------------------------------------
 -- products
 --
 -- Dropped from the old schema: rating, verified, test_batch, marketing_cat,
@@ -215,12 +239,18 @@ create table if not exists products (
   -- of deleting them (see subscription_plans/subscriptions below and
   -- lib/subscriptions.ts#applyPlanChange). Defaults true so every listing
   -- created before this feature existed just keeps working.
-  active boolean not null default true
+  active boolean not null default true,
+  -- Null = not currently boosted. A real Paystack-paid promotion (see
+  -- boost_plans/boosts and lib/boosts.ts) that just moves this listing to
+  -- the front of Home/Browse while now() < boosted_until — no cron needed
+  -- to "expire" it, the sort just stops caring once the timestamp passes.
+  boosted_until timestamptz
 );
 create index if not exists products_seller_id_idx on products(seller_id);
 create index if not exists products_seller_idx on products(seller);
 create index if not exists products_created_at_idx on products(created_at desc);
 create index if not exists products_active_idx on products(active);
+create index if not exists products_boosted_until_idx on products(boosted_until);
 
 -- ---------------------------------------------------------------------------
 -- requests / offers
@@ -545,6 +575,39 @@ create index if not exists payouts_seller_id_idx on payouts(seller_id);
 create index if not exists payouts_status_idx on payouts(status);
 
 -- ---------------------------------------------------------------------------
+-- boost_plans / boosts (migration 018)
+--
+-- A real Paystack-paid promotion for one of a seller's own listings — see
+-- products.boosted_until above and lib/boosts.ts. boost_plans holds pricing
+-- as DATA (same pattern as subscription_plans); boosts is the append-only
+-- purchase record.
+-- ---------------------------------------------------------------------------
+
+create table if not exists boost_plans (
+  id text primary key,
+  name text not null,
+  duration_days integer not null check (duration_days > 0),
+  price integer not null check (price >= 0),
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists boosts (
+  id text primary key,
+  product_id text not null references products(id) on delete cascade,
+  seller_id text not null references sellers(id) on delete cascade,
+  boost_plan_id text not null references boost_plans(id),
+  amount integer not null,
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists boosts_product_id_idx on boosts(product_id);
+create index if not exists boosts_seller_id_idx on boosts(seller_id);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
 -- the note at the top of this file). All real access control lives in the
 -- Next.js API layer.
@@ -571,6 +634,9 @@ alter table seller_verification_details enable row level security;
 alter table seller_verification_evidence enable row level security;
 alter table platform_fee_config enable row level security;
 alter table payouts enable row level security;
+alter table categories enable row level security;
+alter table boost_plans enable row level security;
+alter table boosts enable row level security;
 
 create unique index if not exists users_email_unique_idx on users(email) where email is not null;
 
@@ -615,4 +681,28 @@ on conflict (id) do update set
 -- before launch, not treat 5% as a permanent decision made here.
 insert into platform_fee_config (id, fee_bps, created_by)
 values ('fee_default', 500, null)
+on conflict (id) do nothing;
+
+insert into boost_plans (id, name, duration_days, price, sort_order) values
+  ('boost_3d', '3-day Boost', 3, 1000, 0),
+  ('boost_7d', '7-day Boost', 7, 2000, 1),
+  ('boost_14d', '14-day Boost', 14, 3500, 2)
+on conflict (id) do nothing;
+
+insert into categories (id, label, icon_key, sort_order) values
+  ('reading', 'Reading & Book Gadgets', 'BookOpen', 0),
+  ('tools', 'Tools & Repair', 'Wrench', 1),
+  ('organization', 'Home Organization', 'Package', 2),
+  ('lighting', 'Lighting', 'Lightbulb', 3),
+  ('cleaning', 'Cleaning', 'Droplet', 4),
+  ('kitchen', 'Kitchen', 'Utensils', 5),
+  ('bathroom', 'Bathroom & Personal Care', 'Droplets', 6),
+  ('campus', 'Student & Campus', 'GraduationCap', 7),
+  ('travel', 'Travel & Everyday Carry', 'Briefcase', 8),
+  ('phonetech', 'Phone & Everyday Tech', 'Smartphone', 9),
+  ('car', 'Car Products', 'Car', 10),
+  ('power', 'Power & Connectivity', 'BatteryCharging', 11),
+  ('weird', 'Weirdly Useful', 'Sparkles', 12),
+  ('plant', 'Plant & Agriculture', 'Leaf', 13),
+  ('desk', 'Desk Setup', 'Monitor', 14)
 on conflict (id) do nothing;

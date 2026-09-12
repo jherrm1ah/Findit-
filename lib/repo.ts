@@ -1,16 +1,13 @@
 import { getDb, assertNoError } from "./db";
-import { CATEGORY_LABELS } from "./categories";
+import { ValidationError } from "./errors";
 import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
+import { isValidCategoryKey } from "./categoryCatalog";
 
-export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
-
-// Thrown for real, user-facing validation problems (bad input, business-rule
-// violations) — safe to show verbatim to the client. Anything else that
-// escapes a repo function (a Postgres/network error via assertNoError, etc.)
-// is NOT a ValidationError and must never be shown to the client as-is; see
-// lib/errors.ts#toClientError, used by every API route's catch block.
-export class ValidationError extends Error {}
+// Re-exported for backward compatibility — every other module in this app
+// imports ValidationError from here (its original home); see lib/errors.ts
+// for why the class itself now lives there.
+export { ValidationError };
 
 function randomId(prefix: string): string {
   return (
@@ -63,6 +60,10 @@ export type Product = {
   sellerVerificationLevel: VerificationLevel;
   sellerLocation: string | null;
   sellerMemberSince: string | null;
+  // Null = not currently boosted. A real Paystack-paid promotion (see
+  // lib/boosts.ts) — see isBoostActive/sortForDisplay below for how this
+  // affects display order.
+  boostedUntil: string | null;
 };
 
 export type Order = {
@@ -360,7 +361,17 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     sellerVerificationLevel: stats.verificationLevel,
     sellerLocation: stats.publicLocation,
     sellerMemberSince: stats.memberSince,
+    boostedUntil: (row.boosted_until as string | null) ?? null,
   };
+}
+
+// Pure — is this listing's boost still in its paid-for window right now?
+// Unit-testable without a database. No cron ever "expires" a boost: this is
+// the one check standing between "still boosted" and quietly staying
+// boosted forever, the same role isSubscriptionLapsed plays for a Store
+// plan (lib/subscriptions.ts).
+export function isBoostActive(boostedUntil: string | null, now: number = Date.now()): boolean {
+  return Boolean(boostedUntil && new Date(boostedUntil).getTime() > now);
 }
 
 // Real placement for the Store subscription "featured listing" benefit
@@ -374,12 +385,23 @@ function sortFeaturedFirst(products: Product[]): Product[] {
   return [...products].sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured));
 }
 
+// A boost outranks the Store-plan "featured" tier — a seller paid for this
+// SPECIFIC listing, not an ambient plan benefit — but both are stable sorts
+// layered the same way: pull the group to the front, leave everyone else's
+// relative order untouched. Array.prototype.sort is stable in every engine
+// this app runs on, so layering a second stable sort on top of the first
+// never disturbs what sortFeaturedFirst already decided.
+function sortForDisplay(products: Product[]): Product[] {
+  const featuredFirst = sortFeaturedFirst(products);
+  return [...featuredFirst].sort((a, b) => Number(isBoostActive(b.boostedUntil)) - Number(isBoostActive(a.boostedUntil)));
+}
+
 export async function listProducts(): Promise<Product[]> {
   const db = getDb();
   const result = await db.from("products").select("*").order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing products") as Row[];
   const stats = await getSellerStatsMap();
-  return sortFeaturedFirst(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
+  return sortForDisplay(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -394,16 +416,16 @@ export async function getProduct(id: string): Promise<Product | null> {
 let productSeq = 0;
 
 // Pure — the actual listing-validity rules, unit-testable without a
-// database. category/name are only checked when provided, so this also
-// covers a partial update patch.
+// database. name/price are only checked when provided, so this also covers
+// a partial update patch. Category validity is NOT checked here — unlike
+// name/price it depends on live DB state (an admin-editable table, see
+// lib/categories.ts), so createProduct/updateProduct check it separately
+// with an explicit await right where they already talk to the database.
 export function validateProductInput(input: {
   category?: string;
   name?: string;
   price?: number;
 }): void {
-  if (input.category !== undefined && !CATEGORY_KEYS.includes(input.category)) {
-    throw new ValidationError("Unknown category.");
-  }
   if (input.name !== undefined && !input.name.trim()) {
     throw new ValidationError("Name is required.");
   }
@@ -435,6 +457,9 @@ export async function createProduct(input: {
   lng?: number | null;
 }): Promise<Product> {
   validateProductInput(input);
+  if (!(await isValidCategoryKey(input.category))) {
+    throw new ValidationError("Unknown category.");
+  }
 
   // Backend-enforced, not a frontend nicety: a Free seller at their listing
   // cap can't bypass the "Add listing" button by hitting this API directly.
@@ -488,6 +513,9 @@ export async function updateProduct(
   if (!existing) return null;
 
   validateProductInput(patch);
+  if (patch.category !== undefined && !(await isValidCategoryKey(patch.category))) {
+    throw new ValidationError("Unknown category.");
+  }
 
   // Same fallback-skip as createProduct: only enforced when this listing's
   // seller_id is known.
@@ -1452,7 +1480,7 @@ export async function createRequest(input: {
   condition: string;
   userId: string;
 }): Promise<RequestRow> {
-  if (input.category && !CATEGORY_KEYS.includes(input.category)) {
+  if (input.category && !(await isValidCategoryKey(input.category))) {
     throw new ValidationError("Unknown category.");
   }
   const db = getDb();

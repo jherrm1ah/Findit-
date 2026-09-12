@@ -7,6 +7,7 @@ import {
 import { Logo, Wordmark, RoleGate, IconButton } from "./shared";
 import { api } from "./api";
 import { getStoredLocation, requestBrowserLocation } from "./location";
+import { applyCategoryOverrides } from "./data";
 import Home from "./Home";
 import Browse from "./Browse";
 import RequestForm from "./RequestForm";
@@ -98,6 +99,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [payoutAccount, setPayoutAccount] = useState(null);
   const [banks, setBanks] = useState([]);
   const [savingPayoutAccount, setSavingPayoutAccount] = useState(false);
+  // Real, admin-editable boost pricing (lib/boosts.ts) — see
+  // GET /api/boost-plans.
+  const [boostPlans, setBoostPlans] = useState([]);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -141,6 +145,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   };
 
   useEffect(() => {
+    // Real, admin-editable categories (lib/categoryCatalog.ts) — fetched
+    // once here (works for a signed-out guest browsing Home too) and
+    // applied on top of the static default GROUPS already has, so an
+    // admin's rename/deactivate shows up without a deploy. See
+    // applyCategoryOverrides in ./data for why this isn't setState.
+    api.getCategories().then(applyCategoryOverrides).catch(() => {});
+
     const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
     Promise.all(tasks)
       .then(([p, o, n]) => {
@@ -162,6 +173,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getMyStoreBranding().then(setStoreBranding).catch(() => {});
       api.getMyVerification().then(setVerification).catch(() => {});
       api.getPayoutAccount().then(setPayoutAccount).catch(() => {});
+      api.getBoostPlans().then(setBoostPlans).catch(() => {});
       api.getBanks().then((r) => setBanks(r.banks || [])).catch(() => {});
     }
     if (isAdmin) {
@@ -448,6 +460,22 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  // Same three-outcome response shape as handleChangeStorePlan — though a
+  // boost never has a free/applied-immediately outcome, so in practice this
+  // is always either a checkout redirect or a "not configured" message.
+  const handleBoostProduct = async (productId, boostPlanId) => {
+    try {
+      const result = await api.boostProduct(productId, boostPlanId);
+      if (result.configured) {
+        window.location.href = result.checkoutUrl;
+      } else {
+        showToast(result.message || "Boosting isn't set up yet — contact an admin.", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Couldn't start payment for that boost — try again.", "error");
+    }
+  };
+
   const handleCancelStorePlan = async () => {
     setChangingPlan(true);
     try {
@@ -632,6 +660,35 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     // computed from live plan prices — refresh so a price edit shows up
     // there immediately.
     api.getAdminOverview().then(setAdminOverview).catch(() => {});
+    return updated;
+  };
+
+  const handleLoadBoostPlans = () => api.getAdminBoostPlans();
+
+  const handleUpdateBoostPlan = async (id, patch) => {
+    const updated = await api.updateAdminBoostPlan(id, patch);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    // The seller-facing boost picker (SellerDashboard) reads this same list
+    // — refresh so a price/duration edit shows up there immediately.
+    api.getBoostPlans().then(setBoostPlans).catch(() => {});
+    return updated;
+  };
+
+  const handleLoadRiskSignals = () => api.getRiskSignals();
+
+  const handleLoadCategories = () => api.getAdminCategories();
+
+  const handleCreateCategory = async (label, iconKey, sortOrder) => {
+    const created = await api.createCategory(label, iconKey, sortOrder);
+    applyCategoryOverrides([created]);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return created;
+  };
+
+  const handleUpdateCategory = async (id, patch) => {
+    const updated = await api.updateCategory(id, patch);
+    applyCategoryOverrides([updated]);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
     return updated;
   };
 
@@ -879,6 +936,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               banks={banks}
               onSavePayoutAccount={handleSavePayoutAccount}
               savingPayoutAccount={savingPayoutAccount}
+              boostPlans={boostPlans}
+              onBoostProduct={handleBoostProduct}
               go={go}
             />
           ) : (
@@ -920,6 +979,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onMarkPayoutPaid={handleMarkPayoutPaid}
               onLoadPlans={handleLoadPlans}
               onUpdatePlan={handleUpdatePlan}
+              onLoadBoostPlans={handleLoadBoostPlans}
+              onUpdateBoostPlan={handleUpdateBoostPlan}
+              onLoadCategories={handleLoadCategories}
+              onCreateCategory={handleCreateCategory}
+              onUpdateCategory={handleUpdateCategory}
+              onLoadRiskSignals={handleLoadRiskSignals}
             />
           ) : (
             <RoleGate

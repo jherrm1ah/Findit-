@@ -317,6 +317,28 @@ code, using the service role key server-side only. See the note at the top of `s
 for more detail, and if you migrate to Supabase Auth later, that's where real per-user RLS policies
 would go.
 
+## Listing boosts
+
+A seller can pay (via Paystack) to move one of their own listings to the front of Home/Browse for
+a fixed window — reuses the same `payments` table/webhook machinery as orders/subscriptions
+(`payments.kind = 'boost'`) rather than a parallel payment system. Pricing lives in `boost_plans`
+as real, admin-editable data (`GET`/`PATCH /api/admin/boost-plans`, edited in the Admin queue's
+"Plans" tab under "Listing boosts") — the seller picks a plan from `SellerDashboard.jsx`'s "Boost"
+button on any of their own active listings, which starts a real Paystack checkout the same way
+`POST /api/orders/[id]/pay` does.
+
+- **Activation is webhook-only** (`lib/boosts.ts#activateBoost`), never on the checkout route's own
+  response — the same rule every other payment in this app follows.
+- **`products.boosted_until`** is the one column display order actually reads (`lib/repo.ts#sortForDisplay`,
+  unit-tested via `isBoostActive`) — a boost outranks the Store-plan "featured" tier (a seller paid
+  for this *specific* listing, not an ambient plan benefit), and needs no cron to "expire": the
+  sort just stops caring once `now()` passes the timestamp.
+- **Buying a second boost while one is active extends it** rather than a shorter new plan
+  overwriting a longer remaining window — `activateBoost` always starts from
+  `max(now(), current boosted_until)`.
+- **No live Paystack keys exist in this environment** — same "not configured" degradation as every
+  other payment flow here.
+
 ## Store subscriptions
 
 Every seller account owns exactly one Store subscription — Free by default, provisioned the moment
@@ -477,6 +499,25 @@ photos and links, not a government ID upload), and admin-configurable Trusted th
 (`TRUSTED_MIN_ORDERS`/`TRUSTED_MIN_RATING` are constants for now, not a `subscription_plans`-style
 editable row — revisit once there's enough real order volume to tune them against).
 
+## Risk signals
+
+A "Risk" tab in the Admin queue (moderation domain, `GET /api/admin/risk-signals`) ranks sellers by
+their real dispute rate — disputed orders (`escrow_status = 'disputed'`) divided by that seller's
+total real orders, computed live from `orders`, never a predicted or fabricated "fraud score."
+`computeSellerRiskSignals` (`lib/risk.ts`, unit-tested) is pure and does the actual ranking/
+filtering: a seller needs at least `MIN_ORDERS_FOR_DISPUTE_RATE` (3) real orders before a rate is
+shown at all, and zero disputes never shows up regardless of order count — a single dispute out of
+one order would read as "100% risk," which overstates what one data point can tell an admin. This
+is the same signal `computeVerificationLevel` (`lib/sellerVerificationLevels.ts`) already uses to
+decide a seller's public "Trusted" badge, surfaced here as a ranked admin list instead of folded
+into one buyer-facing badge.
+
+**Not built yet, deliberately out of scope for this pass:** any signal this app doesn't have real
+data to back — device/IP fingerprinting, payment-fraud pattern detection, duplicate-account
+clustering beyond the existing exact business-name match (`lib/sellerIdentityMatch.ts`, built for a
+different purpose — data-integrity backfill, not fraud). Adding those would mean inventing a signal
+this app can't actually compute honestly.
+
 ## Image uploads
 
 Product photos are stored in Supabase Storage. The `product-images` bucket is created
@@ -485,13 +526,26 @@ automatically the first time a seller uploads a photo — no manual setup beyond
 everything else in the app still fails to start (they're required for the database too now, not
 just uploads).
 
+## Categories admin
+
+Product/request categories moved from a hardcoded object to a real, admin-editable table
+(`categories`, see `lib/categoryCatalog.ts` and migration 017) — the same "price/limits as data,
+not code" pattern already used for `subscription_plans`. An admin edits categories in the Admin
+queue's "Categories" tab (moderation domain): add a new one, rename a label, change its icon, or
+deactivate it — never delete, since a listing/request already tagged with a category still needs
+a label to display even after it's deactivated for new use. `createProduct`/`updateProduct`/
+`createRequest` all validate a category against this table live, not against anything hardcoded.
+The client (`components/findit-app/data.js`) still ships the same 15 categories as an instant
+default so the UI never renders empty before its one fetch of `GET /api/categories` resolves —
+that fetch's result is applied on top, so an admin's edit shows up on next load without a deploy.
+
 ## AI request classification
 
 Optional. With `GEMINI_API_KEY` set, the "Suggest title, category & budget with AI" button on the
 request form sends the buyer's description to Gemini and gets back a structured suggestion
-(constrained to the app's real 15 categories) to prefill the form — the buyer can still edit
-anything before submitting. Without the key set, clicking the button shows a clear error instead of
-a fake response.
+(constrained to whatever categories are currently active in the database — see "Categories admin"
+above, not a fixed list) to prefill the form — the buyer can still edit anything before submitting.
+Without the key set, clicking the button shows a clear error instead of a fake response.
 
 ## Location awareness
 
@@ -552,15 +606,18 @@ call, not a document check). Phone verification (OTP) at signup and password res
 path has not been tested against Termii's live API from this environment (no network access here to
 termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
 documentation, not tested against a live account) — verify it end-to-end once a key is added.
-Order payments, platform fees, seller payouts, refunds, Store subscriptions, and FindIt Pro are all
-real and Paystack-wired now (see "Real marketplace payments", "Store subscriptions", and "FindIt
-Pro" above) — every one of them needs a real `PAYSTACK_SECRET_KEY` to actually move money (the
-integration is server-to-server REST, redirecting to Paystack's hosted checkout page, so no
-client-side public key is used); with none configured they degrade to clearly labeled "not configured" states
-rather than pretending to charge or pay anyone. The admin plan-editor screen and MRR/churn are built
-now too (see "Store subscriptions" above). Still not built: real per-seller storage metering,
-tier-themed public storefronts, a combined-benefit view for an account with both a Store plan and
-FindIt Pro, and boost/featured-listing purchases with platform transaction fees (the database/
-plan-config shape has room for them, but no purchase flow exists). Also not built: a support-ticket
-system, a broader notifications/alerts framework, a buyer review/rating system feeding seller
-reputation, and admin-managed product categories.
+Order payments, platform fees, seller payouts, refunds, Store subscriptions, FindIt Pro, and
+listing boosts are all real and Paystack-wired now (see "Real marketplace payments", "Store
+subscriptions", "FindIt Pro", and "Listing boosts" above) — every one of them needs a real
+`PAYSTACK_SECRET_KEY` to actually move money (the integration is server-to-server REST, redirecting
+to Paystack's hosted checkout page, so no client-side public key is used); with none configured
+they degrade to clearly labeled "not configured" states rather than pretending to charge or pay
+anyone. The admin plan-editor screen, MRR/churn, admin-managed categories, and seller risk signals
+are all built now too (see "Store subscriptions", "Categories admin", and "Risk signals" above). A
+buyer review/rating system already existed before this pass (star ratings on delivered orders feed
+a seller's public rating and their New/Verified/Trusted level — see `submitReview` in
+`lib/repo.ts` and "Seller trust & verification" above). Still not built: real per-seller storage
+metering, tier-themed public storefronts, a combined-benefit view for an account with both a Store
+plan and FindIt Pro, and platform transaction fees on boosts/listings beyond the marketplace order
+fee that already exists. Also not built: a support-ticket system and a broader notifications/
+alerts framework.

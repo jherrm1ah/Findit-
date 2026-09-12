@@ -3,6 +3,7 @@ import { verifyWebhookSignature, verifyTransaction } from "@/lib/paystack";
 import { getDb, assertNoError } from "@/lib/db";
 import { changeStorePlan, changePlatformSubscription, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
 import { confirmOrderPayment } from "@/lib/payments";
+import { activateBoost } from "@/lib/boosts";
 
 type Row = Record<string, unknown>;
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const paymentResult = await db
     .from("payments")
-    .select("id, status, amount, metadata, subscription_id, order_id")
+    .select("id, status, amount, metadata, subscription_id, order_id, kind")
     .eq("provider_reference", reference)
     .maybeSingle();
   const payment = assertNoError(paymentResult, "loading payment") as Row | null;
@@ -80,6 +81,20 @@ export async function POST(req: NextRequest) {
         await confirmOrderPayment(payment.order_id as string);
       } catch (err) {
         console.error("[paystack-webhook] payment succeeded but order confirmation failed", err);
+      }
+    } else if (payment.kind === "boost") {
+      const metadata = (payment.metadata as { productId?: string; sellerId?: string; boostPlanId?: string } | null) ?? null;
+      if (metadata?.productId && metadata.sellerId && metadata.boostPlanId) {
+        try {
+          await activateBoost({
+            productId: metadata.productId,
+            sellerId: metadata.sellerId,
+            boostPlanId: metadata.boostPlanId,
+            amount: payment.amount as number,
+          });
+        } catch (err) {
+          console.error("[paystack-webhook] payment succeeded but boost activation failed", err);
+        }
       }
     } else {
       const metadata = (payment.metadata as {

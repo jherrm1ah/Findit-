@@ -463,6 +463,7 @@ export default function SellerDashboard({
   storeBranding, onUpdateBranding, savingBranding,
   verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
+  boostPlans = [], onBoostProduct,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -472,6 +473,18 @@ export default function SellerDashboard({
   const [savingListing, setSavingListing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [messagingId, setMessagingId] = useState(null);
+  const [boostPickerId, setBoostPickerId] = useState(null);
+  const [boostingId, setBoostingId] = useState(null);
+
+  const boostListing = async (productId, boostPlanId) => {
+    setBoostingId(productId);
+    try {
+      await onBoostProduct(productId, boostPlanId);
+      setBoostPickerId(null);
+    } finally {
+      setBoostingId(null);
+    }
+  };
 
   const messageBuyer = async (order) => {
     setMessagingId(order.id);
@@ -697,32 +710,67 @@ export default function SellerDashboard({
                 onUploadImage={onUploadImage}
               />
             ) : (
-              <div className="flex items-center justify-between gap-2 p-1">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{p.name}</p>
-                    {p.active === false && (
-                      <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
-                        <EyeOff size={9} /> Hidden — over plan limit
-                      </span>
-                    )}
+              <>
+                <div className="flex items-center justify-between gap-2 p-1">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{p.name}</p>
+                      {p.active === false && (
+                        <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
+                          <EyeOff size={9} /> Hidden — over plan limit
+                        </span>
+                      )}
+                      {p.boostedUntil && new Date(p.boostedUntil).getTime() > Date.now() && (
+                        <span className="flex items-center gap-1 text-[9.5px] font-semibold text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+                          <TrendingUp size={9} /> Boosted until {new Date(p.boostedUntil).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-[#6B6483]">{GROUPS[p.category]?.label} · {naira(p.price)}</p>
                   </div>
-                  <p className="text-[11px] text-[#6B6483]">{GROUPS[p.category]?.label} · {naira(p.price)}</p>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {p.active !== false && (
+                      <button
+                        onClick={() => setBoostPickerId(boostPickerId === p.id ? null : p.id)}
+                        aria-label={`Boost ${p.name}`}
+                        className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center"
+                      >
+                        <TrendingUp size={13} className="text-[#7C3AED]" />
+                      </button>
+                    )}
+                    <button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
+                      <Pencil size={13} className="text-[#7C3AED]" />
+                    </button>
+                    <button
+                      onClick={() => remove(p.id)}
+                      disabled={deletingId !== null}
+                      aria-label={`Delete ${p.name}`}
+                      className="w-8 h-8 rounded-lg bg-[#FDF0F4] flex items-center justify-center disabled:opacity-50"
+                    >
+                      <Trash2 size={13} className="text-[#E64980]" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
-                    <Pencil size={13} className="text-[#7C3AED]" />
-                  </button>
-                  <button
-                    onClick={() => remove(p.id)}
-                    disabled={deletingId !== null}
-                    aria-label={`Delete ${p.name}`}
-                    className="w-8 h-8 rounded-lg bg-[#FDF0F4] flex items-center justify-center disabled:opacity-50"
-                  >
-                    <Trash2 size={13} className="text-[#E64980]" />
-                  </button>
-                </div>
-              </div>
+                {boostPickerId === p.id && (
+                  <div className="mt-2 pt-2.5 border-t border-[#ECE9F7] px-1">
+                    <p className="text-[11px] text-[#6B6483] mb-2">Pay to move this listing to the front of Home & Browse:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {boostPlans.length === 0 && <p className="text-[11px] text-[#8A8372]">Boosting isn&apos;t available right now.</p>}
+                      {boostPlans.map((bp) => (
+                        <button
+                          key={bp.id}
+                          onClick={() => boostListing(p.id, bp.id)}
+                          disabled={boostingId !== null}
+                          className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                        >
+                          {boostingId === p.id ? "Working…" : `${bp.durationDays}d — ${naira(bp.price)}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         ))}

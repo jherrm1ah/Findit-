@@ -142,6 +142,35 @@ export const api = {
     }),
   getPayouts: (status) => request(`/api/admin/payouts${status ? `?status=${status}` : ""}`).then((d) => d.payouts),
   markPayoutPaid: (id) => request(`/api/admin/payouts/${id}`, { method: "PATCH" }),
+  getBoostPlans: () => request("/api/boost-plans").then((d) => d.plans),
+  boostProduct: (productId, boostPlanId) =>
+    request(`/api/products/${productId}/boost`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boostPlanId }),
+    }),
+  getAdminBoostPlans: () => request("/api/admin/boost-plans").then((d) => d.plans),
+  updateAdminBoostPlan: (id, patch) =>
+    request(`/api/admin/boost-plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.plan),
+  getRiskSignals: () => request("/api/admin/risk-signals").then((d) => d.signals),
+  getCategories: () => request("/api/categories").then((d) => d.categories),
+  getAdminCategories: () => request("/api/admin/categories").then((d) => d.categories),
+  createCategory: (label, iconKey, sortOrder) =>
+    request("/api/admin/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, iconKey, sortOrder }),
+    }).then((d) => d.category),
+  updateCategory: (id, patch) =>
+    request(`/api/admin/categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.category),
   getAdminSubscriptionPlans: () => request("/api/admin/subscription-plans").then((d) => d.plans),
   updateSubscriptionPlan: (id, patch) =>
     request(`/api/admin/subscription-plans/${id}`, {

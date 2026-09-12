@@ -1,8 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { CATEGORY_LABELS as RAW_CATEGORY_LABELS } from "./categories";
+import { listCategories } from "./categoryCatalog";
 import { ValidationError } from "./repo";
-
-const CATEGORY_LABELS: Record<string, string> = RAW_CATEGORY_LABELS;
 
 // Server-only — never import this from a "use client" component. Turns a
 // buyer's free-text description into a suggested title/category/budget so
@@ -34,15 +32,21 @@ export type RequestClassification = {
   estimatedBudgetMax: number | null;
 };
 
-const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
-
 export async function classifyRequest(description: string): Promise<RequestClassification> {
   if (!description.trim()) {
     throw new ValidationError("Describe what you're looking for first.");
   }
 
   const ai = getClient();
-  const categoryList = CATEGORY_KEYS.map((key) => `${key}: ${CATEGORY_LABELS[key]}`).join("\n");
+  // Live, admin-editable categories (lib/categoryCatalog.ts) — a category an
+  // admin adds is usable by the classifier on the very next call, no deploy.
+  const categories = await listCategories();
+  if (categories.length === 0) {
+    throw new ValidationError("No categories are configured yet — an admin needs to add at least one.");
+  }
+  const categoryKeys = categories.map((c) => c.id);
+  const categoryLabels = new Map(categories.map((c) => [c.id, c.label]));
+  const categoryList = categories.map((c) => `${c.id}: ${c.label}`).join("\n");
 
   let response;
   try {
@@ -61,7 +65,7 @@ export async function classifyRequest(description: string): Promise<RequestClass
           type: Type.OBJECT,
           properties: {
             title: { type: Type.STRING, description: "A short, clean product title (max ~8 words)" },
-            category: { type: Type.STRING, enum: CATEGORY_KEYS },
+            category: { type: Type.STRING, enum: categoryKeys },
             estimatedBudgetMin: { type: Type.NUMBER, nullable: true },
             estimatedBudgetMax: { type: Type.NUMBER, nullable: true },
           },
@@ -94,14 +98,14 @@ export async function classifyRequest(description: string): Promise<RequestClass
     throw new ValidationError("The AI classifier returned something unexpected — try again.");
   }
 
-  const category = typeof parsed.category === "string" && CATEGORY_KEYS.includes(parsed.category)
+  const category = typeof parsed.category === "string" && categoryKeys.includes(parsed.category)
     ? parsed.category
-    : CATEGORY_KEYS[0];
+    : categoryKeys[0];
 
   return {
     title: typeof parsed.title === "string" && parsed.title.trim() ? parsed.title.trim() : description.trim(),
     category,
-    categoryLabel: CATEGORY_LABELS[category],
+    categoryLabel: categoryLabels.get(category) as string,
     estimatedBudgetMin: typeof parsed.estimatedBudgetMin === "number" ? parsed.estimatedBudgetMin : null,
     estimatedBudgetMax: typeof parsed.estimatedBudgetMax === "number" ? parsed.estimatedBudgetMax : null,
   };

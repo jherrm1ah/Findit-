@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2 } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -1135,11 +1135,81 @@ function PlanEditorCard({ plan, onSave }) {
   );
 }
 
-function PlansAdmin({ onLoadPlans, onUpdatePlan, showToast }) {
+// A boost plan's editable fields — simpler than PlanEditorCard since a
+// boost is just "how long, for how much," not a full feature tier.
+function BoostPlanEditorCard({ plan, onSave }) {
+  const [form, setForm] = useState({
+    name: plan.name,
+    durationDays: String(plan.durationDays),
+    price: String(plan.price),
+    sortOrder: String(plan.sortOrder),
+    active: plan.active,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(plan.id, {
+        name: form.name,
+        durationDays: Number(form.durationDays) || 1,
+        price: Number(form.price) || 0,
+        sortOrder: Number(form.sortOrder) || 0,
+        active: form.active,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-xl p-3.5 mb-2.5 flex items-center gap-2.5 flex-wrap">
+      <input
+        value={form.name}
+        onChange={(e) => set("name", e.target.value)}
+        className="flex-1 min-w-[110px] text-[13px] font-semibold text-[#1E1B4B] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 outline-none"
+      />
+      <input
+        type="number"
+        min="1"
+        value={form.durationDays}
+        onChange={(e) => set("durationDays", e.target.value)}
+        title="Duration (days)"
+        className="w-16 text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none"
+      />
+      <span className="text-[11px] text-[#8A8372]">days ·</span>
+      <input
+        type="number"
+        min="0"
+        value={form.price}
+        onChange={(e) => set("price", e.target.value)}
+        title="Price (₦)"
+        className="w-20 text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none"
+      />
+      <label className="flex items-center gap-1.5 text-[10.5px] font-semibold text-[#514B67]">
+        <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
+        Active
+      </label>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+        style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+      >
+        {saving ? "…" : "Save"}
+      </button>
+    </div>
+  );
+}
+
+function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoostPlan, showToast }) {
   const [plans, setPlans] = useState(null);
+  const [boostPlans, setBoostPlans] = useState(null);
 
   useEffect(() => {
     onLoadPlans().then(setPlans).catch(() => setPlans([]));
+    onLoadBoostPlans().then(setBoostPlans).catch(() => setBoostPlans([]));
   }, []);
 
   const save = async (id, patch) => {
@@ -1152,7 +1222,17 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, showToast }) {
     }
   };
 
-  if (!plans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
+  const saveBoostPlan = async (id, patch) => {
+    try {
+      const updated = await onUpdateBoostPlan(id, patch);
+      setBoostPlans((ps) => ps.map((p) => (p.id === id ? updated : p)));
+      showToast?.(`${updated.name} updated.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that boost plan.", "error");
+    }
+  };
+
+  if (!plans || !boostPlans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
 
   const storePlans = plans.filter((p) => p.kind === "store");
   const platformPlans = plans.filter((p) => p.kind === "platform");
@@ -1163,6 +1243,181 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, showToast }) {
       {storePlans.map((p) => <PlanEditorCard key={p.id} plan={p} onSave={save} />)}
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 mt-5">FindIt Pro</p>
       {platformPlans.map((p) => <PlanEditorCard key={p.id} plan={p} onSave={save} />)}
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 mt-5">Listing boosts</p>
+      {boostPlans.map((p) => <BoostPlanEditorCard key={p.id} plan={p} onSave={saveBoostPlan} />)}
+    </div>
+  );
+}
+
+// The fixed set of lucide icon names a category's iconKey can name — kept in
+// sync with CATEGORY_ICON_COMPONENTS in ./data. Not exhaustive of every
+// lucide icon, just a curated set that reads well as a small category tile.
+const ICON_KEY_OPTIONS = [
+  "BookOpen", "Wrench", "Package", "Lightbulb", "Droplet", "Utensils", "Droplets",
+  "GraduationCap", "Briefcase", "Smartphone", "Car", "BatteryCharging", "Sparkles", "Leaf", "Monitor",
+];
+
+// One category's editable fields — the same "price/limits as data, not
+// code" pattern as PlanEditorCard above. Never edits `id`: every existing
+// product/request row referencing this category stores the id, not the
+// label (see lib/categoryCatalog.ts#updateCategory).
+function CategoryEditorCard({ category, onSave }) {
+  const [form, setForm] = useState({
+    label: category.label,
+    iconKey: category.iconKey,
+    sortOrder: String(category.sortOrder),
+    active: category.active,
+  });
+  const [saving, setSaving] = useState(false);
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(category.id, {
+        label: form.label,
+        iconKey: form.iconKey,
+        sortOrder: Number(form.sortOrder) || 0,
+        active: form.active,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-xl p-3.5 mb-2.5 flex items-center gap-2.5">
+      <input
+        value={form.label}
+        onChange={(e) => set("label", e.target.value)}
+        className="flex-1 min-w-0 text-[13px] font-semibold text-[#1E1B4B] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 outline-none"
+      />
+      <select
+        value={form.iconKey}
+        onChange={(e) => set("iconKey", e.target.value)}
+        className="text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none shrink-0"
+      >
+        {ICON_KEY_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
+      </select>
+      <input
+        type="number"
+        value={form.sortOrder}
+        onChange={(e) => set("sortOrder", e.target.value)}
+        title="Sort order"
+        className="w-14 text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none shrink-0"
+      />
+      <label className="flex items-center gap-1.5 text-[10.5px] font-semibold text-[#514B67] shrink-0">
+        <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
+        Active
+      </label>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60 shrink-0"
+        style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+      >
+        {saving ? "…" : "Save"}
+      </button>
+    </div>
+  );
+}
+
+function CategoriesAdmin({ onLoadCategories, onCreateCategory, onUpdateCategory, showToast }) {
+  const [categories, setCategories] = useState(null);
+  const [newLabel, setNewLabel] = useState("");
+  const [newIconKey, setNewIconKey] = useState(ICON_KEY_OPTIONS[0]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    onLoadCategories().then(setCategories).catch(() => setCategories([]));
+  }, []);
+
+  const save = async (id, patch) => {
+    try {
+      const updated = await onUpdateCategory(id, patch);
+      setCategories((cs) => cs.map((c) => (c.id === id ? updated : c)));
+      showToast?.(`${updated.label} updated.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that category.", "error");
+    }
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    if (!newLabel.trim()) return;
+    setCreating(true);
+    try {
+      const created = await onCreateCategory(newLabel, newIconKey, categories?.length ?? 0);
+      setCategories((cs) => [...(cs || []), created]);
+      setNewLabel("");
+      showToast?.(`${created.label} added.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't add that category.", "error");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (!categories) return <p className="text-[12px] text-[#6B6483]">Loading categories…</p>;
+
+  return (
+    <div>
+      <form onSubmit={create} className="flex gap-2 mb-4">
+        <input
+          value={newLabel}
+          onChange={(e) => setNewLabel(e.target.value)}
+          placeholder="New category name"
+          className="flex-1 border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+        />
+        <select
+          value={newIconKey}
+          onChange={(e) => setNewIconKey(e.target.value)}
+          className="text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-2 outline-none"
+        >
+          {ICON_KEY_OPTIONS.map((k) => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <button
+          type="submit"
+          disabled={creating || !newLabel.trim()}
+          className="flex items-center gap-1 text-[12px] font-semibold text-white px-3.5 rounded-xl disabled:opacity-40"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <Plus size={13} /> {creating ? "Adding…" : "Add"}
+        </button>
+      </form>
+
+      {categories.map((c) => <CategoryEditorCard key={c.id} category={c} onSave={save} />)}
+    </div>
+  );
+}
+
+// Real, computed-from-actual-orders signals — never a fabricated "fraud
+// score." See lib/risk.ts for exactly what "risk" means here (a seller's
+// real dispute rate, gated on a minimum order count so one bad order out
+// of one doesn't read as "100% risk").
+function RiskSignals({ onLoadRiskSignals }) {
+  const [signals, setSignals] = useState(null);
+
+  useEffect(() => {
+    onLoadRiskSignals().then(setSignals).catch(() => setSignals([]));
+  }, []);
+
+  if (!signals) return <p className="text-[12px] text-[#6B6483]">Loading risk signals…</p>;
+  if (signals.length === 0) {
+    return <p className="text-[12px] text-[#6B6483]">No seller currently has a statistically meaningful dispute pattern.</p>;
+  }
+
+  return (
+    <div className="space-y-2.5">
+      {signals.map((s) => (
+        <div key={s.sellerId ?? s.sellerName} className="bg-white border border-[#ECE9F7] rounded-xl p-3.5 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{s.sellerName}</p>
+            <p className="text-[11px] text-[#6B6483]">{s.disputedOrders} disputed of {s.totalOrders} orders</p>
+          </div>
+          <Pill tone={s.disputeRate >= 0.3 ? "red" : "gold"}>{Math.round(s.disputeRate * 100)}% disputed</Pill>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1195,16 +1450,24 @@ export default function AdminQueue({
   onMarkPayoutPaid,
   onLoadPlans,
   onUpdatePlan,
+  onLoadBoostPlans,
+  onUpdateBoostPlan,
+  onLoadCategories,
+  onCreateCategory,
+  onUpdateCategory,
+  onLoadRiskSignals,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
   const isSuperAdmin = currentAdminRole === "super_admin";
 
   // Every tab here backs a real, already-working screen — there's
-  // deliberately no Transactions/Boosts/Categories tab yet, since those
-  // systems don't exist in the app below this UI. Adding a tab for a
-  // system that isn't built would be exactly the "looks complete but isn't"
-  // problem this dashboard exists to avoid.
+  // deliberately no dedicated Transactions tab yet (the ledger itself is
+  // real, see GET /api/admin/transactions, just with no screen); boost
+  // pricing lives inside the Plans tab rather than getting its own, since
+  // it's the same "editable priced plan" concept as Store/FindIt Pro.
+  // Adding a tab for a system that isn't built would be exactly the "looks
+  // complete but isn't" problem this dashboard exists to avoid.
   const TABS = [
     { key: "overview", label: "Overview", icon: LayoutGrid },
     can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
@@ -1212,6 +1475,8 @@ export default function AdminQueue({
     can("users") && { key: "users", label: "Users", icon: Users },
     can("finance") && { key: "payments", label: "Payments", icon: CreditCard },
     can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
+    can("moderation") && { key: "categories", label: "Categories", icon: Tag },
+    can("moderation") && { key: "risk", label: "Risk", icon: ShieldAlert },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
     { key: "activity", label: "Activity", icon: ShieldCheck },
@@ -1326,7 +1591,46 @@ export default function AdminQueue({
             Price/limit changes apply going forward — an already-active subscription keeps whatever
             it's currently on until it renews or is changed.
           </p>
-          <PlansAdmin onLoadPlans={onLoadPlans} onUpdatePlan={onUpdatePlan} showToast={showToast} />
+          <PlansAdmin
+            onLoadPlans={onLoadPlans}
+            onUpdatePlan={onUpdatePlan}
+            onLoadBoostPlans={onLoadBoostPlans}
+            onUpdateBoostPlan={onUpdateBoostPlan}
+            showToast={showToast}
+          />
+        </>
+      )}
+
+      {activeTab === "categories" && can("moderation") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Tag size={13} className="text-[#7C3AED]" /> Categories
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Renaming or deactivating a category never touches listings/requests already tagged with
+            it — only new ones stop being able to pick it once it's inactive.
+          </p>
+          <CategoriesAdmin
+            onLoadCategories={onLoadCategories}
+            onCreateCategory={onCreateCategory}
+            onUpdateCategory={onUpdateCategory}
+            showToast={showToast}
+          />
+        </>
+      )}
+
+      {activeTab === "risk" && can("moderation") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <ShieldAlert size={13} className="text-[#7C3AED]" /> Seller risk signals
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Real dispute rate from actual order history — never a predicted score. A seller needs
+            at least {" "}
+            {/* keep in sync with lib/risk.ts#MIN_ORDERS_FOR_DISPUTE_RATE */}
+            3 real orders before a rate shows up here at all.
+          </p>
+          <RiskSignals onLoadRiskSignals={onLoadRiskSignals} />
         </>
       )}
 
