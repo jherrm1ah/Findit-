@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   // (creating a listing, setting store branding) each independently check
   // assertSellerCanTransact/assertCanCustomizeStore before the resulting
   // URL is ever attached to anything public.
-  const { allowed, retryAfterSeconds } = checkRateLimit(`upload:${user.id}`, MAX_UPLOADS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`upload:${user.id}`, MAX_UPLOADS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many uploads. Try again in a few minutes." },

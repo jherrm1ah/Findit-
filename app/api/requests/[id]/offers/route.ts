@@ -22,7 +22,7 @@ export async function POST(
     return errorResponse(err, "Your seller account isn't approved to send offers.");
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`offer:${user.id}`, MAX_OFFERS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`offer:${user.id}`, MAX_OFFERS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many offers sent recently. Try again later." },

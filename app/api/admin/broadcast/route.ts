@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
   const admin = await requireSuperAdmin(req);
   if (admin instanceof NextResponse) return admin;
 
-  const rate = checkRateLimit(`broadcast:${admin.id}`, MAX_BROADCASTS_PER_DAY, WINDOW_MS);
+  const rate = await checkRateLimit(`broadcast:${admin.id}`, MAX_BROADCASTS_PER_DAY, WINDOW_MS);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: `Too many announcements sent today — try again in ${Math.ceil(rate.retryAfterSeconds / 3600)}h.` },

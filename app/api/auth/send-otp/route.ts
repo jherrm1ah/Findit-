@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   const ip = getClientIp(req);
-  const perIp = checkRateLimit(`send-otp:${ip}`, MAX_ATTEMPTS_PER_IP, WINDOW_MS);
+  const perIp = await checkRateLimit(`send-otp:${ip}`, MAX_ATTEMPTS_PER_IP, WINDOW_MS);
   if (!perIp.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Try again later.", success: false, retryAfter: perIp.retryAfterSeconds },

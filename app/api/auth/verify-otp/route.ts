@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
   // Per-OTP attempt limits live inside lib/otp.ts's own attempts/max_attempts
   // columns; this is the same coarse IP+phone backstop used everywhere else
   // in the app, guarding against a script hammering the endpoint directly.
-  const rate = checkRateLimit(`verify-otp:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
+  const rate = await checkRateLimit(`verify-otp:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
   if (!rate.allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Request a new code.", success: false, retryAfter: rate.retryAfterSeconds },

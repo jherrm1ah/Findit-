@@ -5,7 +5,7 @@ import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, Cr
 import { GROUPS, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 
-export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast }) {
+export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -107,6 +107,57 @@ export default function Account({ openProduct, orders, products, onReview, onCon
               <Pill tone={statusTone(o.status)}>{o.status}</Pill>
             </div>
             <p className="text-[14px] font-bold text-[#7C3AED] mt-2 mb-2">{naira(o.price)}</p>
+
+            {/* The verified transaction record, created server-side the moment
+                this order completed. Shown only when one actually exists —
+                never rendered speculatively from the order's own status, so
+                the badge always corresponds to a real record. */}
+            {(() => {
+              const record = transactionRecords.find((r) => r.orderId === o.id);
+              if (!record) return null;
+              const refunded = record.status === "refunded";
+              return (
+                <div className="bg-[#F7F5FD] border border-[#E7E3F4] rounded-xl px-3 py-2.5 mb-2.5">
+                  <p className={`text-[11.5px] font-semibold mb-0.5 ${refunded ? "text-[#B45309]" : "text-[#15803D]"}`}>
+                    {refunded ? "\u26a0 Completed, then refunded" : "\u2713 Transaction verified"}
+                  </p>
+                  <p className="text-[11px] text-[#6B6483] mb-1.5">
+                    Transaction ID <span className="font-mono text-[#1E1B4B]">{record.code}</span>
+                  </p>
+                  <div className="flex items-center gap-3">
+                    <a
+                      href={`/verify/${record.code}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11.5px] font-semibold text-[#7C3AED]"
+                    >
+                      View record
+                    </a>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const url = `${window.location.origin}/verify/${record.code}`;
+                        // The share sheet where the device has one, clipboard
+                        // otherwise. Either way the link is all that travels.
+                        try {
+                          if (navigator.share) {
+                            await navigator.share({ title: "FindIt verified transaction", url });
+                          } else {
+                            await navigator.clipboard.writeText(url);
+                            showToast?.("Verification link copied.");
+                          }
+                        } catch {
+                          // A cancelled share sheet is not an error.
+                        }
+                      }}
+                      className="text-[11.5px] font-semibold text-[#7C3AED]"
+                    >
+                      Share verification
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Where the money stands — the app promises this on every product
                 page and at checkout, so it has to be visible on the order too. */}

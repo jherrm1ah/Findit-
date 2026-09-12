@@ -134,7 +134,18 @@ export const api = {
   markAllNotificationsRead: () =>
     request("/api/notifications/read-all", { method: "POST" }).then((d) => d.notifications),
 
+  // Verified transaction records the signed-in person is a party to, as
+  // buyer or seller. Ownership is enforced server-side.
+  getMyTransactionRecords: () => request("/api/transactions").then((d) => d.records),
+
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
+
+  // A seller's PUBLIC storefront. No session needed — a logged-out visitor
+  // can read this. Takes a seller id (correct, unambiguous) or a business
+  // name (legacy listings with no seller_id yet); the server answers 409 if
+  // a name maps to two accounts rather than guessing which store to show.
+  getSellerProfile: (idOrName) =>
+    request(`/api/sellers/${encodeURIComponent(idOrName)}`).then((d) => d.seller),
   // Staff sign-in. Being logged in as an admin isn't enough to reach any of
   // the admin calls below — the server requires a per-session unlock that
   // ages out, and answers ADMIN_UNLOCK_REQUIRED until it's granted.
@@ -146,6 +157,18 @@ export const api = {
       body: JSON.stringify({ phone, password }),
     }),
   endAdminSession: () => request("/api/admin/session", { method: "DELETE" }),
+
+  // Admin investigation of a verified transaction. Read-only: there is no
+  // endpoint that rewrites a record's snapshot, only one that appends an
+  // explaining correction.
+  lookupTransactionRecord: (code) =>
+    request(`/api/admin/transaction-records?code=${encodeURIComponent(code)}`).then((d) => d.record),
+  correctTransactionRecord: (code, reason) =>
+    request("/api/admin/transaction-records", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code, reason }),
+    }),
 
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
@@ -407,6 +430,13 @@ export const api = {
     }).then((d) => d.user),
 
   getStorePlans: () => request("/api/subscriptions/plans"),
+  // The seller's own dedicated storefront: its slug, its public URL, and
+  // whether their current plan actually publishes it.
+  getMyStore: () => request("/api/sellers/me/store").then((d) => d.store),
+  // Idempotent server-side — a repeat returns the existing link rather than
+  // creating a second one.
+  claimMyStore: () => request("/api/sellers/me/store", { method: "POST" }),
+
   getMyStorePlan: () => request("/api/sellers/me/subscription"),
   changeStorePlan: (planId, billingPeriod = "monthly") =>
     request("/api/sellers/me/subscription", {

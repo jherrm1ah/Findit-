@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const sellerId = await requireSellerId(req);
   if (sellerId instanceof NextResponse) return sellerId;
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`seller-verification-submit:${sellerId}`, 10, 60 * 60 * 1000);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`seller-verification-submit:${sellerId}`, 10, 60 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many submissions. Try again later." },

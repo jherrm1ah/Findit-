@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You can't message yourself." }, { status: 400 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(
+  const { allowed, retryAfterSeconds } = await checkRateLimit(
     `newconvo:${user.id}`,
     MAX_NEW_CONVERSATIONS,
     WINDOW_MS

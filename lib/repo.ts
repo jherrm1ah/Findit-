@@ -1,4 +1,10 @@
 import { getDb, assertNoError } from "./db";
+import {
+  recordCompletedTransaction,
+  markTransactionDisputed,
+  markTransactionRefunded,
+  markTransactionDisputeResolved,
+} from "./transactionRecord";
 import { ValidationError } from "./errors";
 import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
@@ -119,6 +125,12 @@ export type Seller = {
   phone: string | null;
   status: SellerStatus;
   statusReason: string | null;
+  // The seller's dedicated storefront slug, for the admin Sellers list. Admin
+  // only — the public DTO decides separately whether a buyer sees this, since
+  // a lapsed plan closes the page while the slug stays reserved. See
+  // lib/store.ts.
+  storeSlug: string | null;
+  storeSlugClaimedAt: string | null;
   createdAt: string;
 };
 
@@ -402,6 +414,42 @@ export async function listProducts(): Promise<Product[]> {
   const rows = assertNoError(result, "listing products") as Row[];
   const stats = await getSellerStatsMap();
   return sortForDisplay(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
+}
+
+// The listings shown on a seller's PUBLIC storefront. Two things make this
+// different from filtering listProducts() on the client, which is what the
+// seller profile screen used to do:
+//
+//   1. It matches on seller_id, so two accounts sharing a business name no
+//      longer pool their listings into one storefront. The name fallback is
+//      scoped to rows whose seller_id is still null (listings that predate
+//      migration 009's backfill), exactly as listOrders does — a name
+//      collision cannot misattribute those either, since a row with a
+//      seller_id is never reached by the name query.
+//   2. It returns only buyer-visible listings. A listing deactivated by a
+//      Store plan downgrade still exists and still belongs to the seller,
+//      but it is not for sale, so it has no place on a public storefront.
+export async function listPublicProductsForSeller(seller: { id: string | null; name: string }): Promise<Product[]> {
+  const db = getDb();
+
+  const queries = seller.id
+    ? [
+        db.from("products").select("*").eq("seller_id", seller.id),
+        db.from("products").select("*").eq("seller", seller.name).is("seller_id", null),
+      ]
+    : [db.from("products").select("*").eq("seller", seller.name)];
+
+  const results = await Promise.all(queries);
+  const rows = results.flatMap((r) => assertNoError(r, "listing seller products") as Row[]);
+  const byId = new Map<string, Row>();
+  for (const row of rows) byId.set(row.id as string, row);
+
+  const stats = await getSellerStatsMap();
+  return sortForDisplay(
+    [...byId.values()]
+      .map((row) => rowToProduct(row, statsFor(stats, row.seller as string)))
+      .filter((p) => p.active !== false)
+  );
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -892,6 +940,12 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   if (!row) throw new ValidationError("You've already confirmed this order.");
   const order = rowToOrder(row);
 
+  // The one moment an order is genuinely complete. Creating the verified
+  // record HERE, rather than in the route, means any future release path
+  // gets one automatically. Never throws: a completion the buyer has already
+  // been shown must not fail because a record couldn't be written.
+  await recordCompletedTransaction(order);
+
   const seller = await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
@@ -948,6 +1002,12 @@ export async function reportOrderIssue(
     .maybeSingle();
   const row = assertNoError(result, "reporting an order problem") as Row | null;
   if (!row) throw new ValidationError("You've already reported a problem with this order.");
+
+  // No-op today: reportOrderIssue refuses an order whose escrow is already
+  // 'released', and a record only exists once it is, so a dispute always
+  // precedes the record. Wired anyway so the history stays correct the day a
+  // post-completion dispute path exists.
+  await markTransactionDisputed(id, userId, trimmed);
   const order = rowToOrder(row);
 
   const seller = await findUserByBusinessName(order.seller);
@@ -1017,6 +1077,16 @@ export async function resolveOrderIssue(
   const row = assertNoError(result, "resolving an order problem") as Row | null;
   if (!row) throw new ValidationError("That problem has already been resolved.");
   const order = rowToOrder(row);
+
+  if (outcome === "released") {
+    // A dispute settled in the seller's favour is a real completion, so it
+    // earns a real record — and the history says it was disputed first
+    // rather than presenting it as an uneventful sale.
+    await recordCompletedTransaction(order);
+    await markTransactionDisputeResolved(id, null, "Dispute resolved in the seller's favour.");
+  } else {
+    await markTransactionRefunded(id, null, "Refunded after a reported problem.");
+  }
 
   await notifyBestEffort({
     userId: order.userId,
@@ -1144,6 +1214,8 @@ function rowToSeller(row: Row): Seller {
     phone: (userRow?.phone as string | undefined) ?? null,
     status: row.status as SellerStatus,
     statusReason: (row.status_reason as string | null) ?? null,
+    storeSlug: (row.store_slug as string | null) ?? null,
+    storeSlugClaimedAt: (row.store_slug_claimed_at as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }

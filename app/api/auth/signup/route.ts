@@ -10,7 +10,7 @@ const WINDOW_MS = 15 * 60 * 1000;
 
 export async function POST(req: NextRequest) {
   const rateKey = `signup:${getClientIp(req)}`;
-  const { allowed, retryAfterSeconds } = checkRateLimit(rateKey, MAX_ATTEMPTS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(rateKey, MAX_ATTEMPTS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many signup attempts. Try again in a few minutes." },

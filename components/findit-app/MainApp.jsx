@@ -54,7 +54,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
+  // The seller storefront being viewed. `key` is what the profile was opened
+  // by (a seller id where the listing has one, otherwise the business name);
+  // `profile` is what the server returned for it. The screen renders from the
+  // server's public DTO, never from the local products array — see
+  // SellerProfile.jsx for why that mattered.
   const [viewedSeller, setViewedSeller] = useState(null);
+  const [viewedSellerProfile, setViewedSellerProfile] = useState(null);
+  const [viewedSellerLoading, setViewedSellerLoading] = useState(false);
+  const [viewedSellerError, setViewedSellerError] = useState(null);
   const [checkoutOrder, setCheckoutOrder] = useState(null);
 
   const [loaded, setLoaded] = useState(false);
@@ -121,6 +129,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // Real, admin-editable boost pricing (lib/boosts.ts) — see
   // GET /api/boost-plans.
   const [boostPlans, setBoostPlans] = useState([]);
+  // The seller's own dedicated storefront: slug, public URL, and whether the
+  // live plan publishes it. Server-decided (lib/store.ts) — this only holds
+  // the answer.
+  const [myStore, setMyStore] = useState(null);
+  const [claimingStore, setClaimingStore] = useState(false);
+  // Verified transaction records this person is a party to, as buyer or
+  // seller. Created server-side at completion; the UI only reflects what
+  // exists, never asserts a record from an order's status.
+  const [transactionRecords, setTransactionRecords] = useState([]);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -240,7 +257,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
+    // Clear the whole storefront overlay, not just its key — leaving the
+    // fetched profile behind would flash the previous seller's store the
+    // next time one is opened.
     setViewedSeller(null);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(false);
     window.scrollTo?.(0, 0);
     if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
@@ -250,6 +273,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if ((s === "seller" || s === "storePlans") && isSeller) {
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
+    }
+    if (s === "seller" && isSeller) {
+      api.getMyStore().then(setMyStore).catch(() => {});
+    }
+    if (s === "account" || s === "seller") {
+      api.getMyTransactionRecords().then(setTransactionRecords).catch(() => {});
     }
     if (s === "findItPro" && user) {
       api.getFindItPro().then(setFindItPro).catch(() => {});
@@ -297,13 +326,48 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
-  const handleViewSeller = (sellerName) => {
+  // Opened with a seller id wherever the listing carries one; falls back to
+  // the business name for listings created before migration 009's backfill.
+  // The server refuses to guess when a name maps to two accounts, and that
+  // 409 is surfaced here rather than silently showing the wrong store.
+  const handleViewSeller = async (sellerKey) => {
+    if (!sellerKey) return;
     setProduct(null);
-    setViewedSeller(sellerName);
+    setViewedSeller(sellerKey);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(true);
+    try {
+      setViewedSellerProfile(await api.getSellerProfile(sellerKey));
+    } catch (err) {
+      setViewedSellerError(err.message || "Couldn't load this store.");
+    } finally {
+      setViewedSellerLoading(false);
+    }
+  };
+
+  const handleClaimStore = async () => {
+    setClaimingStore(true);
+    try {
+      await api.claimMyStore();
+      setMyStore(await api.getMyStore());
+      showToast("Your store link is live.");
+    } catch (err) {
+      showToast(err.message || "Couldn't create your store link.", "error");
+    } finally {
+      setClaimingStore(false);
+    }
+  };
+
+  const closeSellerProfile = () => {
+    setViewedSeller(null);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(false);
   };
 
   const handleOpenProductFromSeller = (p) => {
-    setViewedSeller(null);
+    closeSellerProfile();
     setProduct(p);
   };
 
@@ -876,6 +940,27 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  // A shared store link points each listing at /?product=<id> (see
+  // app/store/[slug]/page.tsx). Without this the buyer would land on Home
+  // with no idea which item they clicked. Runs once products are loaded, and
+  // clears the parameter afterwards so a refresh doesn't reopen it.
+  const deepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandled.current || products.length === 0) return;
+    const params = new URLSearchParams(window.location.search);
+    const wanted = params.get("product");
+    if (!wanted) {
+      deepLinkHandled.current = true;
+      return;
+    }
+    const match = products.find((p) => p.id === wanted);
+    deepLinkHandled.current = true;
+    if (match) setProduct(match);
+    params.delete("product");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [products]);
+
   // An unlock outlives a page reload (it lives on the session row, not in
   // memory), so ask once on load rather than making the admin sign in again
   // for nothing. A non-admin never calls this.
@@ -1092,6 +1177,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onSavePayoutAccount={handleSavePayoutAccount}
               savingPayoutAccount={savingPayoutAccount}
               boostPlans={boostPlans}
+            transactionRecords={transactionRecords}
+            myStore={myStore}
+            onClaimStore={handleClaimStore}
+            claimingStore={claimingStore}
               onBoostProduct={handleBoostProduct}
               go={go}
             />
@@ -1148,6 +1237,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onLoadAlerts={handleLoadAlerts}
               onSendBroadcast={handleSendBroadcast}
               onLeaveAdmin={handleLeaveAdmin}
+              onLookupTransaction={(code) => api.lookupTransactionRecord(code)}
+              onCorrectTransaction={(code, reason) => api.correctTransactionRecord(code, reason)}
             />
           ) : (
             <RoleGate
@@ -1215,6 +1306,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
         )}
         {screen === "account" && (
           <Account
+            transactionRecords={transactionRecords}
             openProduct={setProduct}
             orders={orders}
             products={products}
@@ -1262,9 +1354,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
       {viewedSeller && (
         <SellerProfile
-          sellerName={viewedSeller}
-          products={products}
-          onBack={() => setViewedSeller(null)}
+          profile={viewedSellerProfile}
+          loading={viewedSellerLoading}
+          error={viewedSellerError}
+          onBack={closeSellerProfile}
           onOpenProduct={handleOpenProductFromSeller}
           onContact={handleContactSeller}
           myLocation={myLocation}

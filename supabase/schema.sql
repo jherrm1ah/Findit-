@@ -112,6 +112,13 @@ create table if not exists sellers (
   -- Reused for a rejection reason or a suspension reason — a decision that
   -- restricts a seller always comes with one shown back to them.
   status_reason text,
+  -- Dedicated public storefront (migration 023). Null until a seller on a
+  -- PAID plan claims one; permanent once claimed, so shared links keep
+  -- working even after a rename or a downgrade. Whether the page is publicly
+  -- visible is computed from the live subscription on every request, never
+  -- stored — see lib/store.ts.
+  store_slug text,
+  store_slug_claimed_at timestamptz,
   created_at timestamptz not null default now(),
   -- Real backing for the Store subscription "customization" feature (see
   -- subscription_plans.customization_level below) — settable only when the
@@ -183,6 +190,23 @@ create table if not exists seller_verification_evidence (
   check ((storage_path is not null) <> (text_value is not null))
 );
 create index if not exists seller_verification_evidence_seller_id_idx on seller_verification_evidence(seller_id);
+
+-- Only sellers who have claimed a storefront carry a slug, so the index is
+-- partial. It is also what makes allocation safe under concurrency: the app
+-- tries candidates and lets a unique violation decide the winner.
+create unique index if not exists sellers_store_slug_unique_idx
+  on sellers(store_slug)
+  where store_slug is not null;
+
+-- Every slug a store has ever used keeps resolving to that same store, so a
+-- link shared months ago never lands on a stranger's shop. See migration 023.
+create table if not exists store_slug_aliases (
+  slug text primary key,
+  seller_id text not null references sellers(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists store_slug_aliases_seller_id_idx on store_slug_aliases(seller_id);
+alter table store_slug_aliases enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- categories
@@ -466,6 +490,69 @@ create table if not exists admin_actions (
   created_at timestamptz not null default now()
 );
 create index if not exists admin_actions_created_at_idx on admin_actions(created_at desc);
+
+-- ---------------------------------------------------------------------------
+-- Verified Transaction Records (migration 024)
+--
+-- Created exactly once, when an order reaches escrow_status 'released' — the
+-- only state this app treats as genuinely complete, and one that migration
+-- 021 makes unreachable without a confirmed payment. The snapshot columns say
+-- what was true at completion and are never recomputed; everything that
+-- happens afterwards is appended to transaction_record_events instead.
+-- ---------------------------------------------------------------------------
+
+create table if not exists transaction_records (
+  id text primary key,
+  -- Public, random, non-sequential. Not derived from any internal id, order
+  -- reference or phone number.
+  code text not null unique,
+  -- One record per order. This constraint is what makes creation idempotent.
+  order_id text not null unique references orders(id) on delete restrict,
+  buyer_user_id text not null references users(id) on delete restrict,
+  seller_id text references sellers(id),
+  seller_name text not null,
+  item_name text not null,
+  product_id text references products(id) on delete set null,
+  amount integer not null check (amount >= 0),
+  currency text not null default 'NGN',
+  seller_verification_level text not null default 'new'
+    check (seller_verification_level in ('new', 'verified', 'trusted')),
+  paid_at timestamptz,
+  completed_at timestamptz not null,
+  status text not null default 'completed'
+    check (status in ('completed', 'disputed', 'refunded')),
+  -- Foundation for future item-level identity. Every record today is
+  -- listing-scope: a generic listing must not become a permanently trackable
+  -- physical object.
+  record_scope text not null default 'listing'
+    check (record_scope in ('listing', 'item')),
+  created_at timestamptz not null default now()
+);
+create index if not exists transaction_records_buyer_idx on transaction_records(buyer_user_id);
+create index if not exists transaction_records_seller_idx on transaction_records(seller_id);
+create index if not exists transaction_records_seller_name_idx on transaction_records(seller_name);
+create index if not exists transaction_records_completed_at_idx on transaction_records(completed_at desc);
+alter table transaction_records enable row level security;
+
+-- Append-only history. A dispute, refund or admin correction adds a row here
+-- and moves transaction_records.status; nothing rewrites the snapshot. This
+-- is also the extension point for ownership transfer, warranty and repair
+-- history, which are events against a transaction rather than new tables.
+create table if not exists transaction_record_events (
+  id text primary key,
+  transaction_record_id text not null references transaction_records(id) on delete cascade,
+  event_type text not null
+    check (event_type in ('completed', 'dispute_opened', 'dispute_resolved', 'refunded', 'admin_correction')),
+  actor_type text not null check (actor_type in ('system', 'buyer', 'seller', 'admin')),
+  actor_id text references users(id) on delete set null,
+  reason text,
+  previous_value jsonb,
+  new_value jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists transaction_record_events_record_idx
+  on transaction_record_events(transaction_record_id, created_at);
+alter table transaction_record_events enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- otp_verifications — self-managed phone-verification codes (see lib/otp.ts

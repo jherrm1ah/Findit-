@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar } from "lucide-react";
+import { useState } from "react";
+import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -33,31 +33,52 @@ function VerificationBadge({ level }) {
   );
 }
 
-export default function SellerProfile({ sellerName, products, onBack, onOpenProduct, onContact, myLocation }) {
+// Renders a seller's PUBLIC storefront from data the server assembled (see
+// GET /api/sellers/[id] and lib/sellerPublicProfile.ts).
+//
+// This screen used to derive everything from the buyer's already-loaded
+// products array, filtered on the seller's business NAME. That had three
+// consequences: a seller with no active listings rendered a completely blank
+// profile, because every field was read off listings[0]; two sellers sharing
+// a business name were shown as one merged store; and nothing could be shown
+// for a seller whose products the buyer hadn't happened to load. All three
+// are why a buyer "couldn't view seller profiles".
+export default function SellerProfile({ profile, loading, error, onBack, onOpenProduct, onContact, myLocation }) {
   const [contacting, setContacting] = useState(false);
-  const listings = useMemo(
-    () => products.filter((p) => p.seller === sellerName),
-    [products, sellerName]
-  );
 
-  // Every listing from the same seller already carries the same computed
-  // rating/verified/tier values (see getSellerStatsMap in lib/repo.ts) — no
-  // need to re-aggregate them here. proBadge/logo/banner are real Store
-  // subscription benefits, live off the seller's current plan — see the
-  // "Golden Rule" audit in lib/subscriptions.ts: this is the actual public
-  // face of "pay for Pro, get Pro," not a cosmetic label.
-  const avgRating = listings[0]?.rating ?? null;
-  const verificationLevel = listings[0]?.sellerVerificationLevel ?? "new";
-  const proBadge = listings[0]?.sellerProBadge ?? false;
-  const logoUrl = listings[0]?.sellerLogoUrl ?? null;
-  const bannerUrl = listings[0]?.sellerBannerUrl ?? null;
-  const location = listings[0]?.sellerLocation ?? null;
-  const memberSince = listings[0]?.sellerMemberSince
-    ? new Date(listings[0].sellerMemberSince).toLocaleDateString("en-NG", { month: "short", year: "numeric" })
+  const listings = profile?.listings ?? [];
+  const sellerName = profile?.name ?? null;
+  const avgRating = profile?.rating ?? null;
+  const verificationLevel = profile?.verificationLevel ?? "new";
+  const proBadge = profile?.proBadge ?? false;
+  const logoUrl = profile?.logoUrl ?? null;
+  const bannerUrl = profile?.bannerUrl ?? null;
+  const location = profile?.location ?? null;
+  const memberSince = profile?.memberSince
+    ? new Date(profile.memberSince).toLocaleDateString("en-NG", { month: "short", year: "numeric" })
     : null;
-  const km = myLocation && listings[0]?.lat != null && listings[0]?.lng != null
-    ? haversineKm(myLocation.lat, myLocation.lng, listings[0].lat, listings[0].lng)
+  // Distance is still derived from a listing, because that is where real
+  // coordinates live; the seller's own coarse area is shown separately.
+  const nearest = listings.find((p) => p.lat != null && p.lng != null);
+  const km = myLocation && nearest
+    ? haversineKm(myLocation.lat, myLocation.lng, nearest.lat, nearest.lng)
     : null;
+
+  if (loading || error || !profile) {
+    return (
+      <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto">
+        <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
+          <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+          <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
+        </div>
+        <div className="px-5 py-16 text-center">
+          <p className="text-[13px] text-[#6B6483]">
+            {loading ? "Loading this store\u2026" : error || "This store isn\u2019t available."}
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10">
@@ -113,6 +134,41 @@ export default function SellerProfile({ sellerName, products, onBack, onOpenProd
             )}
           </div>
         </div>
+
+        {/* The dedicated storefront. Present only while the seller's paid
+            plan actually publishes it — lib/sellerPublicProfile.ts returns
+            null for storeSlug otherwise, so this never advertises a link
+            that would land on a closed store. */}
+        {profile.storeSlug && (
+          <a
+            href={`/store/${profile.storeSlug}`}
+            className="w-full flex items-center justify-center gap-2 text-white text-[13px] font-semibold py-3 rounded-xl mb-4"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            <Store size={15} /> Visit store
+          </a>
+        )}
+
+        {profile.description && (
+          <p className="text-[12.5px] text-[#514B67] leading-relaxed mb-4">{profile.description}</p>
+        )}
+
+        {(profile.completedOrderCount > 0 || profile.reviewCount > 0) && (
+          <div className="flex items-center gap-4 mb-5 text-[11px] text-[#6B6483]">
+            {profile.completedOrderCount > 0 && (
+              <span>
+                <b className="text-[#1E1B4B]">{profile.completedOrderCount}</b> completed order
+                {profile.completedOrderCount === 1 ? "" : "s"}
+              </span>
+            )}
+            {profile.reviewCount > 0 && (
+              <span>
+                <b className="text-[#1E1B4B]">{profile.reviewCount}</b> review
+                {profile.reviewCount === 1 ? "" : "s"}
+              </span>
+            )}
+          </div>
+        )}
 
         <button
           onClick={async () => {

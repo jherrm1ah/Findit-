@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to use AI classification." }, { status: 401 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`ai-classify:${user.id}`, MAX_CALLS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`ai-classify:${user.id}`, MAX_CALLS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many AI requests. Try again in a few minutes." },

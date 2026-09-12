@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return errorResponse(err, "Your seller account isn't approved to list products.");
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`listing:${user.id}`, MAX_LISTINGS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`listing:${user.id}`, MAX_LISTINGS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many listings created recently. Try again later." },

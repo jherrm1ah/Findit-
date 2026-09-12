@@ -10,7 +10,7 @@ export async function PATCH(req: NextRequest) {
   const user = await getSessionUser(req);
   if (!user) return NextResponse.json({ error: "Log in first." }, { status: 401 });
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`change-password:${user.id}`, MAX_ATTEMPTS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`change-password:${user.id}`, MAX_ATTEMPTS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Try again in a few minutes." },

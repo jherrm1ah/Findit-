@@ -14,7 +14,37 @@
 // coverage this suite doesn't use yet.
 
 type Row = Record<string, unknown>;
-type QueryResult = { data: unknown; error: { message: string } | null; count?: number };
+
+// Columns that carry a UNIQUE index in supabase/schema.sql. The fake enforces
+// them because several guarantees in this codebase are the constraint, not
+// the code around it: transaction records are idempotent because order_id is
+// unique, and a store slug is contested-safe because store_slug is. A fake
+// that accepts a duplicate would let those tests pass while the real database
+// rejected the same write.
+//
+// Add a table here when a test depends on its uniqueness, not speculatively.
+const UNIQUE_COLUMNS: Record<string, string[]> = {
+  transaction_records: ["id", "code", "order_id"],
+  transaction_record_events: ["id"],
+  sellers: ["id", "store_slug"],
+  store_slug_aliases: ["slug"],
+  payouts: ["id", "order_id"],
+  payments: ["id", "provider_reference"],
+  users: ["id", "phone"],
+  orders: ["id"],
+  products: ["id"],
+};
+
+// Mirrors Postgres: a null never conflicts with another null.
+function uniqueViolation(table: string, rows: Row[], candidate: Row): string | null {
+  for (const column of UNIQUE_COLUMNS[table] ?? []) {
+    const value = candidate[column];
+    if (value === undefined || value === null) continue;
+    if (rows.some((existing) => existing[column] === value)) return column;
+  }
+  return null;
+}
+type QueryResult = { data: unknown; error: { message: string; code?: string } | null; count?: number };
 
 class FakeQueryBuilder implements PromiseLike<QueryResult> {
   private filters: Array<(row: Row) => boolean> = [];
@@ -86,7 +116,23 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
 
     if (this.op === "insert") {
       const items = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((r) => ({ ...r }));
-      this.setRows(this.table, [...rows, ...items]);
+      const accepted: Row[] = [...rows];
+      for (const item of items) {
+        const conflict = uniqueViolation(this.table, accepted, item);
+        if (conflict) {
+          return {
+            data: null,
+            // 23505 is what Postgres returns, and lib/transactionRecord.ts
+            // and lib/store.ts both branch on exactly this code.
+            error: {
+              message: `duplicate key value violates unique constraint on "${this.table}"."${conflict}"`,
+              code: "23505",
+            },
+          };
+        }
+        accepted.push(item);
+      }
+      this.setRows(this.table, accepted);
       return { data: items.map((r) => ({ ...r })), error: null };
     }
     if (this.op === "update") {

@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`support-message:${user.id}`, MAX_MESSAGES, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`support-message:${user.id}`, MAX_MESSAGES, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many messages sent recently. Try again later." },

@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "productId is required" }, { status: 400 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`order:${user.id}`, MAX_ORDERS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`order:${user.id}`, MAX_ORDERS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many orders placed recently. Try again later." },

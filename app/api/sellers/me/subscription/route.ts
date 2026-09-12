@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
   }
   const billingPeriod: BillingPeriod = body.billingPeriod ?? "monthly";
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`store-checkout:${ctx.user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`store-checkout:${ctx.user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many checkout attempts. Try again later." },

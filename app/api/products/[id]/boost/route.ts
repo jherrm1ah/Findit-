@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "boostPlanId is required." }, { status: 400 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`boost-checkout:${user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`boost-checkout:${user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many checkout attempts. Try again later." },
