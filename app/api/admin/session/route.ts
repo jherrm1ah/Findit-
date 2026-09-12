@@ -61,8 +61,8 @@ export async function POST(req: NextRequest) {
   }
 
   const phone = normalizePhone(body.phone);
-  const perSource = checkRateLimit(`admin-session:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
-  const perAccount = checkRateLimit(`admin-session-phone:${phone}`, MAX_ATTEMPTS_PER_PHONE, WINDOW_MS);
+  const perSource = await checkRateLimit(`admin-session:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
+  const perAccount = await checkRateLimit(`admin-session-phone:${phone}`, MAX_ATTEMPTS_PER_PHONE, WINDOW_MS);
   if (!perSource.allowed || !perAccount.allowed) {
     const retryAfterSeconds = Math.max(perSource.retryAfterSeconds, perAccount.retryAfterSeconds);
     return NextResponse.json(

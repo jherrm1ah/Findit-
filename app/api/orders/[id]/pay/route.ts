@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "This order has already been paid for." }, { status: 400 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`order-checkout:${user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`order-checkout:${user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many checkout attempts. Try again later." },

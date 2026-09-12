@@ -404,6 +404,42 @@ export async function listProducts(): Promise<Product[]> {
   return sortForDisplay(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
 }
 
+// The listings shown on a seller's PUBLIC storefront. Two things make this
+// different from filtering listProducts() on the client, which is what the
+// seller profile screen used to do:
+//
+//   1. It matches on seller_id, so two accounts sharing a business name no
+//      longer pool their listings into one storefront. The name fallback is
+//      scoped to rows whose seller_id is still null (listings that predate
+//      migration 009's backfill), exactly as listOrders does — a name
+//      collision cannot misattribute those either, since a row with a
+//      seller_id is never reached by the name query.
+//   2. It returns only buyer-visible listings. A listing deactivated by a
+//      Store plan downgrade still exists and still belongs to the seller,
+//      but it is not for sale, so it has no place on a public storefront.
+export async function listPublicProductsForSeller(seller: { id: string | null; name: string }): Promise<Product[]> {
+  const db = getDb();
+
+  const queries = seller.id
+    ? [
+        db.from("products").select("*").eq("seller_id", seller.id),
+        db.from("products").select("*").eq("seller", seller.name).is("seller_id", null),
+      ]
+    : [db.from("products").select("*").eq("seller", seller.name)];
+
+  const results = await Promise.all(queries);
+  const rows = results.flatMap((r) => assertNoError(r, "listing seller products") as Row[]);
+  const byId = new Map<string, Row>();
+  for (const row of rows) byId.set(row.id as string, row);
+
+  const stats = await getSellerStatsMap();
+  return sortForDisplay(
+    [...byId.values()]
+      .map((row) => rowToProduct(row, statsFor(stats, row.seller as string)))
+      .filter((p) => p.active !== false)
+  );
+}
+
 export async function getProduct(id: string): Promise<Product | null> {
   const db = getDb();
   const result = await db.from("products").select("*").eq("id", id).maybeSingle();

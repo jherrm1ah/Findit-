@@ -1,8 +1,15 @@
 import { NextRequest } from "next/server";
+import { getDb } from "./db";
 
-// In-memory sliding-window limiter. Good enough for this single-process app
-// — a real multi-instance deployment would need a shared store (Redis) so
-// limits are enforced across instances, not per-process.
+// In-memory sliding-window limiter — now the FALLBACK path only. See
+// checkRateLimit at the bottom of this file: the real limiter is a shared
+// counter in Postgres (migration 022), because this map is per-process and
+// FindIt runs on Vercel, where each request may hit a different serverless
+// instance with its own empty copy.
+//
+// Kept, rather than deleted, so a database problem degrades protection
+// instead of locking everyone out of logging in. Per-instance counting is
+// weak; no counting at all is worse.
 //
 // Unbounded growth guard: every distinct key (ip+phone, user id, etc.) adds
 // an entry that only gets cleaned up when that same key is checked again.
@@ -27,11 +34,13 @@ function sweepExpired(windowMs: number) {
   }
 }
 
-export function checkRateLimit(
+export type RateLimitResult = { allowed: boolean; retryAfterSeconds: number };
+
+export function checkRateLimitInMemory(
   key: string,
   max: number,
   windowMs: number
-): { allowed: boolean; retryAfterSeconds: number } {
+): RateLimitResult {
   sweepExpired(windowMs);
   if (attempts.size >= MAX_ENTRIES && !attempts.has(key)) {
     // Fail closed rather than let the map grow without bound — an
@@ -61,7 +70,71 @@ export function checkRateLimit(
 // request. On Vercel (the deployment target documented in the README)
 // this header is set by their edge network and safe to trust.
 export function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.ip || "unknown";
+  // req.ip is set by the platform itself and cannot be forged by the client,
+  // so it is preferred over the header. X-Forwarded-For is the fallback for
+  // environments that don't populate req.ip; its first entry is the original
+  // client on Vercel, whose edge network overwrites the header.
+  const raw = req.ip || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+
+  // Colons separate the segments of every rate-limit key in this codebase
+  // ('login:<ip>:<phone>'), and an IPv6 address is full of them. Left as-is,
+  // "2001:db8::1" makes a key that a crafted value could also produce, so
+  // two different callers could share one bucket — or one caller could aim
+  // at someone else's. Normalising the separator out removes the ambiguity.
+  // Also caps the length, since the header is attacker-influenced and the
+  // key becomes a database primary key.
+  return raw.replace(/:/g, "_").slice(0, 100);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/*  The real limiter — one shared counter, in Postgres                         */
+/* -------------------------------------------------------------------------- */
+
+// Every route's limit goes through here. The counter lives in the
+// rate_limits table (migration 022) and is incremented by an atomic
+// check_rate_limit() call, so:
+//
+//   - all serverless instances share one count, instead of each keeping its
+//     own and multiplying the real allowance by however many are warm,
+//   - a cold start no longer resets anyone's counter to zero,
+//   - two simultaneous requests cannot both read the same count and both
+//     conclude they are under the limit, because the read and the increment
+//     are a single statement.
+//
+// windowMs is kept in milliseconds to match every existing call site; the
+// database function takes seconds.
+export async function checkRateLimit(
+  key: string,
+  max: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  const windowSeconds = Math.max(1, Math.round(windowMs / 1000));
+
+  try {
+    const { data, error } = await getDb().rpc("check_rate_limit", {
+      p_key: key,
+      p_max: max,
+      p_window_seconds: windowSeconds,
+    });
+    if (error) throw new Error(error.message);
+
+    // The function returns a single row; supabase-js gives it as an array.
+    const row = (Array.isArray(data) ? data[0] : data) as
+      | { allowed: boolean; retry_after_seconds: number }
+      | undefined;
+    if (!row || typeof row.allowed !== "boolean") {
+      throw new Error("check_rate_limit returned an unexpected shape");
+    }
+
+    return { allowed: row.allowed, retryAfterSeconds: Number(row.retry_after_seconds) || 0 };
+  } catch (err) {
+    // Deliberately falls back rather than failing closed. Failing closed
+    // here would turn a database hiccup into "nobody can log in", which is a
+    // worse outcome than briefly counting per-instance. Logged loudly so it
+    // is visible rather than silent — if this appears in production logs,
+    // migration 022 probably has not been applied.
+    console.error("[rate-limit] shared counter unavailable, falling back to per-instance counting:", err);
+    return checkRateLimitInMemory(key, max, windowMs);
+  }
 }

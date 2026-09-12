@@ -135,6 +135,13 @@ export const api = {
     request("/api/notifications/read-all", { method: "POST" }).then((d) => d.notifications),
 
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
+
+  // A seller's PUBLIC storefront. No session needed — a logged-out visitor
+  // can read this. Takes a seller id (correct, unambiguous) or a business
+  // name (legacy listings with no seller_id yet); the server answers 409 if
+  // a name maps to two accounts rather than guessing which store to show.
+  getSellerProfile: (idOrName) =>
+    request(`/api/sellers/${encodeURIComponent(idOrName)}`).then((d) => d.seller),
   // Staff sign-in. Being logged in as an admin isn't enough to reach any of
   // the admin calls below — the server requires a per-session unlock that
   // ages out, and answers ADMIN_UNLOCK_REQUIRED until it's granted.

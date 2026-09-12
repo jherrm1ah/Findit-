@@ -55,7 +55,12 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</h1>
 
         <div className="flex items-center justify-between mb-5">
-          <button onClick={() => onViewSeller(product.seller)} className="flex items-center gap-2.5 text-left">
+          {/* Opens the storefront by seller_id where the listing has one —
+              the only key that can't confuse two sellers sharing a business
+              name. Listings predating migration 009's backfill still have
+              none, so they fall back to the name and the server decides
+              whether that name is unambiguous enough to resolve. */}
+          <button onClick={() => onViewSeller(product.sellerId || product.seller)} className="flex items-center gap-2.5 text-left">
             <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
               <User size={17} className="text-white" />
             </div>

@@ -54,7 +54,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
   const [product, setProduct] = useState(null);
+  // The seller storefront being viewed. `key` is what the profile was opened
+  // by (a seller id where the listing has one, otherwise the business name);
+  // `profile` is what the server returned for it. The screen renders from the
+  // server's public DTO, never from the local products array — see
+  // SellerProfile.jsx for why that mattered.
   const [viewedSeller, setViewedSeller] = useState(null);
+  const [viewedSellerProfile, setViewedSellerProfile] = useState(null);
+  const [viewedSellerLoading, setViewedSellerLoading] = useState(false);
+  const [viewedSellerError, setViewedSellerError] = useState(null);
   const [checkoutOrder, setCheckoutOrder] = useState(null);
 
   const [loaded, setLoaded] = useState(false);
@@ -240,7 +248,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
+    // Clear the whole storefront overlay, not just its key — leaving the
+    // fetched profile behind would flash the previous seller's store the
+    // next time one is opened.
     setViewedSeller(null);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(false);
     window.scrollTo?.(0, 0);
     if ((s === "seller" || s === "admin") && (isSeller || isAdmin)) {
       api.getOpenRequests().then(setRequests).catch(() => {});
@@ -297,13 +311,35 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
-  const handleViewSeller = (sellerName) => {
+  // Opened with a seller id wherever the listing carries one; falls back to
+  // the business name for listings created before migration 009's backfill.
+  // The server refuses to guess when a name maps to two accounts, and that
+  // 409 is surfaced here rather than silently showing the wrong store.
+  const handleViewSeller = async (sellerKey) => {
+    if (!sellerKey) return;
     setProduct(null);
-    setViewedSeller(sellerName);
+    setViewedSeller(sellerKey);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(true);
+    try {
+      setViewedSellerProfile(await api.getSellerProfile(sellerKey));
+    } catch (err) {
+      setViewedSellerError(err.message || "Couldn't load this store.");
+    } finally {
+      setViewedSellerLoading(false);
+    }
+  };
+
+  const closeSellerProfile = () => {
+    setViewedSeller(null);
+    setViewedSellerProfile(null);
+    setViewedSellerError(null);
+    setViewedSellerLoading(false);
   };
 
   const handleOpenProductFromSeller = (p) => {
-    setViewedSeller(null);
+    closeSellerProfile();
     setProduct(p);
   };
 
@@ -1262,9 +1298,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
       {viewedSeller && (
         <SellerProfile
-          sellerName={viewedSeller}
-          products={products}
-          onBack={() => setViewedSeller(null)}
+          profile={viewedSellerProfile}
+          loading={viewedSellerLoading}
+          error={viewedSellerError}
+          onBack={closeSellerProfile}
           onOpenProduct={handleOpenProductFromSeller}
           onContact={handleContactSeller}
           myLocation={myLocation}

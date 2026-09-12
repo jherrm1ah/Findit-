@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to submit a request." }, { status: 401 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`request:${user.id}`, MAX_REQUESTS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`request:${user.id}`, MAX_REQUESTS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many requests submitted recently. Try again later." },

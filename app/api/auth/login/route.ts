@@ -28,8 +28,8 @@ export async function POST(req: NextRequest) {
 
   const phone = normalizePhone(body.phone);
 
-  const perSource = checkRateLimit(`login:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
-  const perAccount = checkRateLimit(`login-phone:${phone}`, MAX_ATTEMPTS_PER_PHONE, WINDOW_MS);
+  const perSource = await checkRateLimit(`login:${getClientIp(req)}:${phone}`, MAX_ATTEMPTS, WINDOW_MS);
+  const perAccount = await checkRateLimit(`login-phone:${phone}`, MAX_ATTEMPTS_PER_PHONE, WINDOW_MS);
   if (!perSource.allowed || !perAccount.allowed) {
     const retryAfterSeconds = Math.max(perSource.retryAfterSeconds, perAccount.retryAfterSeconds);
     return NextResponse.json(

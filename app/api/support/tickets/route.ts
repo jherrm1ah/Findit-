@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to open a support ticket." }, { status: 401 });
   }
 
-  const { allowed, retryAfterSeconds } = checkRateLimit(`support-ticket:${user.id}`, MAX_NEW_TICKETS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`support-ticket:${user.id}`, MAX_NEW_TICKETS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many tickets opened recently. Try again later." },

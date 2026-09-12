@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rateKey = `reset-password:${getClientIp(req)}`;
-  const { allowed, retryAfterSeconds } = checkRateLimit(rateKey, MAX_ATTEMPTS, WINDOW_MS);
+  const { allowed, retryAfterSeconds } = await checkRateLimit(rateKey, MAX_ATTEMPTS, WINDOW_MS);
   if (!allowed) {
     return NextResponse.json(
       { error: "Too many attempts. Try again in a few minutes." },
