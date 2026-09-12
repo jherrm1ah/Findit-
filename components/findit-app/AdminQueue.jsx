@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3 } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -1514,6 +1514,55 @@ function AnalyticsAdmin({ onLoadAnalytics, showToast }) {
   );
 }
 
+// The alert center — deliberately NOT a new signal (see lib/alerts.ts).
+// Every item is a count this dashboard already computes for its own tab;
+// this just surfaces whichever are currently non-zero in one feed, and
+// tapping one jumps straight to that tab via the same onNavigate the
+// Overview tab's StatCards already use.
+function AlertsCenter({ alerts, onNavigate }) {
+  if (!alerts) return <p className="text-[12px] text-[#6B6483]">Loading alerts…</p>;
+  if (alerts.length === 0) {
+    return <p className="text-[12px] text-[#6B6483]">Nothing needs attention right now.</p>;
+  }
+  return (
+    <div className="space-y-2.5">
+      {alerts.map((a) => (
+        <button
+          key={a.id}
+          onClick={() => onNavigate(a.tab)}
+          className="w-full text-left bg-white border border-[#ECE9F7] rounded-[20px] p-4 flex items-start gap-3"
+        >
+          <div
+            className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+              a.severity === "critical" ? "bg-[#FDF0F4]" : "bg-[#FDF6EC]"
+            }`}
+          >
+            <AlertTriangle size={14} className={a.severity === "critical" ? "text-[#E64980]" : "text-[#D97706]"} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{a.title}</p>
+              <Pill tone={a.severity === "critical" ? "red" : "gold"}>{a.count}</Pill>
+            </div>
+            <p className="text-[11px] text-[#6B6483] mt-0.5">{a.description}</p>
+          </div>
+          <ChevronRight size={14} className="text-[#B7AFD6] mt-1 shrink-0" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function AlertsAdmin({ onLoadAlerts, onNavigate }) {
+  const [alerts, setAlerts] = useState(null);
+
+  useEffect(() => {
+    onLoadAlerts().then(setAlerts).catch(() => setAlerts([]));
+  }, []);
+
+  return <AlertsCenter alerts={alerts} onNavigate={onNavigate} />;
+}
+
 const TICKET_STATUS_FILTERS = [
   { value: "", label: "All" },
   { value: "open", label: "Open" },
@@ -1757,6 +1806,7 @@ export default function AdminQueue({
   onSendTicketMessage,
   onResolveTicket,
   onLoadAnalytics,
+  onLoadAlerts,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -1771,6 +1821,7 @@ export default function AdminQueue({
   // complete but isn't" problem this dashboard exists to avoid.
   const TABS = [
     { key: "overview", label: "Overview", icon: LayoutGrid },
+    { key: "alerts", label: "Alerts", icon: Bell },
     can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
     can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
     can("users") && { key: "users", label: "Users", icon: Users },
@@ -1816,6 +1867,18 @@ export default function AdminQueue({
       </div>
 
       {activeTab === "overview" && <AdminOverview overview={overview} onNavigate={setTab} />}
+
+      {activeTab === "alerts" && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Bell size={13} className="text-[#7C3AED]" /> What needs attention
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Every item here is a real count already shown on its own tab — nothing here is a new signal.
+          </p>
+          <AlertsAdmin onLoadAlerts={onLoadAlerts} onNavigate={setTab} />
+        </>
+      )}
 
       {activeTab === "sellers" && can("moderation") && (
         <>

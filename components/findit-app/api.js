@@ -186,6 +186,7 @@ export const api = {
       body: JSON.stringify({ status: "resolved" }),
     }).then((d) => d.ticket),
   getAdminAnalytics: (days) => request(`/api/admin/analytics${days ? `?days=${days}` : ""}`).then((d) => d.analytics),
+  getAdminAlerts: () => request("/api/admin/alerts").then((d) => d.alerts),
   getCategories: () => request("/api/categories").then((d) => d.categories),
   getAdminCategories: () => request("/api/admin/categories").then((d) => d.categories),
   createCategory: (label, iconKey, sortOrder) =>
