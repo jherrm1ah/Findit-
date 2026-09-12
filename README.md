@@ -272,7 +272,7 @@ Paystack machinery Store subscriptions and FindIt Pro use.
   subscriptions) via the API, with no dedicated screen yet.
 - **No live Paystack keys exist in this environment.** Every one of the above checks
   `isPaystackConfigured()` first and returns a clear "not configured" result instead of pretending
-  to charge or pay anyone — see `.env.example` for `PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY`.
+  to charge or pay anyone — see `.env.example` for `PAYSTACK_SECRET_KEY`.
 
 **Becoming a seller.** Phone numbers are unique per account, so a buyer who later wants to sell
 can't just sign up again. `POST /api/auth/become-seller` → `becomeSeller()` converts the existing
@@ -544,8 +544,9 @@ termii.com — the integration in `lib/sms.ts` is built from Termii's current pu
 documentation, not tested against a live account) — verify it end-to-end once a key is added.
 Order payments, platform fees, seller payouts, refunds, Store subscriptions, and FindIt Pro are all
 real and Paystack-wired now (see "Real marketplace payments", "Store subscriptions", and "FindIt
-Pro" above) — every one of them needs a real `PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY` pair to
-actually move money; with none configured they degrade to clearly labeled "not configured" states
+Pro" above) — every one of them needs a real `PAYSTACK_SECRET_KEY` to actually move money (the
+integration is server-to-server REST, redirecting to Paystack's hosted checkout page, so no
+client-side public key is used); with none configured they degrade to clearly labeled "not configured" states
 rather than pretending to charge or pay anyone. Still not built: an admin plan-editor screen, real
 per-seller storage metering, tier-themed public storefronts, a combined-benefit view for an account
 with both a Store plan and FindIt Pro, and boost/featured-listing purchases with platform
