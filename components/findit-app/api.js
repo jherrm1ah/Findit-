@@ -310,6 +310,14 @@ export const api = {
       body: JSON.stringify({ planId, billingPeriod }),
     }),
   cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  getFindItPro: () => request("/api/me/subscription"),
+  subscribeFindItPro: (planId, billingPeriod = "monthly") =>
+    request("/api/me/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId, billingPeriod }),
+    }),
+  cancelFindItPro: () => request("/api/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
   getBanks: () => request("/api/payments/banks"),
   getPayoutAccount: () => request("/api/sellers/me/payout-account"),
   setPayoutAccount: (accountNumber, bankCode) =>

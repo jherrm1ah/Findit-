@@ -241,10 +241,38 @@ true rather than just copy:
    An admin resolves it through `POST /api/admin/disputes` — `released` (pay the seller) or
    `refunded` (return the buyer's money) — and both outcomes are written to the admin audit log.
 
-`escrow_status` is `held | released | disputed | refunded`. **No payment provider is wired up
-yet**, so this column is the *record* of what should happen to the money — the hook a provider
-integration reads later, and what buyers, sellers and admins see in the app today. Nothing here
-moves real funds on its own.
+`escrow_status` is `unpaid | held | released | disputed | refunded`. **A real Paystack charge is
+now required before it ever reaches `held`** — see "Real marketplace payments" below; nothing above
+in this section changed, it's just that "released"/"refunded" now trigger an actual Paystack
+Transfer/refund instead of only flipping this column.
+
+## Real marketplace payments
+
+An order starts `payment_status: 'pending'`/`escrow_status: 'unpaid'` and can't advance past
+"Awaiting payment" until a real Paystack charge succeeds (`lib/payments.ts#confirmOrderPayment`,
+called only from `POST /api/payments/paystack/webhook` once Paystack confirms it — never on a
+client-supplied "I paid"). `POST /api/orders/[id]/pay` starts that checkout, mirroring the same
+Paystack machinery Store subscriptions and FindIt Pro use.
+
+- **Platform fee.** An append-only, admin-editable `platform_fee_config` table (finance domain,
+  `GET`/`PATCH /api/admin/fee-config`) holds the current commission in basis points. The fee is
+  snapshotted onto the order (`platform_fee_bps`/`platform_fee_amount`/`seller_payout_amount`)
+  the moment it's paid and never recomputed — a later fee change never rewrites what an
+  already-paid order was actually charged.
+- **Seller payouts.** Once a buyer confirms delivery, `initiateSellerPayout` fires a real Paystack
+  Transfer to the seller's bank account (set via `GET`/`PATCH /api/sellers/me/payout-account`,
+  resolved against Paystack's real account-name lookup before saving) — or records an honestly
+  labeled `manual_required` payout for an admin to settle off-platform if no payout account is on
+  file. A database-level `unique(order_id)` on `payouts` makes a double payout impossible.
+- **Refunds.** An admin's "refund" decision on a disputed order (`POST /api/admin/disputes`)
+  reverses the buyer's real original Paystack charge, not just this column.
+- **Admin ledgers.** The "Payments" tab in the Admin queue (finance domain) edits the platform fee
+  and shows the real payout ledger (with a "Mark paid" action for the `manual_required` escape
+  hatch) — `GET /api/admin/transactions` also exposes the full payment ledger (orders and
+  subscriptions) via the API, with no dedicated screen yet.
+- **No live Paystack keys exist in this environment.** Every one of the above checks
+  `isPaystackConfigured()` first and returns a clear "not configured" result instead of pretending
+  to charge or pay anyone — see `.env.example` for `PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY`.
 
 **Becoming a seller.** Phone numbers are unique per account, so a buyer who later wants to sell
 can't just sign up again. `POST /api/auth/become-seller` → `becomeSeller()` converts the existing
@@ -351,11 +379,43 @@ change a price or limit without touching code:
 **Not built yet, deliberately out of scope for this pass:** an admin plan-editor screen, real
 per-seller storage (MB) metering (`storage_limit_mb` exists on each plan as config/display data
 only — nothing in the upload path measures usage against it, and it isn't claimed as a feature to
-sellers for exactly that reason), a real priority-support system, deeper tier-themed storefront
-layouts beyond the real logo/banner/Pro badge described above, FindIt Pro's own screen and its
-combined-benefit resolution alongside a Store plan, and boost/featured-listing purchases and
-platform transaction fees (their pricing has an obvious home —
-another admin-editable `subscription_plans`-style table — but no purchase flow exists yet).
+sellers for exactly that reason), a real priority-support system, and deeper tier-themed storefront
+layouts beyond the real logo/banner/Pro badge described above. Boost/featured-listing purchases and
+platform transaction fees still have no purchase flow (their pricing has an obvious home — another
+admin-editable `subscription_plans`-style table — but nothing built).
+
+## FindIt Pro
+
+A separate, account-wide membership (₦3,500/mo or ₦35,000/yr) — any signed-in account (buyer or
+seller) can subscribe, independent of whether that account also has a Store plan. It reuses the same
+`subscriptions`/`subscription_plans` tables as Store plans (`owner_type = 'platform'`, `owner_id =
+users.id`, plan id `findit_pro`) and the same Paystack checkout machinery, rather than a second,
+parallel payment system:
+
+- **Real checkout, real webhook confirmation.** `POST /api/me/subscription` starts a genuine
+  Paystack transaction the same way Store checkout does; the subscription only actually activates
+  once `POST /api/payments/paystack/webhook` verifies the charge — never on a client-supplied "I
+  paid." With no Paystack keys configured, it returns a clear "not configured" response instead
+  (see "Golden rule" above) — `POST /api/admin/subscriptions/grant` (now generalized for both Store
+  and FindIt Pro) is the same off-platform/testing escape hatch already used for Store plans.
+- **Cancelling is immediate**, for the same no-scheduled-job reason as Store plans — see "Store
+  subscriptions" above.
+- **Pay for it, get it applies here too.** The only benefit currently wired to something real is the
+  **FindIt Pro badge** shown on your own Profile screen (`components/findit-app/FindItPro.jsx`).
+  **Priority support** is shown as "Coming soon," same as the Store plans' identical claim — no
+  support-ticket system exists yet to prioritize. The plan row shares its `analytics_level` /
+  `customization_level` / `featured_listing_access` columns with Store plans for schema reasons, but
+  none of those correspond to anything a buyer can see, so none of them are shown as a FindIt Pro
+  feature — an honest gap, not an oversight.
+- **A real bug found and fixed while building this:** a lapsed or cancelled *platform* subscription
+  was, before this pass, being routed through the same "revert to Free" logic as a Store plan —
+  which would have reassigned it to the `store_free` plan row, a plan of the wrong `kind` entirely.
+  Platform subscriptions now resolve to their own terminal `expired`/`cancelled` status instead (see
+  `expirePlatformSubscription` in `lib/subscriptions.ts`).
+
+**Not built yet:** a combined-benefit view for an account that has both a Store plan and FindIt Pro,
+and the FindIt Pro badge isn't surfaced anywhere buyers interact with sellers (chat, orders) — only
+on the subscriber's own Profile screen.
 
 ## Seller trust & verification
 
@@ -475,19 +535,18 @@ the same way the rest of this app's UI has been throughout this project.
 
 ## Next steps toward a real product
 
-A real Nigerian payment processor for the **escrow flow** specifically — order checkout still shows
-a simulated held-funds state, `escrow_status` moves through `held → released/disputed/refunded`
-with no money actually changing hands yet. (Store subscriptions are a separate flow and already
-Paystack-ready — see "Store subscriptions" above; the same `lib/paystack.ts` wrapper is the natural
-place to plug real escrow payments in too.) Also needed: real hosting/deployment (see the note in
-"Testing" — this repo has never been deployed to a live host), and a real seller ID/document
-verification system (currently admin approval is a judgment call, not a document check). Phone
-verification (OTP) at signup and password reset is fully built (see "Security" above) but needs a
-real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver path has not been tested against
-Termii's live API from this environment (no network access here to termii.com — the integration in
-`lib/sms.ts` is built from Termii's current published v4 API documentation, not tested against a
-live account) — verify it end-to-end once a key is added. On the Store subscription side specifically
-(see "Store subscriptions" above for the full list): an admin plan-editor screen, real per-seller
-storage metering, tier-themed public storefronts, FindIt Pro's own screen, and boost/featured-listing
-purchases with platform transaction fees are all designed for (the database/plan-config shape has
-room for them) but not built.
+Real hosting/deployment (see the note in "Testing" — this repo has never been deployed to a live
+host), and a real seller ID/document verification system (currently admin approval is a judgment
+call, not a document check). Phone verification (OTP) at signup and password reset is fully built
+(see "Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
+path has not been tested against Termii's live API from this environment (no network access here to
+termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
+documentation, not tested against a live account) — verify it end-to-end once a key is added.
+Order payments, platform fees, seller payouts, refunds, Store subscriptions, and FindIt Pro are all
+real and Paystack-wired now (see "Real marketplace payments", "Store subscriptions", and "FindIt
+Pro" above) — every one of them needs a real `PAYSTACK_SECRET_KEY`/`PAYSTACK_PUBLIC_KEY` pair to
+actually move money; with none configured they degrade to clearly labeled "not configured" states
+rather than pretending to charge or pay anyone. Still not built: an admin plan-editor screen, real
+per-seller storage metering, tier-themed public storefronts, a combined-benefit view for an account
+with both a Store plan and FindIt Pro, and boost/featured-listing purchases with platform
+transaction fees (the database/plan-config shape has room for them, but no purchase flow exists).

@@ -174,22 +174,25 @@ function periodEnd(period: BillingPeriod, from = new Date()): string {
 async function createSubscriptionRow(
   ownerType: "store" | "platform",
   ownerId: string,
-  planId: string
+  planId: string,
+  options: { status?: SubscriptionStatus; billingPeriod?: BillingPeriod; currentPeriodEnd?: string | null; trialEndsAt?: string | null } = {}
 ): Promise<Subscription> {
   const db = getDb();
   const id = randomId("sub_");
+  const status = options.status ?? "active";
   const insertResult = await db.from("subscriptions").insert({
     id,
     owner_type: ownerType,
     owner_id: ownerId,
     plan_id: planId,
-    status: "active",
-    billing_period: "monthly",
+    status,
+    billing_period: options.billingPeriod ?? "monthly",
     current_period_start: new Date().toISOString(),
-    current_period_end: null,
+    current_period_end: options.currentPeriodEnd ?? null,
+    trial_ends_at: options.trialEndsAt ?? null,
   });
   assertNoError(insertResult, "creating subscription");
-  await logEvent(id, "created", { planId });
+  await logEvent(id, "created", { planId, status });
   const row = assertNoError(
     await db.from("subscriptions").select("*").eq("id", id).single(),
     "loading new subscription"
@@ -250,13 +253,39 @@ export function isSubscriptionLapsed(
 // has no background job runner, so instead of a cron sweeping stale
 // subscriptions, every read resolves the true current state at read time.
 // Per spec: trial/period expiry never deletes the store or its listings,
-// it only drops back to Free (which in turn re-enforces Free's limits).
+// it only drops back to Free (which in turn re-enforces Free's limits). A
+// platform (FindIt Pro) subscription has no "Free" plan to fall back to —
+// see expirePlatformSubscription — so it's handled separately here rather
+// than reusing downgradeToFree, which would otherwise reassign a lapsed
+// FindIt Pro row to the store_free PLAN, a plan of the wrong kind entirely.
 async function resolveEffectiveSubscription(sub: Subscription): Promise<Subscription> {
   const plan = await getPlan(sub.planId);
-  if (plan && isSubscriptionLapsed(sub, plan.priceMonthly)) {
-    return downgradeToFree(sub, sub.status === "trialing" ? "trial_ended" : "expired");
-  }
-  return sub;
+  if (!plan || !isSubscriptionLapsed(sub, plan.priceMonthly)) return sub;
+  const reason = sub.status === "trialing" ? "trial_ended" : "expired";
+  return sub.ownerType === "store" ? downgradeToFree(sub, reason) : expirePlatformSubscription(sub, reason);
+}
+
+// The platform-subscription equivalent of downgradeToFree: there's no Free
+// FindIt Pro plan to fall back to, so a lapsed or cancelled subscription
+// just moves to a terminal status (never deleted — same audit-trail
+// philosophy as subscription_events) and getPlatformSubscription treats
+// that status as "not currently Pro."
+async function expirePlatformSubscription(sub: Subscription, reason: "trial_ended" | "expired" | "cancelled"): Promise<Subscription> {
+  const db = getDb();
+  const updateResult = await db
+    .from("subscriptions")
+    .update({
+      status: reason === "cancelled" ? "cancelled" : "expired",
+      cancel_at_period_end: false,
+      cancelled_at: reason === "cancelled" ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", sub.id)
+    .select()
+    .single();
+  const row = assertNoError(updateResult, "expiring platform subscription") as Row;
+  await logEvent(sub.id, reason, { fromPlanId: sub.planId });
+  return rowToSubscription(row);
 }
 
 async function downgradeToFree(sub: Subscription, reason: "trial_ended" | "expired" | "cancelled"): Promise<Subscription> {
@@ -298,13 +327,154 @@ export async function getSellerSubscription(sellerId: string): Promise<{ subscri
   return { subscription: sub, plan };
 }
 
+// Returns null both when the account has never subscribed AND when a past
+// subscription has lapsed or been cancelled — "not currently Pro" either
+// way. The row itself is never deleted (see expirePlatformSubscription), so
+// re-subscribing later updates this same row rather than creating a second
+// one, which the unique(owner_type, owner_id) constraint wouldn't allow.
 export async function getPlatformSubscription(userId: string): Promise<{ subscription: Subscription; plan: SubscriptionPlan } | null> {
   let sub = await getRawSubscription("platform", userId);
   if (!sub) return null;
   sub = await resolveEffectiveSubscription(sub);
+  if (sub.status === "expired" || sub.status === "cancelled") return null;
   const plan = await getPlan(sub.planId);
   if (!plan) return null;
   return { subscription: sub, plan };
+}
+
+// Everything the FindIt Pro screen needs: whether this account currently has
+// it, and the (currently singular) platform plan available to subscribe to.
+export async function getPlatformPlanOverview(userId: string): Promise<{
+  subscription: Subscription | null;
+  plan: SubscriptionPlan | null;
+  plans: SubscriptionPlan[];
+}> {
+  const [current, plans] = await Promise.all([getPlatformSubscription(userId), listPlans("platform")]);
+  return { subscription: current?.subscription ?? null, plan: current?.plan ?? null, plans };
+}
+
+async function hasUsedPlatformTrialBefore(userId: string, planId: string): Promise<boolean> {
+  const sub = await getRawSubscription("platform", userId);
+  if (!sub) return false;
+  const db = getDb();
+  const result = await db
+    .from("subscription_events")
+    .select("id", { count: "exact", head: true })
+    .eq("subscription_id", sub.id)
+    .eq("type", "trial_ended")
+    .contains("detail", { fromPlanId: planId });
+  if (result.error) return false; // fail open toward "allow a trial" — never blocks a legitimate first trial
+  return (result.count ?? 0) > 0;
+}
+
+// Same shape as previewStorePlanChange, for the one purchasable platform
+// plan (FindIt Pro) today — kept generic (by planId) so an admin adding a
+// second platform-kind plan later doesn't need this rewritten.
+export async function previewPlatformPlanChange(
+  userId: string,
+  newPlanId: string,
+  billingPeriod: BillingPeriod
+): Promise<PlanChangePreview> {
+  const [current, newPlan] = await Promise.all([getPlatformSubscription(userId), getPlan(newPlanId)]);
+  if (!newPlan || newPlan.kind !== "platform" || !newPlan.active) {
+    throw new ValidationError("That plan isn't available.");
+  }
+  if (current && current.subscription.planId === newPlan.id && current.subscription.billingPeriod === billingPeriod) {
+    return { outcome: "noop" };
+  }
+  if (newPlan.priceMonthly === 0) return { outcome: "free" };
+  if (newPlan.trialDays > 0 && !(await hasUsedPlatformTrialBefore(userId, newPlan.id))) {
+    return { outcome: "trial", trialDays: newPlan.trialDays };
+  }
+  const amount = billingPeriod === "yearly" ? newPlan.priceYearly ?? newPlan.priceMonthly * 12 : newPlan.priceMonthly;
+  return { outcome: "payment_required", amount };
+}
+
+// Applies a platform-plan subscribe/renew that previewPlatformPlanChange
+// already determined is free or trial-eligible, OR a paid subscription once
+// options.paymentConfirmed is true (only ever set by the Paystack webhook —
+// never trust a client-supplied "I paid"). Unlike changeStorePlan there's no
+// product-limit enforcement here: a platform subscription doesn't gate
+// listings.
+export async function changePlatformSubscription(
+  userId: string,
+  newPlanId: string,
+  billingPeriod: BillingPeriod,
+  options: { paymentConfirmed?: boolean } = {}
+): Promise<Subscription> {
+  const [current, newPlan] = await Promise.all([getPlatformSubscription(userId), getPlan(newPlanId)]);
+  if (!newPlan || newPlan.kind !== "platform" || !newPlan.active) {
+    throw new ValidationError("That plan isn't available.");
+  }
+  if (current && current.subscription.planId === newPlan.id && current.subscription.billingPeriod === billingPeriod) {
+    throw new ValidationError(`You're already subscribed to ${newPlan.name}.`);
+  }
+
+  const isFree = newPlan.priceMonthly === 0;
+  const price = billingPeriod === "yearly" ? newPlan.priceYearly ?? newPlan.priceMonthly * 12 : newPlan.priceMonthly;
+
+  let status: SubscriptionStatus = "active";
+  let trialEndsAt: string | null = null;
+  let currentPeriodEnd: string | null = null;
+
+  if (isFree) {
+    status = "active";
+  } else if (options.paymentConfirmed) {
+    status = "active";
+    currentPeriodEnd = periodEnd(billingPeriod);
+  } else if (newPlan.trialDays > 0 && !(await hasUsedPlatformTrialBefore(userId, newPlan.id))) {
+    status = "trialing";
+    trialEndsAt = new Date(Date.now() + newPlan.trialDays * 24 * 60 * 60 * 1000).toISOString();
+  } else {
+    throw new ValidationError(
+      `${newPlan.name} requires payment — pay ₦${price.toLocaleString("en-NG")} to activate it.`
+    );
+  }
+
+  const db = getDb();
+  // subscriptions has unique(owner_type, owner_id) and expirePlatformSubscription
+  // never deletes the row, so a returning subscriber always hits the update
+  // path below, not a second insert.
+  const existingRaw = await getRawSubscription("platform", userId);
+  if (existingRaw) {
+    const updateResult = await db
+      .from("subscriptions")
+      .update({
+        plan_id: newPlan.id,
+        status,
+        billing_period: billingPeriod,
+        current_period_start: new Date().toISOString(),
+        current_period_end: currentPeriodEnd,
+        trial_ends_at: trialEndsAt,
+        cancel_at_period_end: false,
+        cancelled_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", existingRaw.id)
+      .select()
+      .single();
+    const row = assertNoError(updateResult, "changing platform subscription") as Row;
+    await logEvent(existingRaw.id, "renewed", { planId: newPlan.id, status });
+    return rowToSubscription(row);
+  }
+  return createSubscriptionRow("platform", userId, newPlan.id, { status, billingPeriod, currentPeriodEnd, trialEndsAt });
+}
+
+// Cancelling takes effect immediately, same reasoning as
+// cancelStoreSubscription: no scheduled job exists here to expire it "at
+// period end" later, so an immediate, honest cancel is the truthful option.
+export async function cancelPlatformSubscription(userId: string): Promise<Subscription> {
+  const current = await getPlatformSubscription(userId);
+  if (!current) {
+    throw new ValidationError("You don't have an active FindIt Pro subscription.");
+  }
+  return expirePlatformSubscription(current.subscription, "cancelled");
+}
+
+// Admin-only escape hatch, same pattern as grantStorePlan — a user who paid
+// off-platform, or testing the subscribe flow with no live Paystack keys.
+export async function grantPlatformSubscription(userId: string, planId: string, billingPeriod: BillingPeriod): Promise<Subscription> {
+  return changePlatformSubscription(userId, planId, billingPeriod, { paymentConfirmed: true });
 }
 
 // Everything a seller needs to see on their dashboard's "Store plan" card

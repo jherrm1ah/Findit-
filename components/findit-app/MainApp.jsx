@@ -12,6 +12,7 @@ import Browse from "./Browse";
 import RequestForm from "./RequestForm";
 import SellerDashboard from "./SellerDashboard";
 import StorePlans from "./StorePlans";
+import FindItPro from "./FindItPro";
 import SellerOnboarding from "./SellerOnboarding";
 import AdminQueue from "./AdminQueue";
 import BecomeSeller from "./BecomeSeller";
@@ -77,6 +78,11 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // permanently for any account that's never been a seller.
   const [storePlan, setStorePlan] = useState(null);
   const [changingPlan, setChangingPlan] = useState(false);
+  // { subscription, plan, plans } | null — see GET /api/me/subscription.
+  // Account-wide (buyer or seller), unlike storePlan above which only
+  // exists for sellers.
+  const [findItPro, setFindItPro] = useState(null);
+  const [changingFindItPro, setChangingFindItPro] = useState(false);
   // { logoUrl, bannerUrl } | null — real backing for the plan's
   // "customization" benefit; see PATCH /api/sellers/me/branding.
   const [storeBranding, setStoreBranding] = useState(null);
@@ -167,6 +173,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getAdminOverview().then(setAdminOverview).catch(() => {});
     }
     if (user) {
+      api.getFindItPro().then(setFindItPro).catch(() => {});
       api.getSavedIds().then(setSavedIds).catch(() => {});
       // Fetched here too (not just on navigating to the Messages screen) so
       // Profile's "Messages" card can show an unread count up front, the
@@ -205,6 +212,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if ((s === "seller" || s === "storePlans") && isSeller) {
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
+    }
+    if (s === "findItPro" && user) {
+      api.getFindItPro().then(setFindItPro).catch(() => {});
     }
     if ((s === "seller" || s === "sellerOnboarding") && isSeller) {
       api.getMyVerification().then(setVerification).catch(() => {});
@@ -448,6 +458,40 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       showToast(err.message || "Couldn't cancel your store plan — try again.", "error");
     } finally {
       setChangingPlan(false);
+    }
+  };
+
+  // Same three outcomes as handleChangeStorePlan above — see
+  // POST /api/me/subscription.
+  const handleSubscribeFindItPro = async (planId, billingPeriod) => {
+    setChangingFindItPro(true);
+    try {
+      const result = await api.subscribeFindItPro(planId, billingPeriod);
+      if (result.applied) {
+        setFindItPro(await api.getFindItPro());
+        showToast("You're a FindIt Pro member now.");
+      } else if (result.configured) {
+        window.location.href = result.checkoutUrl;
+      } else {
+        showToast(result.message || "Payments aren't set up yet — contact an admin.", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Couldn't start your FindIt Pro subscription — try again.", "error");
+    } finally {
+      setChangingFindItPro(false);
+    }
+  };
+
+  const handleCancelFindItPro = async () => {
+    setChangingFindItPro(true);
+    try {
+      await api.cancelFindItPro();
+      setFindItPro(await api.getFindItPro());
+      showToast("FindIt Pro has been cancelled.");
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel FindIt Pro — try again.", "error");
+    } finally {
+      setChangingFindItPro(false);
     }
   };
 
@@ -763,6 +807,24 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             />
           )
         )}
+        {screen === "findItPro" && (
+          user ? (
+            <FindItPro
+              findItPro={findItPro}
+              onSubscribe={handleSubscribeFindItPro}
+              onCancel={handleCancelFindItPro}
+              changing={changingFindItPro}
+              go={go}
+            />
+          ) : (
+            <RoleGate
+              title="Sign in needed"
+              message="FindIt Pro is a membership for signed-in accounts."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
+        )}
         {screen === "sellerOnboarding" && (
           isSeller ? (
             <SellerOnboarding go={go} showToast={showToast} />
@@ -863,6 +925,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             messageUnreadCount={conversations.reduce((sum, c) => sum + (c.unreadCount || 0), 0)}
             onUploadAvatar={handleUploadAvatar}
             sellerStatus={mySellerStatus}
+            findItPro={findItPro}
           />
         )}
         {screen === "accountDetails" && (

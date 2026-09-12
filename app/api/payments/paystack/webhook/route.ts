@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature, verifyTransaction } from "@/lib/paystack";
 import { getDb, assertNoError } from "@/lib/db";
-import { changeStorePlan, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
+import { changeStorePlan, changePlatformSubscription, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
 import { confirmOrderPayment } from "@/lib/payments";
 
 type Row = Record<string, unknown>;
@@ -82,8 +82,22 @@ export async function POST(req: NextRequest) {
         console.error("[paystack-webhook] payment succeeded but order confirmation failed", err);
       }
     } else {
-      const metadata = (payment.metadata as { sellerId?: string; planId?: string; billingPeriod?: BillingPeriod } | null) ?? null;
-      if (metadata?.sellerId && metadata.planId) {
+      const metadata = (payment.metadata as {
+        sellerId?: string;
+        userId?: string;
+        planId?: string;
+        billingPeriod?: BillingPeriod;
+        ownerType?: "platform";
+      } | null) ?? null;
+      if (metadata?.ownerType === "platform" && metadata.userId && metadata.planId) {
+        try {
+          await changePlatformSubscription(metadata.userId, metadata.planId, metadata.billingPeriod ?? "monthly", {
+            paymentConfirmed: true,
+          });
+        } catch (err) {
+          console.error("[paystack-webhook] payment succeeded but FindIt Pro subscription failed", err);
+        }
+      } else if (metadata?.sellerId && metadata.planId) {
         try {
           await changeStorePlan(metadata.sellerId, metadata.planId, metadata.billingPeriod ?? "monthly", {
             paymentConfirmed: true,
