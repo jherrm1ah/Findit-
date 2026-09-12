@@ -137,6 +137,14 @@ export async function createUser(input: {
   return rowToUser(row);
 }
 
+// Any fixed value works — it isn't protecting anything, it just gives
+// hashPassword a real salt-shaped input to run scrypt against below, so a
+// login for a phone number with no account costs the same CPU time as one
+// for a real account with a wrong password. Without this, an attacker who
+// can measure response time could tell "no such account" apart from "wrong
+// password" even though both return the identical error message.
+const DUMMY_SALT_FOR_TIMING = "findit_no_such_account_dummy_salt";
+
 export async function verifyLogin(phone: string, password: string): Promise<User | null> {
   const db = getDb();
   const result = await db
@@ -145,7 +153,10 @@ export async function verifyLogin(phone: string, password: string): Promise<User
     .eq("phone", normalizePhone(phone))
     .maybeSingle();
   const row = assertNoError(result, "logging in") as Row | null;
-  if (!row) return null;
+  if (!row) {
+    hashPassword(password, DUMMY_SALT_FOR_TIMING);
+    return null;
+  }
 
   const candidateHash = hashPassword(password, row.password_salt as string);
   const actualHash = Buffer.from(row.password_hash as string, "hex");
@@ -325,13 +336,29 @@ export async function updateUserPhone(
   return rowToUser(row);
 }
 
+// Destroys every OTHER active session for this account — called after a
+// password change/reset so a stolen session cookie doesn't just keep
+// working through the exact security action meant to lock an attacker
+// out. `exceptToken` keeps the caller's own current session alive (a
+// logged-in user changing their own password from their own device
+// shouldn't be logged out by doing so); the forgot-password recovery flow
+// has no current session to except, so it clears all of them.
+async function destroyOtherSessions(userId: string, exceptToken?: string): Promise<void> {
+  const db = getDb();
+  let query = db.from("sessions").delete().eq("user_id", userId);
+  if (exceptToken) query = query.neq("token", exceptToken);
+  const result = await query;
+  assertNoError(result, "invalidating other sessions");
+}
+
 export async function changeUserPassword(
   userId: string,
   currentPassword: string,
-  newPassword: string
+  newPassword: string,
+  currentToken?: string
 ): Promise<void> {
-  if (!newPassword || newPassword.length < 4) {
-    throw new ValidationError("New password must be at least 4 characters.");
+  if (!newPassword || newPassword.length < 8) {
+    throw new ValidationError("New password must be at least 8 characters.");
   }
   await verifyPasswordForUserId(userId, currentPassword);
 
@@ -343,6 +370,7 @@ export async function changeUserPassword(
     .update({ password_hash: passwordHash, password_salt: salt })
     .eq("id", userId);
   assertNoError(result, "updating password");
+  await destroyOtherSessions(userId, currentToken);
 }
 
 // Only ever called after the caller has proven phone ownership via OTP
@@ -350,8 +378,8 @@ export async function changeUserPassword(
 // password here by design, since the whole point is recovering an account
 // whose password was forgotten.
 export async function resetPasswordForPhone(phone: string, newPassword: string): Promise<void> {
-  if (!newPassword || newPassword.length < 4) {
-    throw new ValidationError("New password must be at least 4 characters.");
+  if (!newPassword || newPassword.length < 8) {
+    throw new ValidationError("New password must be at least 8 characters.");
   }
   const db = getDb();
   const result = await db
@@ -369,6 +397,10 @@ export async function resetPasswordForPhone(phone: string, newPassword: string):
     .update({ password_hash: passwordHash, password_salt: salt })
     .eq("id", row.id as string);
   assertNoError(updateResult, "updating password");
+  // No current session to except here (this is the "I'm locked out"
+  // recovery path) — and this is exactly the scenario where an attacker
+  // holding a stolen session is most likely, so clear all of them.
+  await destroyOtherSessions(row.id as string);
 }
 
 export async function updateUserAvatar(userId: string, avatarUrl: string): Promise<User> {

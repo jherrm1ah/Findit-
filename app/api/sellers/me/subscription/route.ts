@@ -13,6 +13,17 @@ import {
 } from "@/lib/subscriptions";
 import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+const MAX_CHECKOUT_ATTEMPTS = 10;
+const CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
+// If a seller double-clicks "Upgrade" (or retries after a slow response),
+// each attempt would otherwise create its own Paystack checkout session —
+// and if they complete more than one, they're charged more than once for
+// the same upgrade. Blocking a second attempt while an earlier one is
+// still fresh closes that off without needing to store/reuse Paystack's
+// authorization URL.
+const PENDING_PAYMENT_STALE_MS = 15 * 60 * 1000;
 
 async function requireSellerId(req: NextRequest): Promise<{ user: User; sellerId: string } | NextResponse> {
   const user = await getSessionUser(req);
@@ -62,6 +73,14 @@ export async function POST(req: NextRequest) {
   }
   const billingPeriod: BillingPeriod = body.billingPeriod ?? "monthly";
 
+  const { allowed, retryAfterSeconds } = checkRateLimit(`store-checkout:${ctx.user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many checkout attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
+
   try {
     const plan = await getPlan(body.planId);
     if (!plan || plan.kind !== "store") {
@@ -91,8 +110,26 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const reference = "findit_sub_" + crypto.randomUUID();
     const db = getDb();
+    const recentPendingResult = await db
+      .from("payments")
+      .select("id, created_at")
+      .eq("user_id", ctx.user.id)
+      .eq("kind", "subscription")
+      .eq("status", "pending")
+      .contains("metadata", { sellerId: ctx.sellerId, planId: plan.id })
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const recentPending = assertNoError(recentPendingResult, "checking for a pending payment") as { created_at: string } | null;
+    if (recentPending && Date.now() - new Date(recentPending.created_at).getTime() < PENDING_PAYMENT_STALE_MS) {
+      return NextResponse.json(
+        { error: "You already have a checkout in progress for this plan. Finish that payment, or wait a few minutes and try again." },
+        { status: 409 }
+      );
+    }
+
+    const reference = "findit_sub_" + crypto.randomUUID();
     const insertResult = await db.from("payments").insert({
       id: reference,
       user_id: ctx.user.id,

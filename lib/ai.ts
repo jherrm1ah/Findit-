@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CATEGORY_LABELS as RAW_CATEGORY_LABELS } from "./categories";
+import { ValidationError } from "./repo";
 
 const CATEGORY_LABELS: Record<string, string> = RAW_CATEGORY_LABELS;
 
@@ -14,7 +15,7 @@ let client: GoogleGenAI | null = null;
 function getClient(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new Error(
+    throw new ValidationError(
       "AI classification isn't configured yet (missing GEMINI_API_KEY). Get a key from " +
         "https://ai.google.dev and add it to .env.local."
     );
@@ -37,7 +38,7 @@ const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
 
 export async function classifyRequest(description: string): Promise<RequestClassification> {
   if (!description.trim()) {
-    throw new Error("Describe what you're looking for first.");
+    throw new ValidationError("Describe what you're looking for first.");
   }
 
   const ai = getClient();
@@ -71,14 +72,14 @@ export async function classifyRequest(description: string): Promise<RequestClass
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (/quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(message)) {
-      throw new Error("AI classification is rate-limited right now — try again in a moment.");
+      throw new ValidationError("AI classification is rate-limited right now — try again in a moment.");
     }
-    throw new Error("Couldn't reach the AI classifier — try again.");
+    throw new ValidationError("Couldn't reach the AI classifier — try again.");
   }
 
   const text = response.text;
   if (!text) {
-    throw new Error("The AI classifier didn't return anything usable — try rephrasing.");
+    throw new ValidationError("The AI classifier didn't return anything usable — try rephrasing.");
   }
 
   let parsed: {
@@ -90,7 +91,7 @@ export async function classifyRequest(description: string): Promise<RequestClass
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("The AI classifier returned something unexpected — try again.");
+    throw new ValidationError("The AI classifier returned something unexpected — try again.");
   }
 
   const category = typeof parsed.category === "string" && CATEGORY_KEYS.includes(parsed.category)

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser, changeUserPassword } from "@/lib/auth";
+import { getSessionUser, changeUserPassword, SESSION_COOKIE } from "@/lib/auth";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
 
@@ -32,7 +32,8 @@ export async function PATCH(req: NextRequest) {
   }
 
   try {
-    await changeUserPassword(user.id, body.currentPassword, body.newPassword);
+    const currentToken = req.cookies.get(SESSION_COOKIE)?.value;
+    await changeUserPassword(user.id, body.currentPassword, body.newPassword, currentToken);
     return NextResponse.json({ ok: true });
   } catch (err) {
     return errorResponse(err, "Couldn't update your password.");

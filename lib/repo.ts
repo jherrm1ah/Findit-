@@ -1512,10 +1512,23 @@ export async function acceptOffer(
   // caller can't distinguish "doesn't exist" from "not yours".
   if (request.user_id !== userId) return null;
 
-  await assertNoError(
-    await db.from("offers").update({ accepted: true }).eq("id", offerId),
-    "accepting offer"
-  );
+  // Conditional on accepted still being false — without this, accepting the
+  // same offer twice (a double-tap, a back-button-then-resubmit, or two
+  // near-simultaneous requests) creates a second real order from one offer,
+  // since nothing else here checks whether it was already accepted. Only
+  // the call that actually flips accepted false -> true proceeds; a second
+  // one gets treated the same as "not found" rather than creating a
+  // duplicate order.
+  const claimResult = await db
+    .from("offers")
+    .update({ accepted: true })
+    .eq("id", offerId)
+    .eq("accepted", false)
+    .select("id")
+    .maybeSingle();
+  const claimed = assertNoError(claimResult, "accepting offer") as Row | null;
+  if (!claimed) return null;
+
   await assertNoError(
     await db.from("requests").update({ status: "matched" }).eq("id", requestId),
     "updating request status"
@@ -1642,7 +1655,25 @@ export async function getOrCreateConversation(buyerId: string, sellerId: string)
   const insertResult = await db
     .from("conversations")
     .insert({ id, buyer_id: buyerId, seller_id: sellerId });
-  assertNoError(insertResult, "creating conversation");
+  if (insertResult.error) {
+    // 23505 = unique_violation on (buyer_id, seller_id) — a concurrent
+    // request (e.g. a double-tap on "message seller") already created this
+    // exact conversation between the read above and this insert. That's a
+    // race, not a real failure: use the one that won instead of surfacing
+    // an error, and never retry the insert itself (that would risk a
+    // second row with a different id colliding on the same unique pair).
+    if (insertResult.error.code === "23505") {
+      const raceResult = await db
+        .from("conversations")
+        .select("id")
+        .eq("buyer_id", buyerId)
+        .eq("seller_id", sellerId)
+        .single();
+      const race = assertNoError(raceResult, "loading conversation after a race") as Row;
+      return race.id as string;
+    }
+    throw new Error(`creating conversation: ${insertResult.error.message}`);
+  }
   return id;
 }
 

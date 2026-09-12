@@ -175,7 +175,7 @@ export default function AccountDetails({
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="At least 4 characters"
+              placeholder="At least 8 characters"
               className="input"
             />
           </Field>

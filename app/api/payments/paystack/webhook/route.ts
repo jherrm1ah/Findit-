@@ -57,10 +57,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    await db
+    // Conditional on the row still not being 'success' — Paystack can (and
+    // does) redeliver the same webhook, and two deliveries arriving close
+    // together would otherwise both pass the `payment.status === "success"`
+    // check above (both read it before either writes) and both apply the
+    // plan change. Only the delivery that actually flips the row proceeds.
+    const claimResult = await db
       .from("payments")
       .update({ status: "success", paid_at: verified.paidAt ?? new Date().toISOString() })
-      .eq("id", payment.id as string);
+      .eq("id", payment.id as string)
+      .neq("status", "success")
+      .select("id")
+      .maybeSingle();
+    const claimed = assertNoError(claimResult, "recording successful payment") as Row | null;
+    if (!claimed) {
+      return NextResponse.json({ received: true }); // a concurrent delivery already processed this one
+    }
 
     const metadata = (payment.metadata as { sellerId?: string; planId?: string; billingPeriod?: BillingPeriod } | null) ?? null;
     if (metadata?.sellerId && metadata.planId) {

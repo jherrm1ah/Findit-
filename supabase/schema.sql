@@ -77,12 +77,13 @@ create index if not exists sessions_user_id_idx on sessions(user_id);
 -- sellers — the admin-verification record for a seller account.
 -- Properly linked to users now (the old SQLite version only linked these by
 -- an "id starts with seller_" naming convention, which this fixes). `status`
--- is the original, minimal admin gate (pending/approved/rejected) and still
--- controls whether a seller can transact at all — only 'rejected' blocks
--- listing today. `verification_status` below is a separate, richer layer
--- (who is this seller, what evidence backs that up) that drives the public
--- New/Verified/Trusted badge — see lib/sellerVerification.ts and migration
--- 012. It never gates selling on its own; it's trust information for buyers.
+-- is the account lifecycle gate (pending/approved/rejected/suspended) —
+-- everything but 'approved' blocks listing/offering/editing, see
+-- lib/repo.ts#assertSellerCanTransact. `verification_status` below is a
+-- separate, richer layer (who is this seller, what evidence backs that up)
+-- that drives the public New/Verified/Trusted badge — see
+-- lib/sellerVerification.ts and migration 012. It never gates selling on
+-- its own; it's trust information for buyers.
 -- ---------------------------------------------------------------------------
 
 create table if not exists sellers (
