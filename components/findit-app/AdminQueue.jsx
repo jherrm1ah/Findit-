@@ -600,6 +600,18 @@ function SellerAccountList({ sellers, onStatusChange }) {
               {s.planName || "Free Seller"} · {s.activeProductCount} active listing{s.activeProductCount === 1 ? "" : "s"}
             </p>
           )}
+          {/* The seller's dedicated storefront. Shown to admins whatever the
+              plan says, because a suspended or downgraded store still needs
+              to be findable here — the public page is gated separately. */}
+          {s.storeSlug && (
+            <p className="text-[11px] text-[#8A8372] mb-2">
+              Store:{" "}
+              <a href={`/store/${s.storeSlug}`} target="_blank" rel="noreferrer" className="text-[#7C3AED] font-medium">
+                /store/{s.storeSlug}
+              </a>
+              {s.storeSlugClaimedAt && ` · since ${new Date(s.storeSlugClaimedAt).toLocaleDateString("en-NG")}`}
+            </p>
+          )}
           {s.statusReason && (s.status === "rejected" || s.status === "suspended") && (
             <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2.5 py-1.5 mb-2">Reason: {s.statusReason}</p>
           )}

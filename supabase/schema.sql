@@ -112,6 +112,13 @@ create table if not exists sellers (
   -- Reused for a rejection reason or a suspension reason — a decision that
   -- restricts a seller always comes with one shown back to them.
   status_reason text,
+  -- Dedicated public storefront (migration 023). Null until a seller on a
+  -- PAID plan claims one; permanent once claimed, so shared links keep
+  -- working even after a rename or a downgrade. Whether the page is publicly
+  -- visible is computed from the live subscription on every request, never
+  -- stored — see lib/store.ts.
+  store_slug text,
+  store_slug_claimed_at timestamptz,
   created_at timestamptz not null default now(),
   -- Real backing for the Store subscription "customization" feature (see
   -- subscription_plans.customization_level below) — settable only when the
@@ -183,6 +190,23 @@ create table if not exists seller_verification_evidence (
   check ((storage_path is not null) <> (text_value is not null))
 );
 create index if not exists seller_verification_evidence_seller_id_idx on seller_verification_evidence(seller_id);
+
+-- Only sellers who have claimed a storefront carry a slug, so the index is
+-- partial. It is also what makes allocation safe under concurrency: the app
+-- tries candidates and lets a unique violation decide the winner.
+create unique index if not exists sellers_store_slug_unique_idx
+  on sellers(store_slug)
+  where store_slug is not null;
+
+-- Every slug a store has ever used keeps resolving to that same store, so a
+-- link shared months ago never lands on a stranger's shop. See migration 023.
+create table if not exists store_slug_aliases (
+  slug text primary key,
+  seller_id text not null references sellers(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+create index if not exists store_slug_aliases_seller_id_idx on store_slug_aliases(seller_id);
+alter table store_slug_aliases enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- categories

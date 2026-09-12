@@ -414,6 +414,13 @@ export const api = {
     }).then((d) => d.user),
 
   getStorePlans: () => request("/api/subscriptions/plans"),
+  // The seller's own dedicated storefront: its slug, its public URL, and
+  // whether their current plan actually publishes it.
+  getMyStore: () => request("/api/sellers/me/store").then((d) => d.store),
+  // Idempotent server-side — a repeat returns the existing link rather than
+  // creating a second one.
+  claimMyStore: () => request("/api/sellers/me/store", { method: "POST" }),
+
   getMyStorePlan: () => request("/api/sellers/me/subscription"),
   changeStorePlan: (planId, billingPeriod = "monthly") =>
     request("/api/sellers/me/subscription", {

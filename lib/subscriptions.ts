@@ -41,7 +41,7 @@ export type Subscription = {
   createdAt: string;
 };
 
-const FREE_STORE_PLAN_ID = "store_free";
+export const FREE_STORE_PLAN_ID = "store_free";
 const PERIOD_DAYS: Record<BillingPeriod, number> = { monthly: 30, yearly: 365 };
 
 function randomId(prefix: string): string {

@@ -1,7 +1,7 @@
 import { getDb, assertNoError } from "./db";
 import { computeVerificationLevel, type VerificationLevel, type VerificationStatus } from "./sellerVerificationLevels";
 import { buildSellerNameIndex, matchSellerIdByName } from "./sellerIdentityMatch";
-import { getStorePlanDisplayMap } from "./subscriptions";
+import { getStorePlanDisplayMap, FREE_STORE_PLAN_ID } from "./subscriptions";
 import type { Product } from "./repo";
 
 /* -------------------------------------------------------------------------- */
@@ -43,6 +43,11 @@ export type PublicSellerProfile = {
   memberSince: string | null;
   verificationLevel: VerificationLevel;
   proBadge: boolean;
+  // The seller's dedicated storefront, but ONLY while their paid plan
+  // actually publishes it. A downgraded seller keeps their slug (it stays
+  // reserved for them) and this goes back to null, so the profile never
+  // advertises a link that would land on a closed store.
+  storeSlug: string | null;
   rating: number | null;
   reviewCount: number;
   completedOrderCount: number;
@@ -60,7 +65,7 @@ export type PublicSellerProfileResult =
 // Only these columns are ever read. Adding a column to the sellers table does
 // not silently widen what a buyer can see.
 const PUBLIC_SELLER_COLUMNS =
-  "id, name, status, logo_url, banner_url, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, created_at";
+  "id, name, status, logo_url, banner_url, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, store_slug, created_at";
 
 // A suspended or rejected seller has no storefront. Returning "not found"
 // rather than "suspended" is deliberate: a buyer has no business learning
@@ -172,6 +177,8 @@ export async function getPublicSellerProfile(
         avgRating: rating,
       }),
       proBadge: display?.proBadge ?? false,
+      storeSlug:
+        display && display.planId !== FREE_STORE_PLAN_ID ? ((row.store_slug as string | null) ?? null) : null,
       rating,
       reviewCount: ratings.length,
       completedOrderCount,

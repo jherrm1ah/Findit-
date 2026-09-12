@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -464,6 +464,7 @@ export default function SellerDashboard({
   verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
+  myStore, onClaimStore, claimingStore,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -618,6 +619,65 @@ export default function SellerDashboard({
           </div>
           <span className="text-[11px] font-semibold text-[#7C3AED] shrink-0">Manage</span>
         </button>
+      )}
+
+      {/* The seller's dedicated public storefront. Eligibility is decided
+          server-side from the live subscription (lib/store.ts); this card
+          only reflects the answer it already gave. */}
+      {myStore && (
+        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+              <LinkIcon size={15} className="text-[#7C3AED]" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">Your store link</p>
+              <p className="text-[11px] text-[#6B6483]">
+                {myStore.slug
+                  ? myStore.claimedButUnavailable
+                    ? "Saved for you \u2014 reopens when your plan is active again"
+                    : "Share this anywhere"
+                  : myStore.eligible
+                    ? "Claim your own shareable store page"
+                    : myStore.reason}
+              </p>
+            </div>
+          </div>
+
+          {myStore.slug ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <code className="text-[11.5px] text-[#1E1B4B] bg-[#F7F5FD] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 break-all">
+                {myStore.url}
+              </code>
+              {!myStore.claimedButUnavailable && (
+                <a
+                  href={`/store/${myStore.slug}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[11.5px] font-semibold text-[#7C3AED] px-2.5 py-1.5"
+                >
+                  Visit
+                </a>
+              )}
+            </div>
+          ) : myStore.eligible ? (
+            <button
+              onClick={onClaimStore}
+              disabled={claimingStore}
+              className="text-[12px] font-semibold text-white px-4 py-2 rounded-full disabled:opacity-60"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              {claimingStore ? "Creating\u2026" : "Create my store link"}
+            </button>
+          ) : (
+            <button
+              onClick={() => go?.("storePlans")}
+              className="text-[12px] font-semibold text-[#7C3AED]"
+            >
+              See Store plans
+            </button>
+          )}
+        </div>
       )}
 
       {verification && verification.status !== "approved" && (

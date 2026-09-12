@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar } from "lucide-react";
+import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -134,6 +134,20 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
             )}
           </div>
         </div>
+
+        {/* The dedicated storefront. Present only while the seller's paid
+            plan actually publishes it — lib/sellerPublicProfile.ts returns
+            null for storeSlug otherwise, so this never advertises a link
+            that would land on a closed store. */}
+        {profile.storeSlug && (
+          <a
+            href={`/store/${profile.storeSlug}`}
+            className="w-full flex items-center justify-center gap-2 text-white text-[13px] font-semibold py-3 rounded-xl mb-4"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            <Store size={15} /> Visit store
+          </a>
+        )}
 
         {profile.description && (
           <p className="text-[12.5px] text-[#514B67] leading-relaxed mb-4">{profile.description}</p>

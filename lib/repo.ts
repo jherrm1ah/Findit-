@@ -119,6 +119,12 @@ export type Seller = {
   phone: string | null;
   status: SellerStatus;
   statusReason: string | null;
+  // The seller's dedicated storefront slug, for the admin Sellers list. Admin
+  // only — the public DTO decides separately whether a buyer sees this, since
+  // a lapsed plan closes the page while the slug stays reserved. See
+  // lib/store.ts.
+  storeSlug: string | null;
+  storeSlugClaimedAt: string | null;
   createdAt: string;
 };
 
@@ -1180,6 +1186,8 @@ function rowToSeller(row: Row): Seller {
     phone: (userRow?.phone as string | undefined) ?? null,
     status: row.status as SellerStatus,
     statusReason: (row.status_reason as string | null) ?? null,
+    storeSlug: (row.store_slug as string | null) ?? null,
+    storeSlugClaimedAt: (row.store_slug_claimed_at as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }
