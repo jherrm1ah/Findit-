@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOrders, createOrderFromProduct } from "@/lib/repo";
+import { listOrders, createOrderFromProduct, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -12,8 +12,11 @@ export async function GET(req: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: "Log in to see your orders." }, { status: 401 });
   }
-  const sellerName = user.role === "seller" ? user.businessName : null;
-  return NextResponse.json({ orders: await listOrders(user.id, sellerName) });
+  const seller =
+    user.role === "seller" && user.businessName
+      ? { name: user.businessName, id: await getSellerIdForUser(user.id) }
+      : null;
+  return NextResponse.json({ orders: await listOrders(user.id, seller) });
 }
 
 export async function POST(req: NextRequest) {

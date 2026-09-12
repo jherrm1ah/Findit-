@@ -1906,7 +1906,10 @@ export default function AdminQueue({
     can("support") && { key: "support", label: "Support", icon: MessageCircle },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
-    { key: "activity", label: "Activity", icon: ShieldCheck },
+    // Cross-domain audit trail (every admin's actions, not just this
+    // admin's own domain) — same super_admin-only visibility as Admin
+    // tools above, and matching GET /api/admin/actions server-side.
+    isSuperAdmin && { key: "activity", label: "Activity", icon: ShieldCheck },
   ].filter(Boolean);
 
   const [tab, setTab] = useState("overview");

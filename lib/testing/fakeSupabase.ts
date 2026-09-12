@@ -1,7 +1,7 @@
 // A minimal in-memory stand-in for the Supabase JS client — just enough of
 // the chainable query-builder surface (.from/.select/.insert/.update/
-// .delete/.eq/.neq/.gte/.lte/.in/.order/.limit/.single/.maybeSingle, plus
-// being awaitable directly) for the actual lib/repo.ts and lib/payments.ts
+// .delete/.eq/.neq/.gte/.lte/.in/.is/.order/.limit/.single/.maybeSingle,
+// plus being awaitable directly) for the actual lib/repo.ts and lib/payments.ts
 // functions to run against it unmodified. Used by lib/**/*.integration.test.ts
 // to exercise real multi-step flows (not reimplemented test-only logic)
 // without a live Supabase project — see those files for how it's wired in
@@ -62,6 +62,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
   }
   in(col: string, values: unknown[]) {
     this.filters.push((r) => values.includes(r[col]));
+    return this;
+  }
+  is(col: string, val: null | boolean) {
+    this.filters.push((r) => (r[col] ?? null) === val);
     return this;
   }
   order(col: string, opts?: { ascending?: boolean }) {

@@ -24,28 +24,49 @@ export const MIN_ORDERS_FOR_DISPUTE_RATE = 3;
 // Pure — given every order's seller/escrow_status, which sellers have a
 // real, statistically meaningful dispute pattern, ranked worst-first.
 // Unit-testable without a database.
+//
+// Grouped by business name first, then split by seller_id: business_name
+// has no uniqueness constraint (see lib/sellerIdentityMatch.ts), so two
+// DIFFERENT real seller accounts can share a name — merging their orders
+// into one bucket would fabricate a risk signal (guilt by name collision,
+// or a real high-risk seller's rate diluted by a namesake's clean record).
+// seller_id uniquely identifies an account, so two distinct non-null
+// seller_ids under the same name are always two different sellers and are
+// never merged; orders that predate the seller_id backfill (null) are
+// folded into the one account they're unambiguous for, and left out
+// entirely — never guessed at — when the name is genuinely split between
+// two real accounts.
 export function computeSellerRiskSignals(
   orders: Array<{ seller: string; sellerId: string | null; escrowStatus: string }>
 ): SellerRiskSignal[] {
-  const bySeller = new Map<string, { sellerId: string | null; total: number; disputed: number }>();
+  const byName = new Map<string, Array<{ sellerId: string | null; escrowStatus: string }>>();
   for (const order of orders) {
-    const entry = bySeller.get(order.seller) ?? { sellerId: order.sellerId, total: 0, disputed: 0 };
-    entry.total++;
-    if (order.escrowStatus === "disputed") entry.disputed++;
-    if (!entry.sellerId && order.sellerId) entry.sellerId = order.sellerId;
-    bySeller.set(order.seller, entry);
+    const group = byName.get(order.seller) ?? [];
+    group.push(order);
+    byName.set(order.seller, group);
   }
 
   const signals: SellerRiskSignal[] = [];
-  for (const [sellerName, entry] of bySeller) {
-    if (entry.total < MIN_ORDERS_FOR_DISPUTE_RATE || entry.disputed === 0) continue;
-    signals.push({
-      sellerName,
-      sellerId: entry.sellerId,
-      totalOrders: entry.total,
-      disputedOrders: entry.disputed,
-      disputeRate: entry.disputed / entry.total,
-    });
+  for (const [sellerName, group] of byName) {
+    const distinctIds = [...new Set(group.map((o) => o.sellerId).filter((id): id is string => id !== null))];
+
+    const buckets =
+      distinctIds.length > 1
+        ? distinctIds.map((id) => ({ sellerId: id as string | null, orders: group.filter((o) => o.sellerId === id) }))
+        : [{ sellerId: distinctIds[0] ?? null, orders: group }];
+
+    for (const bucket of buckets) {
+      const total = bucket.orders.length;
+      const disputed = bucket.orders.filter((o) => o.escrowStatus === "disputed").length;
+      if (total < MIN_ORDERS_FOR_DISPUTE_RATE || disputed === 0) continue;
+      signals.push({
+        sellerName,
+        sellerId: bucket.sellerId,
+        totalOrders: total,
+        disputedOrders: disputed,
+        disputeRate: disputed / total,
+      });
+    }
   }
 
   return signals.sort((a, b) => b.disputeRate - a.disputeRate);

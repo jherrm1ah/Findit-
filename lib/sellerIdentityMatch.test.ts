@@ -170,8 +170,12 @@ describe("sellerOwnsItem", () => {
     expect(sellerOwnsItem("Chidi Electronics", "s1", "Chidi Electronics", null)).toBe(true);
   });
 
-  it("falls back to name-only matching when the caller has no seller_id yet", () => {
-    expect(sellerOwnsItem("Chidi Electronics", null, "Chidi Electronics", "s1")).toBe(true);
+  it("THE BUG: never falls back to name-only just because the caller's own seller_id is unresolved", () => {
+    // The item DOES carry a real seller_id ("s1") — someone else's shared
+    // name plus an unresolved seller_id lookup must never be enough to
+    // pass this check; that would reopen the exact collision the seller_id
+    // comparison exists to close.
+    expect(sellerOwnsItem("Chidi Electronics", null, "Chidi Electronics", "s1")).toBe(false);
   });
 
   it("blocks when the name simply doesn't match, seller_id aside", () => {

@@ -586,34 +586,43 @@ export const ORDER_STATUSES = [
   "Delivered",
 ] as const;
 
-// A buyer's own orders, plus (when sellerName is given) orders placed
-// against that seller's business name so they have something to fulfill.
-// There is no more "shared guest content" — every order belongs to a real
+// A buyer's own orders, plus (when a seller is given) orders placed
+// against that seller's account so they have something to fulfill. There
+// is no more "shared guest content" — every order belongs to a real
 // logged-in buyer (see the "guest checkout" note in app/api/orders/route.ts).
-export async function listOrders(userId: string, sellerName?: string | null): Promise<Order[]> {
+export async function listOrders(
+  userId: string,
+  seller?: { name: string; id: string | null } | null
+): Promise<Order[]> {
   const db = getDb();
-  if (!sellerName) {
+  if (!seller) {
     const result = await db.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     const rows = assertNoError(result, "listing orders") as Row[];
     return rows.map(rowToOrder);
   }
 
-  // Two separate .eq() queries merged in JS, not a single .or(...) filter —
-  // sellerName is a seller's own business name, which they set to whatever
-  // text they want (see updateSellerBusinessName, which has no character
-  // restriction). Interpolating it into a raw PostgREST filter STRING would
-  // let a crafted name (containing a comma) inject an extra OR condition
-  // and read a completely different seller's order history. .eq() takes
-  // its value as a real parameter, not a string the caller has to escape,
-  // so it can't be broken out of this way.
-  const [ownResult, sellerResult] = await Promise.all([
-    db.from("orders").select("*").eq("user_id", userId),
-    db.from("orders").select("*").eq("seller", sellerName),
-  ]);
-  const ownRows = assertNoError(ownResult, "listing orders") as Row[];
-  const sellerRows = assertNoError(sellerResult, "listing seller orders") as Row[];
+  // business_name has no uniqueness constraint (see the seller_id migration
+  // rationale), so a plain name match alone would return a DIFFERENT
+  // seller's entire order history to anyone who signs up with the same
+  // name. When this seller has a real seller_id, match orders by that
+  // instead — safe even under a name collision — and only fall back to a
+  // name match for orders that predate the seller_id backfill (seller_id
+  // still null on the row itself, so a name collision can't misattribute
+  // them to the wrong account). Only a seller with no seller_id resolvable
+  // at all (shouldn't normally happen for an existing account) falls back
+  // to the legacy name-only match.
+  const queries = [db.from("orders").select("*").eq("user_id", userId)];
+  if (seller.id) {
+    queries.push(db.from("orders").select("*").eq("seller_id", seller.id));
+    queries.push(db.from("orders").select("*").eq("seller", seller.name).is("seller_id", null));
+  } else {
+    queries.push(db.from("orders").select("*").eq("seller", seller.name));
+  }
+
+  const results = await Promise.all(queries);
+  const rowSets = results.map((r, i) => assertNoError(r, i === 0 ? "listing orders" : "listing seller orders") as Row[]);
   const byId = new Map<string, Row>();
-  for (const row of [...ownRows, ...sellerRows]) byId.set(row.id as string, row);
+  for (const row of rowSets.flat()) byId.set(row.id as string, row);
   return [...byId.values()]
     .map(rowToOrder)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());

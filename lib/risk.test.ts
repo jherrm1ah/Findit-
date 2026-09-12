@@ -42,4 +42,26 @@ describe("computeSellerRiskSignals", () => {
     const signals = computeSellerRiskSignals(orders);
     expect(signals[0].sellerId).toBe("seller_123");
   });
+
+  it("THE BUG: never merges two different real sellers that happen to share a business name", () => {
+    // business_name has no uniqueness constraint — "seller_a" is genuinely
+    // risky, "seller_b" is genuinely clean, and they just happen to be
+    // named the same thing. Before this fix, grouping by name alone would
+    // merge them into one misleading signal.
+    const orders = [
+      order("Kemi's Kitchen", "disputed", "seller_a"),
+      order("Kemi's Kitchen", "disputed", "seller_a"),
+      order("Kemi's Kitchen", "released", "seller_a"),
+      order("Kemi's Kitchen", "released", "seller_b"),
+      order("Kemi's Kitchen", "released", "seller_b"),
+      order("Kemi's Kitchen", "released", "seller_b"),
+    ];
+    const signals = computeSellerRiskSignals(orders);
+    expect(signals).toEqual([
+      { sellerName: "Kemi's Kitchen", sellerId: "seller_a", totalOrders: 3, disputedOrders: 2, disputeRate: 2 / 3 },
+    ]);
+    // seller_b never shows up at all — clean record, correctly excluded —
+    // and critically its 3 clean orders never dilute seller_a's real rate.
+    expect(signals.find((s) => s.sellerId === "seller_b")).toBeUndefined();
+  });
 });

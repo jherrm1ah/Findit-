@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createFakeSupabase, type FakeSupabase } from "./testing/fakeSupabase";
-import { acceptOffer } from "./repo";
+import { acceptOffer, listOrders } from "./repo";
 import { confirmOrderPayment } from "./payments";
 
 // These exercise the ACTUAL lib/repo.ts / lib/payments.ts functions against
@@ -149,5 +149,41 @@ describe("confirmOrderPayment — webhook redelivery", () => {
 
     expect(fakeDb.dump("orders")).toHaveLength(1);
     expect(fakeDb.dump("notifications")).toHaveLength(1); // not 2
+  });
+});
+
+describe("listOrders — business-name collision", () => {
+  // business_name has no uniqueness constraint (see the seller_id
+  // migration rationale in lib/sellerIdentityMatch.ts) — two different
+  // seller accounts, "seller_1" and "seller_2", both named "Kemi's
+  // Kitchen" here on purpose.
+  function seedTwoSellersSharingAName() {
+    fakeDb.reset({
+      orders: [
+        { id: "ORD-1", user_id: "buyer_1", item: "Blender", seller: "Kemi's Kitchen", seller_id: "seller_1", price: 15000, status: "Awaiting payment", created_at: new Date().toISOString() },
+        { id: "ORD-2", user_id: "buyer_2", item: "Kettle", seller: "Kemi's Kitchen", seller_id: "seller_2", price: 8000, status: "Awaiting payment", created_at: new Date().toISOString() },
+        // Predates the seller_id backfill — no seller_id at all, so it
+        // can't be misattributed to whichever seller_id we filter by.
+        { id: "ORD-3", user_id: "buyer_3", item: "Toaster", seller: "Kemi's Kitchen", seller_id: null, price: 6000, status: "Delivered", created_at: new Date().toISOString() },
+      ],
+    });
+  }
+
+  it("never returns another seller's orders just because the business name matches", async () => {
+    seedTwoSellersSharingAName();
+
+    const orders = await listOrders("seller_user_1", { name: "Kemi's Kitchen", id: "seller_1" });
+
+    const ids = orders.map((o) => o.id).sort();
+    expect(ids).toEqual(["ORD-1", "ORD-3"]); // their own order + the unbackfilled legacy one, never ORD-2
+  });
+
+  it("still surfaces the other seller's own orders when THEY ask, not mixed together", async () => {
+    seedTwoSellersSharingAName();
+
+    const orders = await listOrders("seller_user_2", { name: "Kemi's Kitchen", id: "seller_2" });
+
+    const ids = orders.map((o) => o.id).sort();
+    expect(ids).toEqual(["ORD-2", "ORD-3"]);
   });
 });
