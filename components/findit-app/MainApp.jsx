@@ -5,7 +5,7 @@ import {
   Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate, IconButton } from "./shared";
-import { api } from "./api";
+import { api, setAdminLockedHandler } from "./api";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { applyCategoryOverrides } from "./data";
 import Home from "./Home";
@@ -16,6 +16,7 @@ import StorePlans from "./StorePlans";
 import FindItPro from "./FindItPro";
 import SellerOnboarding from "./SellerOnboarding";
 import AdminQueue from "./AdminQueue";
+import AdminLogin from "./AdminLogin";
 import BecomeSeller from "./BecomeSeller";
 import Profile from "./Profile";
 import AccountDetails from "./AccountDetails";
@@ -84,6 +85,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // badge (see the bottom nav below) so an admin sees something needs
   // attention without having to open the Admin tab and click into Alerts.
   const [adminAlertCount, setAdminAlertCount] = useState(0);
+
+  // Does this session currently hold a staff unlock? Being an admin is not
+  // enough — the Admin Queue needs a second sign-in that ages out (see
+  // AdminLogin.jsx and lib/adminRoles.ts#requireAdmin). This flag only
+  // decides which screen to show; the server checks the real unlock on every
+  // admin call, so a tampered client gains nothing here.
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
   // { subscription, plan, usage: { activeProducts, label }, plans } | null —
   // see GET /api/sellers/me/subscription. null until the first fetch, or
@@ -223,7 +231,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // history stack. If goBack() called `go()` here instead, going back would
   // re-push the screen just left, and a second "back" tap would bounce you
   // right back to it instead of continuing further back.
-  const navigateTo = (s, group) => {
+  const navigateTo = (target, group) => {
+    // The Admin Queue sits behind a second, explicit staff sign-in. Heading
+    // there without a live unlock lands on that screen instead. This is
+    // convenience, not access control — every admin route refuses a locked
+    // session on its own.
+    const s = target === "admin" && isAdmin && !adminUnlocked ? "adminLogin" : target;
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
@@ -846,6 +859,56 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
   }, [screen, isAdmin]);
 
+  // Leaving admin mode clears the unlock server-side but keeps the person
+  // logged in as themselves — stepping out of the admin area, not out of the
+  // app. The local flag drops either way: if the call failed, the next admin
+  // request will be refused anyway, and showing the queue as open would be
+  // the wrong lie to tell.
+  const handleLeaveAdmin = async () => {
+    try {
+      await api.endAdminSession();
+      showToast("Left admin mode.");
+    } catch (err) {
+      showToast(err.message || "Couldn't end your admin session cleanly.", "error");
+    } finally {
+      setAdminUnlocked(false);
+      setScreen("profile");
+    }
+  };
+
+  // An unlock outlives a page reload (it lives on the session row, not in
+  // memory), so ask once on load rather than making the admin sign in again
+  // for nothing. A non-admin never calls this.
+  useEffect(() => {
+    if (!isAdmin) {
+      setAdminUnlocked(false);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getAdminSession()
+      .then(({ unlocked }) => {
+        if (!cancelled) setAdminUnlocked(Boolean(unlocked));
+      })
+      .catch(() => {
+        if (!cancelled) setAdminUnlocked(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAdmin, user?.id]);
+
+  // The unlock can age out mid-session, so the first admin call to come back
+  // locked drops the flag and bounces to the staff screen — wherever that
+  // call was made from, without every caller handling it itself.
+  useEffect(() => {
+    setAdminLockedHandler(() => {
+      setAdminUnlocked(false);
+      setScreen((s) => (s === "admin" ? "adminLogin" : s));
+    });
+    return () => setAdminLockedHandler(null);
+  }, []);
+
   // The seller side of contacting the other party — scoped to a real order
   // of theirs (enforced server-side too), not a free-form "message any
   // buyer" search.
@@ -937,6 +1000,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             myLocation={myLocation}
             locationStatus={locationStatus}
             onEnableLocation={handleEnableLocation}
+            role={user?.role}
           />
         )}
         {screen === "browse" && (
@@ -1083,6 +1147,27 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onLoadAnalytics={handleLoadAnalytics}
               onLoadAlerts={handleLoadAlerts}
               onSendBroadcast={handleSendBroadcast}
+              onLeaveAdmin={handleLeaveAdmin}
+            />
+          ) : (
+            <RoleGate
+              title="Admin access needed"
+              message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
+              onLogout={onLogout}
+              logoutLabel="Log out"
+            />
+          )
+        )}
+        {screen === "adminLogin" && (
+          isAdmin ? (
+            <AdminLogin
+              user={user}
+              showToast={showToast}
+              onBack={() => navigateTo("profile")}
+              onUnlocked={() => {
+                setAdminUnlocked(true);
+                setScreen("admin");
+              }}
             />
           ) : (
             <RoleGate

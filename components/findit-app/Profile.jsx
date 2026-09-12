@@ -30,13 +30,20 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
     }
   };
 
+  const isAdmin = user.role === "admin";
+
   const CARDS = [
-    {
+    // Only an actual admin is shown this at all. It used to render for
+    // everyone with a "Staff only" subtitle, which told every buyer on the
+    // platform that an admin area exists and where its door is — no access
+    // was ever granted by it (the screen and every route check the role
+    // server-side), but advertising the door buys nothing.
+    isAdmin && {
       key: "admin",
       icon: ShieldCheck,
       label: "Admin queue",
-      subtitle: user.role === "admin" ? "Seller verification & unmatched requests" : "Staff only",
-      primary: user.role === "admin",
+      subtitle: "Seller verification & unmatched requests",
+      primary: true,
     },
     { key: "account", icon: ListOrdered, label: "My orders & saved items", subtitle: "Track deliveries, leave reviews" },
     { key: "myRequests", icon: PackageSearch, label: "My requests", subtitle: "See offers from real sellers" },
@@ -64,7 +71,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
             : user.businessName
           : "Tap \u201cStart selling on FindIt\u201d below to set one up",
     },
-  ];
+  ].filter(Boolean);
   const SETTINGS_ROWS = [
     // A buyer can turn this same account into a seller account — phone numbers
     // are unique, so without this they'd need a second phone number to sell.

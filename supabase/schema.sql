@@ -77,7 +77,13 @@ create table if not exists sessions (
   token text primary key,
   user_id text not null references users(id) on delete cascade,
   created_at timestamptz not null default now(),
-  expires_at timestamptz not null
+  expires_at timestamptz not null,
+  -- Staff sign-in (migration 020). Null = locked. Being logged in as an
+  -- admin is not enough to reach admin routes; the password is re-verified
+  -- on the staff screen and stamped here, and every admin route requires a
+  -- stamp newer than ADMIN_UNLOCK_MINUTES. Per-session on purpose, so an
+  -- unlock on one device never unlocks another.
+  admin_unlocked_at timestamptz
 );
 create index if not exists sessions_user_id_idx on sessions(user_id);
 

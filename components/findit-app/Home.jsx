@@ -18,7 +18,7 @@ const BANNERS = [
 
 export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
-  myLocation, locationStatus, onEnableLocation,
+  myLocation, locationStatus, onEnableLocation, role,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,15 +41,19 @@ export default function Home({
     .sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured))
     .slice(0, 8);
 
+  // The seller and admin entries are filtered by role rather than shown to
+  // everyone. Neither ever granted access — both screens and every route
+  // behind them check the role server-side — but listing an admin queue in a
+  // buyer's menu only advertises a door they can't open.
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },
     { label: "Browse catalogue", screen: "browse", icon: Search },
     { label: "Request an item", screen: "request", icon: PackageSearch },
     { label: "My orders & saved items", screen: "account", icon: ListOrdered },
     { label: "Notifications", screen: "notifications", icon: Bell },
-    { label: "Seller dashboard", screen: "seller", icon: LayoutDashboard },
-    { label: "Admin queue", screen: "admin", icon: ShieldCheck },
-  ];
+    role === "seller" && { label: "Seller dashboard", screen: "seller", icon: LayoutDashboard },
+    role === "admin" && { label: "Admin queue", screen: "admin", icon: ShieldCheck },
+  ].filter(Boolean);
 
   return (
     <div className="px-5 pt-4 pb-10">

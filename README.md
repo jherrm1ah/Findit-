@@ -158,6 +158,33 @@ they protect the platform, not just one action: you can't remove your own admin 
 needs a second admin), and the last remaining admin can never be demoted (would leave FindIt with
 no admin and no in-app way to create another one).
 
+### Staff sign-in (admin step-up)
+
+Being logged in as an admin is **not** enough to reach the Admin Queue. Opening it requires a
+second, explicit password entry on the staff screen (`components/findit-app/AdminLogin.jsx` →
+`POST /api/admin/session`), which stamps `sessions.admin_unlocked_at` (migration 020). Every admin
+route checks that stamp through `requireAdmin`/`requireSuperAdmin` and answers `403` with
+`code: "admin_unlock_required"` when it's missing or stale — so the gate holds for a direct API
+call, not just for someone clicking through the UI.
+
+Why it exists: an ordinary session lasts 30 days. Without this, a phone left unlocked on a desk, or
+a session cookie lifted once, is a permanent admin panel. The unlock is deliberately scoped to one
+session row, so it:
+
+- unlocks that **device only** — an admin unlocked on a laptop is still locked on their phone,
+- ages out on its own after `ADMIN_UNLOCK_MINUTES` (default 60), sliding forward while they work,
+- dies with the session on logout, and clears immediately on "Leave admin",
+- is recorded in the admin activity log at both ends (`admin_session_started` / `admin_session_ended`).
+
+The unlock grants **nothing on its own** — it is checked *after* the role and scoped-permission
+checks, so a stamped unlock on a buyer's session is worth exactly zero (covered by
+`lib/adminSession.integration.test.ts`, which tests the negative cases specifically).
+
+The Admin Queue entry point is also no longer advertised to non-admins: the profile card and the
+home menu link are rendered only for accounts whose role is `admin`. That was never an access
+control (both screens and every route behind them check server-side), but there's no reason to show
+every buyer where the staff door is.
+
 ## Code layout
 
 - `supabase/schema.sql` — the full Postgres schema (every table, no seed data). Run this once
