@@ -548,15 +548,31 @@ export const ORDER_STATUSES = [
 // logged-in buyer (see the "guest checkout" note in app/api/orders/route.ts).
 export async function listOrders(userId: string, sellerName?: string | null): Promise<Order[]> {
   const db = getDb();
-  let query = db.from("orders").select("*");
-  if (sellerName) {
-    query = query.or(`user_id.eq.${userId},seller.eq.${sellerName}`);
-  } else {
-    query = query.eq("user_id", userId);
+  if (!sellerName) {
+    const result = await db.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+    const rows = assertNoError(result, "listing orders") as Row[];
+    return rows.map(rowToOrder);
   }
-  const result = await query.order("created_at", { ascending: false });
-  const rows = assertNoError(result, "listing orders") as Row[];
-  return rows.map(rowToOrder);
+
+  // Two separate .eq() queries merged in JS, not a single .or(...) filter —
+  // sellerName is a seller's own business name, which they set to whatever
+  // text they want (see updateSellerBusinessName, which has no character
+  // restriction). Interpolating it into a raw PostgREST filter STRING would
+  // let a crafted name (containing a comma) inject an extra OR condition
+  // and read a completely different seller's order history. .eq() takes
+  // its value as a real parameter, not a string the caller has to escape,
+  // so it can't be broken out of this way.
+  const [ownResult, sellerResult] = await Promise.all([
+    db.from("orders").select("*").eq("user_id", userId),
+    db.from("orders").select("*").eq("seller", sellerName),
+  ]);
+  const ownRows = assertNoError(ownResult, "listing orders") as Row[];
+  const sellerRows = assertNoError(sellerResult, "listing seller orders") as Row[];
+  const byId = new Map<string, Row>();
+  for (const row of [...ownRows, ...sellerRows]) byId.set(row.id as string, row);
+  return [...byId.values()]
+    .map(rowToOrder)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 // Internal — every field here must already be trusted (derived from a real
@@ -1053,6 +1069,27 @@ export async function listSellers(): Promise<Seller[]> {
     .order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing sellers") as Row[];
   return rows.map(rowToSeller);
+}
+
+// Bulk, one-query version of countActiveProducts (lib/subscriptions.ts) —
+// for the admin seller list, which needs every seller's count at once, not
+// one at a time. Keyed by seller_id, so a listing with no seller_id yet
+// (pre-migration-009 data) just doesn't contribute to any seller's count
+// rather than throwing.
+export async function activeProductCountsBySeller(): Promise<Map<string, number>> {
+  const db = getDb();
+  const result = await db
+    .from("products")
+    .select("seller_id")
+    .eq("active", true)
+    .not("seller_id", "is", null);
+  const rows = assertNoError(result, "counting active listings by seller") as Row[];
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const sellerId = row.seller_id as string;
+    counts.set(sellerId, (counts.get(sellerId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 // Real counts for the admin overview — one query per lifecycle status,

@@ -30,6 +30,12 @@ export type User = {
   // Scoped admin sub-role — meaningful only when role === "admin". See
   // lib/adminRoles.ts. Null for every buyer/seller account.
   adminRole: AdminRole | null;
+  // Platform-level suspension (see migration 015) — independent of a
+  // seller's own status. getSessionUser never actually returns a suspended
+  // user (see getUserForToken below), so in practice these only ever show
+  // up in the admin user-management list, not on a live session.
+  suspended: boolean;
+  suspendedReason: string | null;
 };
 
 type Row = Record<string, unknown>;
@@ -48,6 +54,8 @@ function rowToUser(row: Row): User {
     avatarUrl: (row.avatar_url as string | null) ?? null,
     notificationsEnabled: (row.notifications_enabled as boolean | null) ?? true,
     adminRole: (row.admin_role as AdminRole | null) ?? null,
+    suspended: Boolean(row.suspended),
+    suspendedReason: (row.suspended_reason as string | null) ?? null,
   };
 }
 
@@ -526,15 +534,16 @@ export async function demoteFromAdmin(actingAdminId: string, phone: string): Pro
 }
 
 // Real counts for the admin overview — a plain role tally, nothing derived.
-export async function getUserCounts(): Promise<{ total: number; buyers: number; sellers: number; admins: number }> {
+export async function getUserCounts(): Promise<{ total: number; buyers: number; sellers: number; admins: number; suspended: number }> {
   const db = getDb();
-  const [total, buyers, sellers, admins] = await Promise.all([
+  const [total, buyers, sellers, admins, suspended] = await Promise.all([
     db.from("users").select("id", { count: "exact", head: true }),
     db.from("users").select("id", { count: "exact", head: true }).eq("role", "buyer"),
     db.from("users").select("id", { count: "exact", head: true }).eq("role", "seller"),
     db.from("users").select("id", { count: "exact", head: true }).eq("role", "admin"),
+    db.from("users").select("id", { count: "exact", head: true }).eq("suspended", true),
   ]);
-  for (const [label, result] of [["total", total], ["buyers", buyers], ["sellers", sellers], ["admins", admins]] as const) {
+  for (const [label, result] of [["total", total], ["buyers", buyers], ["sellers", sellers], ["admins", admins], ["suspended", suspended]] as const) {
     if (result.error) throw new Error(`counting ${label} users: ${result.error.message}`);
   }
   return {
@@ -542,7 +551,108 @@ export async function getUserCounts(): Promise<{ total: number; buyers: number; 
     buyers: buyers.count ?? 0,
     sellers: sellers.count ?? 0,
     admins: admins.count ?? 0,
+    suspended: suspended.count ?? 0,
   };
+}
+
+export type AdminUserListItem = {
+  id: string;
+  name: string;
+  phone: string;
+  role: Role;
+  businessName: string | null;
+  suspended: boolean;
+  suspendedReason: string | null;
+  createdAt: string;
+};
+
+const ADMIN_USERS_PAGE_SIZE = 20;
+
+// The real "browse every account" screen behind the admin Users tab — the
+// existing users/lookup route only ever finds one exact phone number, which
+// is fine for "look up this specific account" but useless for "show me
+// every suspended account" or "who signed up this week." Search terms have
+// commas/parens stripped before going into the filter string below: an
+// admin is already authorized to see every row here regardless (there's no
+// privilege boundary this could cross), but a stray comma would otherwise
+// just break the admin's own search with a confusing filter-syntax error.
+export async function listUsersForAdmin(input: {
+  role?: Role;
+  search?: string;
+  page?: number;
+}): Promise<{ users: AdminUserListItem[]; page: number; totalPages: number; total: number }> {
+  const db = getDb();
+  const page = Math.max(1, Math.floor(input.page ?? 1));
+  const from = (page - 1) * ADMIN_USERS_PAGE_SIZE;
+  const to = from + ADMIN_USERS_PAGE_SIZE - 1;
+
+  let query = db
+    .from("users")
+    .select("id, name, phone, role, business_name, suspended, suspended_reason, created_at", { count: "exact" });
+  if (input.role) query = query.eq("role", input.role);
+  const term = input.search?.trim().replace(/[,()]/g, "");
+  if (term) {
+    query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
+  }
+
+  const result = await query.order("created_at", { ascending: false }).range(from, to);
+  const rows = assertNoError(result, "listing users") as Row[];
+  const total = result.count ?? 0;
+
+  return {
+    users: rows.map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      phone: row.phone as string,
+      role: row.role as Role,
+      businessName: (row.business_name as string | null) ?? null,
+      suspended: Boolean(row.suspended),
+      suspendedReason: (row.suspended_reason as string | null) ?? null,
+      createdAt: row.created_at as string,
+    })),
+    page,
+    totalPages: Math.max(1, Math.ceil(total / ADMIN_USERS_PAGE_SIZE)),
+    total,
+  };
+}
+
+// Platform-level suspension — restricts using the account at all, unlike
+// a seller's own status (which only restricts selling). Takes effect
+// immediately (see getUserForToken above), not just on the account's next
+// login. Self-suspension is blocked so an admin can never lock themselves
+// out this way; that in turn means suspending another admin can never
+// strand the platform with zero usable admins, since the actor always
+// keeps their own access.
+export async function suspendUser(id: string, reason: string, actingAdminId: string): Promise<User> {
+  if (!reason?.trim()) {
+    throw new ValidationError("Give a reason — never a silent suspension.");
+  }
+  if (id === actingAdminId) {
+    throw new ValidationError("You can't suspend your own account.");
+  }
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ suspended: true, suspended_reason: reason.trim(), suspended_at: new Date().toISOString() })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "suspending account") as Row | null;
+  if (!row) throw new ValidationError("Account not found.");
+  return rowToUser(row);
+}
+
+export async function reactivateUser(id: string): Promise<User> {
+  const db = getDb();
+  const result = await db
+    .from("users")
+    .update({ suspended: false, suspended_reason: null, suspended_at: null })
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "reactivating account") as Row | null;
+  if (!row) throw new ValidationError("Account not found.");
+  return rowToUser(row);
 }
 
 export async function createSession(userId: string): Promise<string> {
@@ -574,7 +684,14 @@ export async function getUserForToken(token: string | undefined): Promise<User |
 
   const userResult = await db.from("users").select("*").eq("id", session.user_id).maybeSingle();
   const row = assertNoError(userResult, "loading session user") as Row | null;
-  return row ? rowToUser(row) : null;
+  if (!row) return null;
+  // A suspended account is treated as logged out immediately — not just
+  // blocked from a future login — so suspending an account takes effect on
+  // its very next request, not whenever it happens to log in again. The
+  // session row itself is left alone: reactivating restores this same
+  // session rather than forcing a fresh login.
+  if (row.suspended) return null;
+  return rowToUser(row);
 }
 
 export async function getSessionUser(req: NextRequest): Promise<User | null> {

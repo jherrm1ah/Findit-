@@ -530,6 +530,20 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const handleLookupUser = (phone) => api.lookupUserByPhone(phone);
 
+  const handleLoadUsers = (params) => api.getAdminUsers(params);
+
+  const handleSetUserSuspended = async (id, suspended, reason) => {
+    try {
+      const updated = await api.setUserSuspended(id, suspended, reason);
+      showToast(suspended ? `${updated.name} suspended.` : `${updated.name} reactivated.`);
+      api.getAdminActions().then(setAdminActions).catch(() => {});
+      return updated;
+    } catch (err) {
+      showToast(err.message || "Couldn't update that account — try again.", "error");
+      throw err;
+    }
+  };
+
   const handlePromoteToAdmin = async (phone, adminRole) => {
     const promoted = await api.promoteToAdmin(phone, adminRole);
     api.getAdminActions().then(setAdminActions).catch(() => {});
@@ -785,6 +799,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               showToast={showToast}
               sellerVerifications={sellerVerifications}
               onReviewSellerVerification={handleReviewSellerVerification}
+              onLoadUsers={handleLoadUsers}
+              onSetUserSuspended={handleSetUserSuspended}
             />
           ) : (
             <RoleGate

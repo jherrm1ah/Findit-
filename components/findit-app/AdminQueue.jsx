@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -13,6 +13,8 @@ function describeAction(a) {
   if (a.action === "seller.suspended") return `Suspended seller "${a.detail?.sellerName ?? a.targetId}"${a.detail?.reason ? `: ${a.detail.reason}` : ""}`;
   if (a.action === "user.promoted_admin") return `Made "${a.detail?.name ?? a.targetId}" an admin`;
   if (a.action === "user.demoted_admin") return `Removed "${a.detail?.name ?? a.targetId}"'s admin access`;
+  if (a.action === "user.suspended") return `Suspended account "${a.detail?.name ?? a.targetId}"${a.detail?.reason ? `: ${a.detail.reason}` : ""}`;
+  if (a.action === "user.reactivated") return `Reactivated account "${a.detail?.name ?? a.targetId}"`;
   if (a.action === "order.refunded") return `Refunded the buyer for "${a.detail?.item ?? a.targetId}"`;
   if (a.action === "order.payment_released") return `Released payment to ${a.detail?.seller ?? "the seller"} for "${a.detail?.item ?? a.targetId}"`;
   return `${a.action} (${a.targetType} ${a.targetId})`;
@@ -518,7 +520,12 @@ function SellerAccountList({ sellers, onStatusChange }) {
             <p className="text-[13px] font-semibold text-[#1E1B4B]">{s.name}</p>
             {STATUS_PILL[s.status]}
           </div>
-          <p className="text-[11px] text-[#6B6483] mb-2">{s.phone || "No phone on file"} · Applied {new Date(s.createdAt).toLocaleDateString("en-NG")}</p>
+          <p className="text-[11px] text-[#6B6483] mb-1">{s.phone || "No phone on file"} · Applied {new Date(s.createdAt).toLocaleDateString("en-NG")}</p>
+          {typeof s.activeProductCount === "number" && (
+            <p className="text-[11px] text-[#8A8372] mb-2">
+              {s.planName || "Free Seller"} · {s.activeProductCount} active listing{s.activeProductCount === 1 ? "" : "s"}
+            </p>
+          )}
           {s.statusReason && (s.status === "rejected" || s.status === "suspended") && (
             <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2.5 py-1.5 mb-2">Reason: {s.statusReason}</p>
           )}
@@ -638,10 +645,10 @@ function AdminOverview({ overview, onNavigate }) {
 
       {overview.users && (
         <OverviewSection icon={Users} title="Users">
-          <StatCard label="Total accounts" value={overview.users.total} />
-          <StatCard label="Buyers" value={overview.users.buyers} />
-          <StatCard label="Seller accounts" value={overview.users.sellers} />
-          <StatCard label="Admins" value={overview.users.admins} />
+          <StatCard label="Total accounts" value={overview.users.total} onClick={() => onNavigate("users")} />
+          <StatCard label="Buyers" value={overview.users.buyers} onClick={() => onNavigate("users")} />
+          <StatCard label="Seller accounts" value={overview.users.sellers} onClick={() => onNavigate("users")} />
+          <StatCard label="Suspended" value={overview.users.suspended} onClick={() => onNavigate("users")} />
         </OverviewSection>
       )}
 
@@ -651,6 +658,218 @@ function AdminOverview({ overview, onNavigate }) {
           <StatCard label="Free store plans" value={overview.finance.freeStoreSubscriptions} />
           <StatCard label="FindIt Pro (buyers)" value={overview.finance.activePlatformSubscriptions} />
         </OverviewSection>
+      )}
+    </div>
+  );
+}
+
+const ROLE_FILTERS = [
+  { value: "", label: "All" },
+  { value: "buyer", label: "Buyers" },
+  { value: "seller", label: "Sellers" },
+  { value: "admin", label: "Admins" },
+];
+
+const ROLE_LABEL = { buyer: "Buyer", seller: "Seller", admin: "Admin" };
+
+// The real "browse every account" screen — separate from TeamAccess's
+// exact-phone lookup (which only ever exists to find one account before
+// promoting it). Suspension here is platform-wide and independent of a
+// seller's own approve/reject/suspend status: this can restrict a buyer
+// who has never touched the seller flow at all.
+function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
+  const [role, setRole] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [actingId, setActingId] = useState(null);
+  const [reasonPromptFor, setReasonPromptFor] = useState(null);
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    onLoadUsers({ role: role || undefined, search: search || undefined, page })
+      .then((result) => {
+        if (!cancelled) setData(result);
+      })
+      .catch(() => {
+        if (!cancelled) setData(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role, search, page]);
+
+  const submitSearch = (e) => {
+    e.preventDefault();
+    setPage(1);
+    setSearch(searchInput.trim());
+  };
+
+  const act = async (id, suspended, actionReason) => {
+    setActingId(id);
+    try {
+      await onSetSuspended(id, suspended, actionReason);
+      setReasonPromptFor(null);
+      setReason("");
+      const result = await onLoadUsers({ role: role || undefined, search: search || undefined, page });
+      setData(result);
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  return (
+    <div>
+      <form onSubmit={submitSearch} className="flex gap-2 mb-3">
+        <div className="flex-1 flex items-center gap-2 border border-[#ECE9F7] rounded-xl px-3 bg-white min-w-0">
+          <Search size={13} className="text-[#A79FC7] shrink-0" />
+          <input
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by name or phone"
+            className="flex-1 min-w-0 py-2.5 text-[13px] outline-none"
+          />
+        </div>
+        <button
+          type="submit"
+          className="text-[12.5px] font-semibold text-white px-4 rounded-xl shrink-0"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          Search
+        </button>
+      </form>
+
+      <div className="flex gap-1.5 mb-4 overflow-x-auto">
+        {ROLE_FILTERS.map((r) => (
+          <button
+            key={r.value}
+            onClick={() => {
+              setRole(r.value);
+              setPage(1);
+            }}
+            className={`text-[12px] font-semibold px-3 py-1.5 rounded-full whitespace-nowrap shrink-0 ${
+              role === r.value ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
+            }`}
+            style={role === r.value ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {loading && <p className="text-[12px] text-[#6B6483]">Loading…</p>}
+      {!loading && data && data.users.length === 0 && (
+        <p className="text-[12px] text-[#6B6483]">No accounts match.</p>
+      )}
+
+      <div className="space-y-3 mb-4">
+        {!loading &&
+          data?.users.map((u) => (
+            <div key={u.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[13px] font-semibold text-[#1E1B4B]">{u.name}</p>
+                {u.suspended ? (
+                  <Pill tone="red">
+                    <Ban size={11} /> Suspended
+                  </Pill>
+                ) : (
+                  <Pill tone="stone">{ROLE_LABEL[u.role] || u.role}</Pill>
+                )}
+              </div>
+              <p className="text-[11px] text-[#6B6483] mb-2">
+                {u.phone}
+                {u.businessName ? ` · ${u.businessName}` : ""} · Joined {new Date(u.createdAt).toLocaleDateString("en-NG")}
+              </p>
+              {u.suspended && u.suspendedReason && (
+                <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2.5 py-1.5 mb-2">Reason: {u.suspendedReason}</p>
+              )}
+
+              {reasonPromptFor === u.id ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    rows={2}
+                    placeholder="Why is this account being suspended?"
+                    className="w-full border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12px] outline-none resize-none"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => act(u.id, true, reason)}
+                      disabled={!reason.trim() || actingId !== null}
+                      className="flex-1 text-white text-[12px] font-semibold py-2 rounded-xl disabled:opacity-40"
+                      style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                    >
+                      {actingId === u.id ? "Suspending…" : "Confirm"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setReasonPromptFor(null);
+                        setReason("");
+                      }}
+                      className="px-3 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  {u.suspended ? (
+                    <button
+                      onClick={() => act(u.id, false)}
+                      disabled={actingId !== null}
+                      className="flex-1 text-white text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
+                      style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                    >
+                      {actingId === u.id ? "Working…" : "Reactivate"}
+                    </button>
+                  ) : u.id !== currentAdminId ? (
+                    <button
+                      onClick={() => setReasonPromptFor(u.id)}
+                      disabled={actingId !== null}
+                      className="flex-1 bg-white border border-[#ECE9F7] text-[#E64980] text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
+                    >
+                      Suspend
+                    </button>
+                  ) : (
+                    <p className="text-[11px] text-[#8A8372]">This is your own account.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+      </div>
+
+      {data && data.totalPages > 1 && (
+        <div className="flex items-center justify-between">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="flex items-center gap-1 text-[12px] font-semibold text-[#514B67] disabled:opacity-30"
+          >
+            <ChevronLeft size={14} /> Prev
+          </button>
+          <p className="text-[11px] text-[#8A8372]">
+            Page {data.page} of {data.totalPages} · {data.total} accounts
+          </p>
+          <button
+            onClick={() => setPage((p) => Math.min(data.totalPages, p + 1))}
+            disabled={page >= data.totalPages}
+            className="flex items-center gap-1 text-[12px] font-semibold text-[#514B67] disabled:opacity-30"
+          >
+            Next <ChevronRight size={14} />
+          </button>
+        </div>
       )}
     </div>
   );
@@ -676,6 +895,8 @@ export default function AdminQueue({
   showToast,
   sellerVerifications = [],
   onReviewSellerVerification,
+  onLoadUsers,
+  onSetUserSuspended,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -690,6 +911,7 @@ export default function AdminQueue({
     { key: "overview", label: "Overview", icon: LayoutGrid },
     can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
     can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
+    can("users") && { key: "users", label: "Users", icon: Users },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
     { key: "activity", label: "Activity", icon: ShieldCheck },
@@ -762,6 +984,18 @@ export default function AdminQueue({
             Separate from basic account approval — this drives the public New/Verified/Trusted badge.
           </p>
           <VerificationSubmissions submissions={sellerVerifications} onReview={onReviewSellerVerification} showToast={showToast} />
+        </>
+      )}
+
+      {activeTab === "users" && can("users") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Users size={13} className="text-[#7C3AED]" /> All accounts
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Platform-wide suspend/reactivate — independent of a seller's own approve/reject/suspend status above.
+          </p>
+          <UsersManagement onLoadUsers={onLoadUsers} onSetSuspended={onSetUserSuspended} currentAdminId={currentAdminId} />
         </>
       )}
 

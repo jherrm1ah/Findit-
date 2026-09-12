@@ -62,6 +62,14 @@ create table if not exists users (
   -- default for every admin so nothing loses capability by default.
   admin_role text
     check (admin_role in ('super_admin', 'verification_admin', 'support_admin', 'finance_admin', 'moderation_admin')),
+  -- Platform-level suspension — independent of a seller's own status
+  -- (sellers.status above only restricts selling; this restricts using the
+  -- account at all). See lib/auth.ts#getUserForToken: a suspended account
+  -- is treated as logged out on its very next request, not just blocked
+  -- from a future login.
+  suspended boolean not null default false,
+  suspended_reason text,
+  suspended_at timestamptz,
   created_at timestamptz not null default now()
 );
 

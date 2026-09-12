@@ -141,6 +141,20 @@ export const api = {
     }),
   lookupUserByPhone: (phone) =>
     request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),
+  getAdminUsers: ({ role, search, page } = {}) => {
+    const params = new URLSearchParams();
+    if (role) params.set("role", role);
+    if (search) params.set("search", search);
+    if (page) params.set("page", String(page));
+    const qs = params.toString();
+    return request(`/api/admin/users${qs ? `?${qs}` : ""}`);
+  },
+  setUserSuspended: (id, suspended, reason) =>
+    request(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suspended, reason }),
+    }).then((d) => d.user),
   promoteToAdmin: (phone, adminRole) =>
     request("/api/admin/promote", {
       method: "POST",
