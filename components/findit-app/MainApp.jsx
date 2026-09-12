@@ -1237,6 +1237,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onLoadAlerts={handleLoadAlerts}
               onSendBroadcast={handleSendBroadcast}
               onLeaveAdmin={handleLeaveAdmin}
+              onGrantSubscription={(payload) => api.grantSubscription(payload)}
               onLookupTransaction={(code) => api.lookupTransactionRecord(code)}
               onCorrectTransaction={(code, reason) => api.correctTransactionRecord(code, reason)}
             />

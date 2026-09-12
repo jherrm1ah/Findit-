@@ -170,6 +170,16 @@ export const api = {
       body: JSON.stringify({ code, reason }),
     }),
 
+  // Activates a paid plan without going through Paystack — for a seller who
+  // paid off-platform, or for testing an upgrade where no payment keys are
+  // configured. Audit-logged server-side like any other high-impact action.
+  grantSubscription: (payload) =>
+    request("/api/admin/subscriptions/grant", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }),
+
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
   getSellerIdentityReport: () => request("/api/admin/seller-identity"),

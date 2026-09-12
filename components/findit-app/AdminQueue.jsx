@@ -1095,6 +1095,96 @@ function TransactionLookup({ onLookup, onCorrect, showToast }) {
   );
 }
 
+
+// Activate a paid plan without Paystack. The endpoint behind this existed
+// from the start (for a seller who paid by bank transfer, and for testing an
+// upgrade with no payment keys configured) but had no button, so reaching it
+// meant hand-crafting an API call. It is audit-logged server-side exactly
+// like seller approval or an admin promotion.
+function GrantPlan({ onLoadPlans, onGrant, showToast }) {
+  const [plans, setPlans] = useState([]);
+  const [phone, setPhone] = useState("");
+  const [planId, setPlanId] = useState("");
+  const [billingPeriod, setBillingPeriod] = useState("monthly");
+  const [granting, setGranting] = useState(false);
+
+  useEffect(() => {
+    onLoadPlans()
+      .then((all) => {
+        // Free is not something anyone needs granting — it is the default.
+        const paid = all.filter((p) => p.priceMonthly > 0 && p.active);
+        setPlans(paid);
+        if (paid.length) setPlanId(paid[0].id);
+      })
+      .catch(() => {});
+  }, []);
+
+  const grant = async () => {
+    if (!phone.trim() || !planId || granting) return;
+    setGranting(true);
+    try {
+      await onGrant({ phone: phone.trim(), planId, billingPeriod });
+      const plan = plans.find((p) => p.id === planId);
+      showToast?.(`${plan?.name ?? "Plan"} activated for ${phone.trim()}.`);
+      setPhone("");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't activate that plan.", "error");
+    } finally {
+      setGranting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
+      <p className="text-[11px] text-[#6B6483] mb-3 leading-relaxed">
+        Activates a paid plan with no payment taken. Use it for a seller who paid you directly, or to test an
+        upgrade before Paystack is configured. Every grant is recorded in the activity log.
+      </p>
+
+      <div className="space-y-2.5">
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Account phone number"
+          className="input w-full"
+        />
+        <select value={planId} onChange={(e) => setPlanId(e.target.value)} className="input w-full">
+          {plans.length === 0 && <option value="">No paid plans available</option>}
+          {plans.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name} \u00b7 {naira(p.priceMonthly)}/mo {p.kind === "platform" ? "(FindIt Pro)" : "(Store)"}
+            </option>
+          ))}
+        </select>
+        <div className="flex gap-2">
+          {["monthly", "yearly"].map((period) => (
+            <button
+              key={period}
+              onClick={() => setBillingPeriod(period)}
+              className={`flex-1 text-[12px] font-semibold py-2 rounded-xl border ${
+                billingPeriod === period
+                  ? "text-white border-transparent"
+                  : "text-[#514B67] bg-white border-[#ECE9F7]"
+              }`}
+              style={billingPeriod === period ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
+            >
+              {period === "monthly" ? "Monthly" : "Yearly"}
+            </button>
+          ))}
+        </div>
+        <button
+          onClick={grant}
+          disabled={granting || !phone.trim() || !planId}
+          className="w-full text-[12.5px] font-semibold text-white py-2.5 rounded-xl disabled:opacity-50"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {granting ? "Activating\u2026" : "Activate plan"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkPayoutPaid, showToast }) {
   const [feeConfig, setFeeConfig] = useState(null);
   const [feeInput, setFeeInput] = useState("");
@@ -2016,6 +2106,7 @@ export default function AdminQueue({
   onLeaveAdmin,
   onLookupTransaction,
   onCorrectTransaction,
+  onGrantSubscription,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -2184,6 +2275,10 @@ export default function AdminQueue({
             Price/limit changes apply going forward — an already-active subscription keeps whatever
             it's currently on until it renews or is changed.
           </p>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Activate a plan manually</p>
+          <GrantPlan onLoadPlans={onLoadPlans} onGrant={onGrantSubscription} showToast={showToast} />
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Plan editor</p>
           <PlansAdmin
             onLoadPlans={onLoadPlans}
             onUpdatePlan={onUpdatePlan}
