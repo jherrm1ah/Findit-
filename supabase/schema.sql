@@ -133,7 +133,18 @@ create table if not exists sellers (
   verification_submitted_at timestamptz,
   verification_reviewed_at timestamptz,
   verification_reviewed_by text references users(id),
-  verification_rejection_reason text
+  verification_rejection_reason text,
+  -- ---- Payout destination (migration 016) ----
+  -- bank_account_name is resolved from Paystack's account-name lookup at
+  -- the moment the seller enters their account number, shown back as the
+  -- "does this look right?" confirmation before saving — a payout should
+  -- never silently go to a mistyped account. paystack_recipient_code is
+  -- created once (Paystack's Transfer Recipient API) and reused for every
+  -- payout after that.
+  bank_account_number text,
+  bank_code text,
+  bank_account_name text,
+  paystack_recipient_code text
 );
 
 -- ---------------------------------------------------------------------------
@@ -290,13 +301,28 @@ create table if not exists orders (
   -- Delivery is confirmed by the BUYER, never the seller: "Delivered" means
   -- the person who paid said the item arrived. See migration 008.
   buyer_confirmed_at timestamptz,
-  -- held | released | disputed | refunded — where the money stands. No payment
-  -- provider is wired up yet; this is the record a provider hook reads later,
-  -- and what the buyer and admin see today.
-  escrow_status text not null default 'held'
-    check (escrow_status in ('held', 'released', 'disputed', 'refunded')),
+  -- unpaid | held | released | disputed | refunded — where the money
+  -- stands. An order starts 'unpaid' (see payment_status below) and only
+  -- ever becomes 'held' once a real Paystack charge is confirmed by
+  -- webhook — see lib/payments.ts#confirmOrderPayment. Never set to 'held'
+  -- at order-creation time; that would claim money is held when none has
+  -- moved yet.
+  escrow_status text not null default 'unpaid'
+    check (escrow_status in ('unpaid', 'held', 'released', 'disputed', 'refunded')),
   issue_reported_at timestamptz,
-  issue_note text
+  issue_note text,
+  -- ---- Real payment (migration 016) ----
+  -- Has THIS order actually been paid for? Distinct from escrow_status,
+  -- which describes where already-collected money currently sits.
+  payment_status text not null default 'pending'
+    check (payment_status in ('pending', 'paid', 'failed')),
+  paid_at timestamptz,
+  -- Snapshotted from platform_fee_config the moment payment is confirmed —
+  -- frozen from then on, so a later fee change never rewrites what an
+  -- already-paid order's numbers were.
+  platform_fee_bps integer,
+  platform_fee_amount integer,
+  seller_payout_amount integer
 );
 create index if not exists orders_user_id_idx on orders(user_id);
 create index if not exists orders_seller_idx on orders(seller);
@@ -465,7 +491,10 @@ create table if not exists payments (
   id text primary key,
   user_id text not null references users(id) on delete cascade,
   subscription_id text references subscriptions(id),
-  kind text not null default 'subscription' check (kind in ('subscription', 'boost', 'fee', 'other')),
+  -- Real marketplace order payments (migration 016) alongside subscription
+  -- payments — set only for kind = 'order'.
+  order_id text references orders(id),
+  kind text not null default 'subscription' check (kind in ('subscription', 'order', 'boost', 'fee', 'other')),
   amount integer not null check (amount >= 0),
   currency text not null default 'NGN',
   status text not null default 'pending' check (status in ('pending', 'success', 'failed', 'refunded')),
@@ -477,7 +506,43 @@ create table if not exists payments (
 );
 create index if not exists payments_user_id_idx on payments(user_id);
 create index if not exists payments_subscription_id_idx on payments(subscription_id);
+create index if not exists payments_order_id_idx on payments(order_id);
 create index if not exists payments_status_idx on payments(status);
+
+-- ---------------------------------------------------------------------------
+-- platform_fee_config / payouts — the marketplace commission and the real
+-- seller-payout ledger (migration 016). See the full design note in that
+-- migration file; in short: the fee is admin-editable and append-only (the
+-- current fee is just the latest row, so changing it never rewrites an
+-- already-paid order's own frozen fee snapshot on the order itself), and a
+-- payout is either a real Paystack Transfer or an honestly-labeled
+-- 'manual_required' row — never a status that claims a payment moved when
+-- it didn't.
+-- ---------------------------------------------------------------------------
+
+create table if not exists platform_fee_config (
+  id text primary key,
+  fee_bps integer not null check (fee_bps >= 0 and fee_bps <= 10000),
+  created_by text references users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists platform_fee_config_created_at_idx on platform_fee_config(created_at desc);
+
+create table if not exists payouts (
+  id text primary key,
+  seller_id text not null references sellers(id),
+  order_id text not null references orders(id),
+  amount integer not null check (amount > 0),
+  status text not null default 'pending'
+    check (status in ('pending', 'processing', 'paid', 'failed', 'manual_required')),
+  provider_reference text,
+  failure_reason text,
+  created_at timestamptz not null default now(),
+  paid_at timestamptz,
+  unique (order_id)
+);
+create index if not exists payouts_seller_id_idx on payouts(seller_id);
+create index if not exists payouts_status_idx on payouts(status);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
@@ -504,6 +569,8 @@ alter table subscription_events enable row level security;
 alter table payments enable row level security;
 alter table seller_verification_details enable row level security;
 alter table seller_verification_evidence enable row level security;
+alter table platform_fee_config enable row level security;
+alter table payouts enable row level security;
 
 create unique index if not exists users_email_unique_idx on users(email) where email is not null;
 
@@ -541,3 +608,11 @@ on conflict (id) do update set
   trial_days = excluded.trial_days,
   sort_order = excluded.sort_order,
   updated_at = now();
+
+-- A starting marketplace commission so the platform has a real, visible fee
+-- from day one instead of the code treating "no config row" as free — an
+-- admin should review this via the fee-config admin route and adjust it
+-- before launch, not treat 5% as a permanent decision made here.
+insert into platform_fee_config (id, fee_bps, created_by)
+values ('fee_default', 500, null)
+on conflict (id) do nothing;

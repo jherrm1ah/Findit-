@@ -85,6 +85,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // Drives the dashboard's "Complete verification" prompt; the wizard
   // itself (SellerOnboarding.jsx) fetches its own full copy when opened.
   const [verification, setVerification] = useState(null);
+  // { hasAccount, bankAccountName, maskedAccountNumber } | null — real
+  // payout destination; see GET /api/sellers/me/payout-account. Without
+  // this on file, a delivered order's payout is recorded as
+  // 'manual_required' rather than actually paid out.
+  const [payoutAccount, setPayoutAccount] = useState(null);
+  const [banks, setBanks] = useState([]);
+  const [savingPayoutAccount, setSavingPayoutAccount] = useState(false);
 
   // Real device/account location — set only once the user explicitly grants
   // browser geolocation permission (see ./location.js). Never defaulted to
@@ -148,6 +155,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
       api.getMyStoreBranding().then(setStoreBranding).catch(() => {});
       api.getMyVerification().then(setVerification).catch(() => {});
+      api.getPayoutAccount().then(setPayoutAccount).catch(() => {});
+      api.getBanks().then((r) => setBanks(r.banks || [])).catch(() => {});
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
@@ -256,7 +265,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       // and computes price/seller itself, so nothing here is trusted as-is.
       const order = await api.createOrder({ productId: prod.id, qty });
       setOrders((os) => [order, ...os]);
-      setCheckoutOrder({ product: prod, qty, condition });
+      setCheckoutOrder({ order, product: prod, qty, condition });
       go("checkout");
     } catch (err) {
       showToast(err.message || "Couldn't place that order — try again.", "error");
@@ -415,6 +424,20 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleSavePayoutAccount = async (accountNumber, bankCode) => {
+    setSavingPayoutAccount(true);
+    try {
+      const { accountName } = await api.setPayoutAccount(accountNumber, bankCode);
+      setPayoutAccount(await api.getPayoutAccount());
+      showToast(`Payout account saved — ${accountName}.`);
+    } catch (err) {
+      showToast(err.message || "Couldn't save your payout account — try again.", "error");
+      throw err;
+    } finally {
+      setSavingPayoutAccount(false);
+    }
+  };
+
   const handleCancelStorePlan = async () => {
     setChangingPlan(true);
     try {
@@ -543,6 +566,18 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       throw err;
     }
   };
+
+  const handleLoadFeeConfig = () => api.getFeeConfig();
+
+  const handleSetFeeConfig = async (feeBps) => {
+    const updated = await api.setFeeConfig(feeBps);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return updated;
+  };
+
+  const handleLoadPayouts = (status) => api.getPayouts(status);
+
+  const handleMarkPayoutPaid = (id) => api.markPayoutPaid(id);
 
   const handlePromoteToAdmin = async (phone, adminRole) => {
     const promoted = await api.promoteToAdmin(phone, adminRole);
@@ -766,6 +801,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onUpdateBranding={handleUpdateStoreBranding}
               savingBranding={savingBranding}
               verification={verification}
+              payoutAccount={payoutAccount}
+              banks={banks}
+              onSavePayoutAccount={handleSavePayoutAccount}
+              savingPayoutAccount={savingPayoutAccount}
               go={go}
             />
           ) : (
@@ -801,6 +840,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onReviewSellerVerification={handleReviewSellerVerification}
               onLoadUsers={handleLoadUsers}
               onSetUserSuspended={handleSetUserSuspended}
+              onLoadFeeConfig={handleLoadFeeConfig}
+              onSetFeeConfig={handleSetFeeConfig}
+              onLoadPayouts={handleLoadPayouts}
+              onMarkPayoutPaid={handleMarkPayoutPaid}
             />
           ) : (
             <RoleGate
@@ -851,6 +894,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             onReview={handleReview}
             onConfirmDelivery={handleConfirmDelivery}
             onReportIssue={handleReportIssue}
+            onPayOrder={api.payForOrder}
+            showToast={showToast}
             savedIds={savedIds}
           />
         )}
@@ -862,7 +907,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           />
         )}
         {screen === "checkout" && checkoutOrder && (
-          <Checkout product={checkoutOrder.product} qty={checkoutOrder.qty} condition={checkoutOrder.condition} go={go} />
+          <Checkout
+            order={checkoutOrder.order}
+            product={checkoutOrder.product}
+            qty={checkoutOrder.qty}
+            condition={checkoutOrder.condition}
+            onPay={api.payForOrder}
+            showToast={showToast}
+            go={go}
+          />
         )}
       </main>
 

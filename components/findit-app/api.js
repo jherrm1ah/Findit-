@@ -77,6 +77,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
+  payForOrder: (orderId) => request(`/api/orders/${orderId}/pay`, { method: "POST" }),
   submitOrderReview: (orderId, payload) =>
     request(`/api/orders/${orderId}`, {
       method: "PATCH",
@@ -132,6 +133,22 @@ export const api = {
     }).then((d) => d.order),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
   getAdminOverview: () => request("/api/admin/overview").then((d) => d.overview),
+  getFeeConfig: () => request("/api/admin/fee-config"),
+  setFeeConfig: (feeBps) =>
+    request("/api/admin/fee-config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feeBps }),
+    }),
+  getPayouts: (status) => request(`/api/admin/payouts${status ? `?status=${status}` : ""}`).then((d) => d.payouts),
+  markPayoutPaid: (id) => request(`/api/admin/payouts/${id}`, { method: "PATCH" }),
+  getTransactions: ({ kind, page } = {}) => {
+    const params = new URLSearchParams();
+    if (kind) params.set("kind", kind);
+    if (page) params.set("page", String(page));
+    const qs = params.toString();
+    return request(`/api/admin/transactions${qs ? `?${qs}` : ""}`);
+  },
   getSellerVerifications: () => request("/api/admin/seller-verifications").then((d) => d.submissions),
   reviewSellerVerification: (sellerId, action, reason) =>
     request(`/api/admin/seller-verifications/${sellerId}`, {
@@ -293,6 +310,14 @@ export const api = {
       body: JSON.stringify({ planId, billingPeriod }),
     }),
   cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  getBanks: () => request("/api/payments/banks"),
+  getPayoutAccount: () => request("/api/sellers/me/payout-account"),
+  setPayoutAccount: (accountNumber, bankCode) =>
+    request("/api/sellers/me/payout-account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountNumber, bankCode }),
+    }),
   getMyVerification: () => request("/api/sellers/me/verification"),
   submitVerification: (fields, photosByKind) => {
     const fd = new FormData();

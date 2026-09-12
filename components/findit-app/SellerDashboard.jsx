@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -356,6 +356,104 @@ function StoreAnalytics({ plan, orders, go }) {
   );
 }
 
+// Real backing for getting paid — without this on file, a delivered order's
+// payout is recorded 'manual_required' rather than an actual bank transfer
+// (see lib/payments.ts#initiateSellerPayout). Account name is always
+// resolved from Paystack's own lookup, never typed by the seller, so a
+// payout can't silently go to the wrong account.
+function PayoutAccountCard({ payoutAccount, banks, onSave, saving }) {
+  const [editing, setEditing] = useState(false);
+  const [accountNumber, setAccountNumber] = useState("");
+  const [bankCode, setBankCode] = useState("");
+
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      await onSave(accountNumber, bankCode);
+      setEditing(false);
+      setAccountNumber("");
+      setBankCode("");
+    } catch {
+      // MainApp already surfaced a toast
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
+      <div className="flex items-center gap-2 mb-1">
+        <Landmark size={15} className="text-[#7C3AED]" />
+        <p className="text-[13px] font-semibold text-[#1E1B4B]">Payout account</p>
+      </div>
+
+      {!editing && payoutAccount?.hasAccount && (
+        <div className="flex items-center justify-between">
+          <p className="text-[12px] text-[#514B67]">{payoutAccount.bankAccountName} · {payoutAccount.maskedAccountNumber}</p>
+          <button onClick={() => setEditing(true)} className="text-[11.5px] font-semibold text-[#7C3AED]">Change</button>
+        </div>
+      )}
+
+      {!editing && !payoutAccount?.hasAccount && (
+        <div>
+          <p className="text-[12px] text-[#6B6483] mb-2.5">
+            Add your bank account so FindIt can pay you once a buyer confirms delivery. Without this, a delivered order's payment is held for an admin to settle manually.
+          </p>
+          <button
+            onClick={() => setEditing(true)}
+            className="text-[12.5px] font-semibold text-white px-3.5 py-2 rounded-xl"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            Add payout account
+          </button>
+        </div>
+      )}
+
+      {editing && (
+        <form onSubmit={save} className="space-y-2.5 mt-2">
+          {banks.length === 0 ? (
+            <p className="text-[11.5px] text-[#D97706] bg-[#FDF6EC] border border-[#F5D9A8] rounded-lg px-2.5 py-2">
+              Payouts aren't set up in this environment yet (no Paystack keys) — an admin can pay you manually until then.
+            </p>
+          ) : (
+            <>
+              <select
+                value={bankCode}
+                onChange={(e) => setBankCode(e.target.value)}
+                required
+                className="w-full border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+              >
+                <option value="">Select your bank</option>
+                {banks.map((b) => (
+                  <option key={b.code} value={b.code}>{b.name}</option>
+                ))}
+              </select>
+              <input
+                value={accountNumber}
+                onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                placeholder="10-digit account number"
+                required
+                className="w-full border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={saving || accountNumber.length !== 10 || !bankCode}
+                  className="flex-1 text-white text-[12.5px] font-semibold py-2 rounded-xl disabled:opacity-40"
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {saving ? "Verifying…" : "Verify & save"}
+                </button>
+                <button type="button" onClick={() => setEditing(false)} className="px-3 text-[12.5px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl">
+                  Cancel
+                </button>
+              </div>
+            </>
+          )}
+        </form>
+      )}
+    </div>
+  );
+}
+
 export default function SellerDashboard({
   requests, onSendOffer, user, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
@@ -364,6 +462,7 @@ export default function SellerDashboard({
   storePlan, go,
   storeBranding, onUpdateBranding, savingBranding,
   verification,
+  payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
 }) {
   const [offeringId, setOfferingId] = useState(null);
   const [sendingOffer, setSendingOffer] = useState(false);
@@ -629,6 +728,13 @@ export default function SellerDashboard({
         ))}
       </div>
 
+      <PayoutAccountCard
+        payoutAccount={payoutAccount}
+        banks={banks}
+        onSave={onSavePayoutAccount}
+        saving={savingPayoutAccount}
+      />
+
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Orders to fulfill</p>
       <div className="space-y-3 mb-7">
         {myOrders.length === 0 && (
@@ -654,7 +760,9 @@ export default function SellerDashboard({
               >
                 <MessageCircle size={13} /> {messagingId === o.id ? "Opening…" : "Message buyer"}
               </button>
-              {nextStatus ? (
+              {o.paymentStatus !== "paid" ? (
+                <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
+              ) : nextStatus ? (
                 <button
                   onClick={() => advance(o)}
                   disabled={advancingId !== null}

@@ -85,9 +85,20 @@ export type Order = {
   escrowStatus: EscrowStatus;
   issueReportedAt: string | null;
   issueNote: string | null;
+  // Real payment tracking (migration 016) — see lib/payments.ts. Distinct
+  // from escrowStatus, which describes where already-collected money sits;
+  // this is whether THIS order has actually been paid for at all.
+  paymentStatus: PaymentStatus;
+  paidAt: string | null;
+  // Snapshotted once at payment confirmation — never recomputed from a
+  // later fee change. Null until paymentStatus === "paid".
+  platformFeeBps: number | null;
+  platformFeeAmount: number | null;
+  sellerPayoutAmount: number | null;
 };
 
-export type EscrowStatus = "held" | "released" | "disputed" | "refunded";
+export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
+export type PaymentStatus = "pending" | "paid" | "failed";
 
 export type Notification = {
   id: string;
@@ -528,9 +539,14 @@ function rowToOrder(row: Row): Order {
     requestId: (row.request_id as string | null) ?? null,
     createdAt: row.created_at as string,
     buyerConfirmedAt: (row.buyer_confirmed_at as string | null) ?? null,
-    escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "held"),
+    escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "unpaid"),
     issueReportedAt: (row.issue_reported_at as string | null) ?? null,
     issueNote: (row.issue_note as string | null) ?? null,
+    paymentStatus: ((row.payment_status as PaymentStatus | null) ?? "pending"),
+    paidAt: (row.paid_at as string | null) ?? null,
+    platformFeeBps: (row.platform_fee_bps as number | null) ?? null,
+    platformFeeAmount: (row.platform_fee_amount as number | null) ?? null,
+    sellerPayoutAmount: (row.seller_payout_amount as number | null) ?? null,
   };
 }
 
@@ -639,14 +655,18 @@ export async function createOrderFromProduct(
     userId,
   });
 
-  await notifySellerOfNewOrder(product.seller, order);
+  // No seller notification here — the seller learns about this order once
+  // it's actually paid for (see lib/payments.ts#confirmOrderPayment), not
+  // the moment a buyer starts checkout on something they might never pay.
   return order;
 }
 
 // Shared by both ways an order gets created (direct purchase and accepting
 // a request offer) — looks the seller's account up by business name so the
 // notification lands on the right user, not just a string on the order row.
-async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
+// Called only once a payment is actually confirmed (lib/payments.ts), never
+// at order creation.
+export async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
   const seller = await findUserByBusinessName(sellerBusinessName);
   if (!seller) return; // seller hasn't joined FindIt as an account directly — nothing to notify
   await notifyBestEffort({
@@ -744,6 +764,15 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   const existing = await getOrder(id);
   if (!existing) return null;
   validateStatusTransition(existing.status, status);
+
+  // A seller can't move an order past "Awaiting payment" until it's
+  // actually been paid for — otherwise this would let a seller mark an
+  // unpaid order "Dispatched" with nothing backing it. Real-money
+  // confirmation only ever comes from the Paystack webhook (see
+  // lib/payments.ts#confirmOrderPayment), never from this endpoint.
+  if (status !== "Awaiting payment" && existing.paymentStatus !== "paid") {
+    throw new ValidationError("This order hasn't been paid for yet.");
+  }
 
   const db = getDb();
   const result = await db
@@ -1571,17 +1600,20 @@ export async function acceptOffer(
     "updating request status"
   );
 
+  // "Awaiting payment", not "Seller preparing" — accepting an offer doesn't
+  // move any money by itself; the buyer still has to actually pay (see
+  // lib/payments.ts#initiateOrderPayment) before the seller is told to
+  // start preparing anything.
   const order = await insertOrder({
     item: request.title as string,
     seller: offer.seller as string,
     sellerId: (offer.seller_id as string | null) ?? null,
     price: offer.price as number,
-    status: "Seller preparing",
+    status: "Awaiting payment",
     requestId,
     userId,
   });
 
-  await notifySellerOfNewOrder(offer.seller as string, order);
   return { order };
 }
 

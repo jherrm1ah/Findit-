@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyWebhookSignature, verifyTransaction } from "@/lib/paystack";
 import { getDb, assertNoError } from "@/lib/db";
 import { changeStorePlan, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
+import { confirmOrderPayment } from "@/lib/payments";
 
 type Row = Record<string, unknown>;
 
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   const db = getDb();
   const paymentResult = await db
     .from("payments")
-    .select("id, status, amount, metadata, subscription_id")
+    .select("id, status, amount, metadata, subscription_id, order_id")
     .eq("provider_reference", reference)
     .maybeSingle();
   const payment = assertNoError(paymentResult, "loading payment") as Row | null;
@@ -74,20 +75,31 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ received: true }); // a concurrent delivery already processed this one
     }
 
-    const metadata = (payment.metadata as { sellerId?: string; planId?: string; billingPeriod?: BillingPeriod } | null) ?? null;
-    if (metadata?.sellerId && metadata.planId) {
+    if (payment.order_id) {
       try {
-        await changeStorePlan(metadata.sellerId, metadata.planId, metadata.billingPeriod ?? "monthly", {
-          paymentConfirmed: true,
-        });
+        await confirmOrderPayment(payment.order_id as string);
       } catch (err) {
-        console.error("[paystack-webhook] payment succeeded but plan change failed", err);
+        console.error("[paystack-webhook] payment succeeded but order confirmation failed", err);
+      }
+    } else {
+      const metadata = (payment.metadata as { sellerId?: string; planId?: string; billingPeriod?: BillingPeriod } | null) ?? null;
+      if (metadata?.sellerId && metadata.planId) {
+        try {
+          await changeStorePlan(metadata.sellerId, metadata.planId, metadata.billingPeriod ?? "monthly", {
+            paymentConfirmed: true,
+          });
+        } catch (err) {
+          console.error("[paystack-webhook] payment succeeded but plan change failed", err);
+        }
       }
     }
   } else if (event.event === "charge.failed") {
     await db.from("payments").update({ status: "failed" }).eq("id", payment.id as string);
     if (payment.subscription_id) {
       await markSubscriptionPastDue(payment.subscription_id as string);
+    }
+    if (payment.order_id) {
+      await db.from("orders").update({ payment_status: "failed" }).eq("id", payment.order_id as string);
     }
   }
 

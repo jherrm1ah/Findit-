@@ -1,38 +1,103 @@
 "use client";
 
-import { CheckCircle2, ShieldCheck } from "lucide-react";
+import { useState } from "react";
+import { CreditCard, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { STEPS, naira } from "./data";
 
-export default function Checkout({ product, qty, condition, go }) {
+// Real payment, not a claim — the order sits "Awaiting payment" (see
+// order.paymentStatus) until this screen's "Pay now" actually completes a
+// Paystack charge, confirmed by app/api/payments/paystack/webhook. Nothing
+// here marks the order paid on its own; the button only ever starts a real
+// checkout or reports honestly that payments aren't configured yet.
+export default function Checkout({ order, product, qty, condition, onPay, showToast, go }) {
+  const [paying, setPaying] = useState(false);
+  const [notConfigured, setNotConfigured] = useState(false);
   const total = product.price * qty;
-  const activeIdx = 0; // just paid — awaiting seller prep
+  const alreadyPaid = order?.paymentStatus === "paid";
+  const activeIdx = alreadyPaid ? 1 : 0;
+
+  const pay = async () => {
+    if (!order) return;
+    setPaying(true);
+    try {
+      const result = await onPay(order.id);
+      if (result.configured === false) {
+        setNotConfigured(true);
+        showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
+      } else if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl;
+      }
+    } catch (err) {
+      showToast?.(err.message || "Couldn't start payment — try again.", "error");
+    } finally {
+      setPaying(false);
+    }
+  };
+
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-5">
-        <CheckCircle2 className="text-[#7C3AED]" size={22} />
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Payment held — order placed</h1>
+        {alreadyPaid ? (
+          <CheckCircle2 className="text-[#7C3AED]" size={22} />
+        ) : (
+          <CreditCard className="text-[#7C3AED]" size={22} />
+        )}
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+          {alreadyPaid ? "Payment held — order placed" : "Pay to place your order"}
+        </h1>
       </div>
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5">
         <p className="text-[12px] text-[#6B6483] mb-1">{product.name} · {condition} · Qty {qty}</p>
         <p className="text-[15px] font-semibold text-[#1E1B4B] mb-1">{product.seller}</p>
         <p className="text-[18px] font-bold text-[#7C3AED]">{naira(total)}</p>
       </div>
-      <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-5 flex items-start gap-2.5">
-        <ShieldCheck size={16} className="text-[#7C3AED] mt-0.5 shrink-0" />
-        <p className="text-[12px] text-[#514B67]">Your payment is held by FindIt, not the seller. It only releases once you confirm delivery — see it anytime under My orders.</p>
-      </div>
-      <p className="text-[12px] font-medium text-[#514B67] mb-3 uppercase tracking-wide">Delivery status</p>
-      <div className="space-y-0 mb-6">
-        {STEPS.map((s, i) => (
-          <div key={s} className="flex gap-3">
-            <div className="flex flex-col items-center">
-              <div className={`w-3 h-3 rounded-full ${i <= activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} />
-              {i < STEPS.length - 1 && <div className={`w-0.5 flex-1 ${i < activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} style={{ minHeight: 28 }} />}
-            </div>
-            <p className={`text-[13px] pb-6 ${i <= activeIdx ? "text-[#1E1B4B] font-medium" : "text-[#8A8372]"}`}>{s}</p>
+
+      {!alreadyPaid && !notConfigured && (
+        <>
+          <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-5 flex items-start gap-2.5">
+            <ShieldCheck size={16} className="text-[#7C3AED] mt-0.5 shrink-0" />
+            <p className="text-[12px] text-[#514B67]">
+              FindIt holds your payment until you confirm delivery — the seller is only paid out once you do. Nothing is charged until you complete checkout below.
+            </p>
           </div>
-        ))}
-      </div>
+          <button
+            onClick={pay}
+            disabled={paying}
+            className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl mb-6 disabled:opacity-60"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            {paying ? "Starting checkout…" : `Pay ${naira(total)}`}
+          </button>
+        </>
+      )}
+
+      {notConfigured && (
+        <div className="bg-[#FDF6EC] border border-[#F5D9A8] rounded-[20px] p-4 mb-6">
+          <p className="text-[12px] text-[#514B67]">
+            Online payment isn't set up on FindIt yet. Message {product.seller} directly to arrange payment — your order is saved as "Awaiting payment" under My orders either way.
+          </p>
+        </div>
+      )}
+
+      {alreadyPaid && (
+        <>
+          <p className="text-[12px] font-medium text-[#514B67] mb-3 uppercase tracking-wide">Delivery status</p>
+          <div className="space-y-0 mb-6">
+            {STEPS.map((s, i) => (
+              <div key={s} className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div className={`w-3 h-3 rounded-full ${i <= activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} />
+                  {i < STEPS.length - 1 && (
+                    <div className={`w-0.5 flex-1 ${i < activeIdx ? "bg-[#7C3AED]" : "bg-[#E4DFF5]"}`} style={{ minHeight: 28 }} />
+                  )}
+                </div>
+                <p className={`text-[13px] pb-6 ${i <= activeIdx ? "text-[#1E1B4B] font-medium" : "text-[#8A8372]"}`}>{s}</p>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
       <div className="flex gap-2">
         <button onClick={() => go("account")} className="flex-1 text-white text-[13px] font-semibold py-3 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           Track in My orders

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { listDisputedOrders, resolveOrderIssue, logAdminAction } from "@/lib/repo";
+import { initiateSellerPayout, refundOrderPayment } from "@/lib/payments";
 import { requireAdmin } from "@/lib/adminRoles";
 import { errorResponse } from "@/lib/errors";
 
@@ -37,15 +38,30 @@ export async function POST(req: NextRequest) {
     if (!order) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+
+    // Real money movement, not just the status flip above — this decision
+    // either pays the seller or reverses the buyer's original charge for
+    // real. Awaited (not fire-and-forget) so the admin who made this call
+    // sees whether it actually happened, unlike the buyer's own
+    // confirm-delivery path where payout failure is logged, not blocking.
+    let moneyMovement: { refunded?: boolean; reason?: string } = {};
+    if (body.outcome === "released") {
+      await initiateSellerPayout(order).catch((err) => {
+        moneyMovement = { reason: err instanceof Error ? err.message : "Payout initiation failed." };
+      });
+    } else {
+      moneyMovement = await refundOrderPayment(order.id);
+    }
+
     // Money decisions are exactly what an audit trail is for.
     await logAdminAction({
       adminId: admin.id,
       action: body.outcome === "refunded" ? "order.refunded" : "order.payment_released",
       targetType: "order",
       targetId: order.id,
-      detail: { item: order.item, seller: order.seller },
+      detail: { item: order.item, seller: order.seller, ...moneyMovement },
     });
-    return NextResponse.json({ order });
+    return NextResponse.json({ order, ...moneyMovement });
   } catch (err) {
     return errorResponse(err, "Couldn't resolve that report.");
   }

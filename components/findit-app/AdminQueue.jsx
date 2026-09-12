@@ -875,6 +875,149 @@ function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
   );
 }
 
+const PAYOUT_STATUS_PILL = {
+  pending: <Pill tone="gold">Pending</Pill>,
+  processing: <Pill tone="gold">Processing</Pill>,
+  paid: <Pill tone="green">Paid</Pill>,
+  failed: <Pill tone="red">Failed</Pill>,
+  manual_required: <Pill tone="red">Needs manual payout</Pill>,
+};
+
+// Real platform commission + seller payout ledger — see lib/payments.ts.
+// The fee editor writes an append-only history row (never an update), and
+// "Mark paid" is only ever an admin recording a real off-platform transfer
+// they already made, never a claim this app made one itself.
+function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkPayoutPaid, showToast }) {
+  const [feeConfig, setFeeConfig] = useState(null);
+  const [feeInput, setFeeInput] = useState("");
+  const [savingFee, setSavingFee] = useState(false);
+  const [payouts, setPayouts] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("");
+  const [actingId, setActingId] = useState(null);
+
+  useEffect(() => {
+    onLoadFeeConfig().then((c) => {
+      setFeeConfig(c);
+      setFeeInput((c.currentBps / 100).toString());
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    onLoadPayouts(statusFilter || undefined).then(setPayouts).catch(() => setPayouts([]));
+  }, [statusFilter]);
+
+  const saveFee = async (e) => {
+    e.preventDefault();
+    const pct = Number(feeInput);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      showToast?.("Enter a fee between 0 and 100%.", "error");
+      return;
+    }
+    setSavingFee(true);
+    try {
+      await onSetFeeConfig(Math.round(pct * 100));
+      const updated = await onLoadFeeConfig();
+      setFeeConfig(updated);
+      showToast?.(`Platform fee set to ${pct}%.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update the fee.", "error");
+    } finally {
+      setSavingFee(false);
+    }
+  };
+
+  const markPaid = async (id) => {
+    setActingId(id);
+    try {
+      await onMarkPayoutPaid(id);
+      setPayouts(await onLoadPayouts(statusFilter || undefined));
+      showToast?.("Payout marked paid.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't mark that payout paid.", "error");
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Platform commission</p>
+        <p className="text-[11px] text-[#6B6483] mb-3">
+          Applies to every order paid from now on — an already-paid order keeps whatever fee it was actually charged (see order.platformFeeBps), never recalculated.
+        </p>
+        {feeConfig && (
+          <>
+            <p className="text-[20px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>
+              {(feeConfig.currentBps / 100).toFixed(2)}%
+            </p>
+            <form onSubmit={saveFee} className="flex gap-2">
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={feeInput}
+                onChange={(e) => setFeeInput(e.target.value)}
+                className="flex-1 border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[13px] outline-none"
+              />
+              <button
+                type="submit"
+                disabled={savingFee}
+                className="text-[12.5px] font-semibold text-white px-4 rounded-xl disabled:opacity-40"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                {savingFee ? "Saving…" : "Save"}
+              </button>
+            </form>
+          </>
+        )}
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Seller payouts</p>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none"
+        >
+          <option value="">All</option>
+          <option value="manual_required">Needs manual payout</option>
+          <option value="failed">Failed</option>
+          <option value="processing">Processing</option>
+          <option value="paid">Paid</option>
+        </select>
+      </div>
+
+      <div className="space-y-2.5">
+        {payouts?.length === 0 && <p className="text-[12px] text-[#6B6483]">No payouts match.</p>}
+        {payouts?.map((p) => (
+          <div key={p.id} className="bg-white border border-[#ECE9F7] rounded-xl p-3.5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[12.5px] font-semibold text-[#1E1B4B]">{p.sellerName || p.sellerId}</p>
+              {PAYOUT_STATUS_PILL[p.status]}
+            </div>
+            <p className="text-[11px] text-[#6B6483] mb-1.5">Order {p.orderId} · {naira(p.amount)}</p>
+            {p.failureReason && (
+              <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2 py-1.5 mb-1.5">{p.failureReason}</p>
+            )}
+            {(p.status === "manual_required" || p.status === "failed") && (
+              <button
+                onClick={() => markPaid(p.id)}
+                disabled={actingId !== null}
+                className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                {actingId === p.id ? "Saving…" : "Mark paid"}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -897,14 +1040,18 @@ export default function AdminQueue({
   onReviewSellerVerification,
   onLoadUsers,
   onSetUserSuspended,
+  onLoadFeeConfig,
+  onSetFeeConfig,
+  onLoadPayouts,
+  onMarkPayoutPaid,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
   const isSuperAdmin = currentAdminRole === "super_admin";
 
   // Every tab here backs a real, already-working screen — there's
-  // deliberately no Payments/Transactions/Boosts/Categories tab yet, since
-  // those systems don't exist in the app below this UI. Adding a tab for a
+  // deliberately no Transactions/Boosts/Categories tab yet, since those
+  // systems don't exist in the app below this UI. Adding a tab for a
   // system that isn't built would be exactly the "looks complete but isn't"
   // problem this dashboard exists to avoid.
   const TABS = [
@@ -912,6 +1059,7 @@ export default function AdminQueue({
     can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
     can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
     can("users") && { key: "users", label: "Users", icon: Users },
+    can("finance") && { key: "payments", label: "Payments", icon: CreditCard },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
     { key: "activity", label: "Activity", icon: ShieldCheck },
@@ -996,6 +1144,24 @@ export default function AdminQueue({
             Platform-wide suspend/reactivate — independent of a seller's own approve/reject/suspend status above.
           </p>
           <UsersManagement onLoadUsers={onLoadUsers} onSetSuspended={onSetUserSuspended} currentAdminId={currentAdminId} />
+        </>
+      )}
+
+      {activeTab === "payments" && can("finance") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <CreditCard size={13} className="text-[#7C3AED]" /> Platform fees & seller payouts
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Fee changes only affect orders paid from now on — past orders keep the fee that was in force when they were paid.
+          </p>
+          <PaymentsAdmin
+            onLoadFeeConfig={onLoadFeeConfig}
+            onSetFeeConfig={onSetFeeConfig}
+            onLoadPayouts={onLoadPayouts}
+            onMarkPayoutPaid={onMarkPayoutPaid}
+            showToast={showToast}
+          />
         </>
       )}
 
