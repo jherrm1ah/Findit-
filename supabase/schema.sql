@@ -399,6 +399,37 @@ create table if not exists messages (
 create index if not exists messages_conversation_id_idx on messages(conversation_id);
 
 -- ---------------------------------------------------------------------------
+-- support_tickets / support_ticket_messages (migration 019)
+--
+-- A real in-app support ticket system — mirrors the conversations/messages
+-- shape above (a ticket is the thread, messages are the back-and-forth)
+-- rather than a static FAQ page. See lib/support.ts.
+-- ---------------------------------------------------------------------------
+
+create table if not exists support_tickets (
+  id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  subject text not null,
+  status text not null default 'open' check (status in ('open', 'resolved')),
+  user_has_unread boolean not null default false,
+  admin_has_unread boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists support_tickets_user_id_idx on support_tickets(user_id);
+create index if not exists support_tickets_status_idx on support_tickets(status);
+
+create table if not exists support_ticket_messages (
+  id text primary key,
+  ticket_id text not null references support_tickets(id) on delete cascade,
+  sender_id text not null references users(id) on delete cascade,
+  is_admin boolean not null default false,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists support_ticket_messages_ticket_id_idx on support_ticket_messages(ticket_id);
+
+-- ---------------------------------------------------------------------------
 -- saved_items — real wishlist/"save for later" (new; the old app faked this
 -- with the same 3 hardcoded product ids for every account).
 -- ---------------------------------------------------------------------------
@@ -637,6 +668,8 @@ alter table payouts enable row level security;
 alter table categories enable row level security;
 alter table boost_plans enable row level security;
 alter table boosts enable row level security;
+alter table support_tickets enable row level security;
+alter table support_ticket_messages enable row level security;
 
 create unique index if not exists users_email_unique_idx on users(email) where email is not null;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -1422,6 +1422,210 @@ function RiskSignals({ onLoadRiskSignals }) {
   );
 }
 
+const TICKET_STATUS_FILTERS = [
+  { value: "", label: "All" },
+  { value: "open", label: "Open" },
+  { value: "resolved", label: "Resolved" },
+];
+
+// The ticket conversation itself, shown in place of the list once an admin
+// opens one — mirrors Thread.jsx's message-bubble layout but stays local to
+// this tab (no full-screen overlay) since "Mark resolved" needs to live in
+// the same header as the back button.
+function AdminTicketThread({ ticket, messages, loading, onBack, onSend, onResolve, showToast }) {
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [resolving, setResolving] = useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const body = draft.trim();
+    if (!body || sending) return;
+    setSending(true);
+    setDraft("");
+    try {
+      await onSend(ticket.id, body);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't send that reply.", "error");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const resolve = async () => {
+    setResolving(true);
+    try {
+      await onResolve(ticket.id);
+      showToast?.("Ticket marked resolved.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't resolve that ticket.", "error");
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-3">
+        <button onClick={onBack} className="flex items-center gap-1 text-[12px] font-semibold text-[#514B67]">
+          <ChevronLeft size={14} /> Back to tickets
+        </button>
+        {ticket.status !== "resolved" && (
+          <button
+            onClick={resolve}
+            disabled={resolving}
+            className="text-[11.5px] font-semibold text-[#7C3AED] bg-[#F5F2FC] px-3 py-1.5 rounded-full disabled:opacity-60"
+          >
+            {resolving ? "Resolving…" : "Mark resolved"}
+          </button>
+        )}
+      </div>
+
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
+        <div className="flex items-center justify-between mb-1">
+          <p className="text-[13px] font-semibold text-[#1E1B4B]">{ticket.subject}</p>
+          {ticket.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+        </div>
+        <p className="text-[11px] text-[#6B6483]">{ticket.userName || ticket.userPhone || "User"}</p>
+      </div>
+
+      <div className="space-y-2.5 mb-4">
+        {loading && <p className="text-[12px] text-[#6B6483]">Loading…</p>}
+        {!loading &&
+          messages.map((m) => (
+            <div key={m.id} className={`flex ${m.isAdmin ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[80%] rounded-2xl px-3.5 py-2.5 ${m.isAdmin ? "text-white" : "bg-white border border-[#ECE9F7] text-[#1E1B4B]"}`}
+                style={m.isAdmin ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+              >
+                <p className="text-[13px] leading-relaxed">{m.body}</p>
+                <p className={`text-[10px] mt-1 ${m.isAdmin ? "text-white/70" : "text-[#8A8372]"}`}>
+                  {new Date(m.createdAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      <form onSubmit={submit} className="flex items-center gap-2">
+        <input
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder="Reply…"
+          className="flex-1 border border-[#ECE9F7] rounded-full px-4 py-2.5 text-[13px] outline-none"
+        />
+        <button
+          type="submit"
+          disabled={!draft.trim() || sending}
+          className="text-white text-[12.5px] font-semibold px-4 py-2.5 rounded-full disabled:opacity-40"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {sending ? "Sending…" : "Send"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// Any admin with the "support" domain can answer any ticket — see
+// lib/support.ts. The list is self-loading (same convention as
+// RiskSignals/CategoriesAdmin above); opening a ticket swaps this tab's
+// content for AdminTicketThread rather than a separate overlay.
+function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onResolveTicket, showToast }) {
+  const [statusFilter, setStatusFilter] = useState("");
+  const [tickets, setTickets] = useState(null);
+  const [openTicket, setOpenTicket] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [loadingThread, setLoadingThread] = useState(false);
+
+  useEffect(() => {
+    onLoadTickets(statusFilter || undefined).then(setTickets).catch(() => setTickets([]));
+  }, [statusFilter]);
+
+  const open = async (t) => {
+    setOpenTicket(t);
+    setLoadingThread(true);
+    try {
+      const { ticket, messages: msgs } = await onLoadTicket(t.id);
+      setOpenTicket(ticket);
+      setMessages(msgs);
+      setTickets((ts) => ts?.map((x) => (x.id === t.id ? { ...x, adminHasUnread: false } : x)) ?? ts);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't load that ticket.", "error");
+    } finally {
+      setLoadingThread(false);
+    }
+  };
+
+  const send = async (id, body) => {
+    const message = await onSendTicketMessage(id, body);
+    setMessages((ms) => [...ms, message]);
+  };
+
+  const resolve = async (id) => {
+    const updated = await onResolveTicket(id);
+    setOpenTicket(updated);
+    setTickets((ts) => ts?.map((x) => (x.id === id ? { ...x, ...updated } : x)) ?? ts);
+  };
+
+  if (openTicket) {
+    return (
+      <AdminTicketThread
+        ticket={openTicket}
+        messages={messages}
+        loading={loadingThread}
+        onBack={() => setOpenTicket(null)}
+        onSend={send}
+        onResolve={resolve}
+        showToast={showToast}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-4">
+        {TICKET_STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setStatusFilter(f.value)}
+            className={`text-[12px] font-semibold px-3 py-1.5 rounded-full ${
+              statusFilter === f.value ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
+            }`}
+            style={statusFilter === f.value ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {!tickets && <p className="text-[12px] text-[#6B6483]">Loading tickets…</p>}
+      {tickets && tickets.length === 0 && <p className="text-[12px] text-[#6B6483]">No support tickets match.</p>}
+
+      <div className="space-y-2.5">
+        {tickets?.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => open(t)}
+            className={`w-full text-left bg-white border rounded-[20px] p-4 flex items-center justify-between gap-3 ${
+              t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"
+            }`}
+          >
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{t.subject}</p>
+              <p className="text-[11px] text-[#6B6483]">{t.userName || t.userPhone || "User"}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {t.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+              <ChevronRight size={14} className="text-[#B7AFD6]" />
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -1456,6 +1660,10 @@ export default function AdminQueue({
   onCreateCategory,
   onUpdateCategory,
   onLoadRiskSignals,
+  onLoadTickets,
+  onLoadTicket,
+  onSendTicketMessage,
+  onResolveTicket,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -1477,6 +1685,7 @@ export default function AdminQueue({
     can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
     can("moderation") && { key: "categories", label: "Categories", icon: Tag },
     can("moderation") && { key: "risk", label: "Risk", icon: ShieldAlert },
+    can("support") && { key: "support", label: "Support", icon: MessageCircle },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
     { key: "activity", label: "Activity", icon: ShieldCheck },
@@ -1631,6 +1840,25 @@ export default function AdminQueue({
             3 real orders before a rate shows up here at all.
           </p>
           <RiskSignals onLoadRiskSignals={onLoadRiskSignals} />
+        </>
+      )}
+
+      {activeTab === "support" && can("support") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <MessageCircle size={13} className="text-[#7C3AED]" /> Support tickets
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Real tickets from Help & support in the app — any admin here can reply, and resolving is
+            explicit; a user's own reply on a resolved ticket reopens it automatically.
+          </p>
+          <SupportAdmin
+            onLoadTickets={onLoadTickets}
+            onLoadTicket={onLoadTicket}
+            onSendTicketMessage={onSendTicketMessage}
+            onResolveTicket={onResolveTicket}
+            showToast={showToast}
+          />
         </>
       )}
 

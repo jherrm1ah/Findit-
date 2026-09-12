@@ -157,6 +157,34 @@ export const api = {
       body: JSON.stringify(patch),
     }).then((d) => d.plan),
   getRiskSignals: () => request("/api/admin/risk-signals").then((d) => d.signals),
+  getMyTickets: () => request("/api/support/tickets").then((d) => d.tickets),
+  createTicket: (subject, body) =>
+    request("/api/support/tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject, body }),
+    }).then((d) => d.ticket),
+  getTicket: (id) => request(`/api/support/tickets/${id}`),
+  sendTicketMessage: (id, body) =>
+    request(`/api/support/tickets/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }).then((d) => d.message),
+  getAdminTickets: (status) => request(`/api/admin/support/tickets${status ? `?status=${status}` : ""}`).then((d) => d.tickets),
+  getAdminTicket: (id) => request(`/api/admin/support/tickets/${id}`),
+  sendAdminTicketMessage: (id, body) =>
+    request(`/api/admin/support/tickets/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }).then((d) => d.message),
+  resolveTicket: (id) =>
+    request(`/api/admin/support/tickets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "resolved" }),
+    }).then((d) => d.ticket),
   getCategories: () => request("/api/categories").then((d) => d.categories),
   getAdminCategories: () => request("/api/admin/categories").then((d) => d.categories),
   createCategory: (label, iconKey, sortOrder) =>

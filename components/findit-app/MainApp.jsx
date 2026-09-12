@@ -66,6 +66,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [activeThread, setActiveThread] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  // Real in-app support tickets (lib/support.ts) — see HelpSupport.jsx.
+  // Reuses <Thread> for the ticket conversation itself: a ticket message's
+  // `isAdmin` maps to the same `mine` field Thread already renders around.
+  const [tickets, setTickets] = useState([]);
+  const [activeTicket, setActiveTicket] = useState(null);
+  const [ticketMessages, setTicketMessages] = useState([]);
+  const [ticketLoading, setTicketLoading] = useState(false);
   const [savedIds, setSavedIds] = useState([]);
   const [myRequests, setMyRequests] = useState([]);
   const [adminActions, setAdminActions] = useState([]);
@@ -192,6 +199,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       // same way its "Notifications" card already does — otherwise you'd
       // have to open Messages blind to find out you have unread chats.
       api.getConversations().then(setConversations).catch(() => {});
+      api.getMyTickets().then(setTickets).catch(() => {});
     } else {
       setSavedIds([]);
     }
@@ -676,6 +684,19 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const handleLoadRiskSignals = () => api.getRiskSignals();
 
+  // Admin-facing side of the same support tickets buyers/sellers open from
+  // Help & support — see AdminQueue.jsx's SupportAdmin/AdminTicketThread,
+  // which keep the ticket list + open conversation local to that tab rather
+  // than a global overlay, since these are thin passthroughs to the API.
+  const handleLoadAdminTickets = (status) => api.getAdminTickets(status);
+  const handleLoadAdminTicket = (id) => api.getAdminTicket(id);
+  const handleSendAdminTicketMessage = (id, body) => api.sendAdminTicketMessage(id, body);
+  const handleResolveTicket = async (id) => {
+    const updated = await api.resolveTicket(id);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return updated;
+  };
+
   const handleLoadCategories = () => api.getAdminCategories();
 
   const handleCreateCategory = async (label, iconKey, sortOrder) => {
@@ -754,6 +775,56 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       showToast(err.message || "Couldn't send that message — try again.", "error");
     }
   };
+
+  // Real support tickets — reuses <Thread> for the conversation itself
+  // (see the `mine` mapping below), the same overlay pattern as
+  // activeThread/handleOpenThread above.
+  const handleOpenTicket = async (id) => {
+    setActiveTicket(tickets.find((t) => t.id === id) || { id, subject: "Support" });
+    setTicketLoading(true);
+    try {
+      const { ticket, messages } = await api.getTicket(id);
+      setActiveTicket(ticket);
+      setTicketMessages(messages.map((m) => ({ ...m, mine: !m.isAdmin })));
+      setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, userHasUnread: false } : t)));
+    } catch (err) {
+      showToast(err.message || "Couldn't load that ticket — try again.", "error");
+    } finally {
+      setTicketLoading(false);
+    }
+  };
+
+  const handleCreateTicket = async (subject, body) => {
+    try {
+      const ticket = await api.createTicket(subject, body);
+      setTickets((ts) => [ticket, ...ts]);
+      showToast("Ticket sent — we'll reply here.");
+      await handleOpenTicket(ticket.id);
+    } catch (err) {
+      showToast(err.message || "Couldn't send that ticket — try again.", "error");
+      throw err;
+    }
+  };
+
+  const handleSendTicketMessage = async (ticketId, body) => {
+    try {
+      const message = await api.sendTicketMessage(ticketId, body);
+      setTicketMessages((ms) => [...ms, { ...message, mine: true }]);
+    } catch (err) {
+      showToast(err.message || "Couldn't send that message — try again.", "error");
+    }
+  };
+
+  // Same "no websocket, just poll while open" approach as activeThread.
+  useEffect(() => {
+    if (!activeTicket) return;
+    const interval = setInterval(() => {
+      api.getTicket(activeTicket.id).then(({ messages }) => {
+        setTicketMessages(messages.map((m) => ({ ...m, mine: !m.isAdmin })));
+      }).catch(() => {});
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeTicket?.id]);
 
   // The seller side of contacting the other party — scoped to a real order
   // of theirs (enforced server-side too), not a free-form "message any
@@ -985,6 +1056,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onCreateCategory={handleCreateCategory}
               onUpdateCategory={handleUpdateCategory}
               onLoadRiskSignals={handleLoadRiskSignals}
+              onLoadTickets={handleLoadAdminTickets}
+              onLoadTicket={handleLoadAdminTicket}
+              onSendTicketMessage={handleSendAdminTicketMessage}
+              onResolveTicket={handleResolveTicket}
             />
           ) : (
             <RoleGate
@@ -1023,7 +1098,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
         {screen === "notifPrefs" && (
           <NotificationPreferences user={user} onToggle={handleUpdateNotificationPref} showToast={showToast} />
         )}
-        {screen === "help" && <HelpSupport />}
+        {screen === "help" && (
+          <HelpSupport tickets={tickets} onOpenTicket={handleOpenTicket} onCreateTicket={handleCreateTicket} />
+        )}
         {screen === "about" && <About />}
         {screen === "messages" && (
           <Messages conversations={conversations} onOpenThread={handleOpenThread} />
@@ -1094,6 +1171,17 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           loading={threadLoading}
           onBack={() => setActiveThread(null)}
           onSend={handleSendMessage}
+        />
+      )}
+
+      {activeTicket && (
+        <Thread
+          conversationId={activeTicket.id}
+          otherParty={{ name: activeTicket.subject || "Support" }}
+          messages={ticketMessages}
+          loading={ticketLoading}
+          onBack={() => setActiveTicket(null)}
+          onSend={handleSendTicketMessage}
         />
       )}
 
