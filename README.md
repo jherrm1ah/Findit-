@@ -518,6 +518,68 @@ clustering beyond the existing exact business-name match (`lib/sellerIdentityMat
 different purpose — data-integrity backfill, not fraud). Adding those would mean inventing a signal
 this app can't actually compute honestly.
 
+## Support tickets
+
+Help & support (`components/findit-app/HelpSupport.jsx`) is no longer just a static FAQ plus a
+`mailto:` link — a buyer or seller can now open a real in-app ticket and get a real reply from an
+admin, right there. Tickets mirror the shape of the existing 1:1 buyer/seller `conversations`/
+`messages` chat (`support_tickets` / `support_ticket_messages`, migration 019, see `lib/support.ts`)
+with one deliberate difference: unread tracking is two plain booleans on the ticket row
+(`user_has_unread`/`admin_has_unread`), not per-message read receipts, because any admin with the
+**support** permission domain can answer any ticket — there's no one fixed second party the way
+there is in a buyer/seller conversation.
+
+- A ticket starts `open`, can be marked `resolved` only by an explicit admin action (never
+  automatically), and the owning user's own next message on a resolved ticket reopens it — a
+  resolved ticket with an unanswered follow-up underneath it staying "resolved" would hide exactly
+  the thing that most needs attention. An admin's own reply never changes status on its own.
+- The buyer/seller side reuses `Thread.jsx` (the same generic message-thread UI as buyer/seller
+  chat) by mapping `{id, body, createdAt, isAdmin}` to `{..., mine: !isAdmin}` client-side — no new
+  UI component for the conversation itself.
+- The admin side is a new **Support** tab in the Admin queue (support domain,
+  `GET /api/admin/support/tickets`, optionally `?status=open|resolved`): a list of every ticket
+  across every user, and opening one swaps in a reply/resolve view in place (not a separate
+  overlay, since "Mark resolved" needs to live in that same header). Resolving is audit-logged.
+- An admin's reply notifies the ticket's owner through the same `notifyBestEffort` every other real
+  notification in this app already goes through — gated on that user's own notification preference,
+  never forced.
+
+## Platform analytics
+
+A new **Analytics** tab in the Admin queue (finance domain, `GET /api/admin/analytics?days=`) shows
+daily order volume, revenue from paid orders, new-user signups, and new-seller signups over a
+7/30/90-day window an admin picks — every series is a live `GROUP BY` over real `orders`/`users`/
+`sellers` rows (`lib/analytics.ts#getPlatformAnalytics`), never a projected or simulated trend.
+"Revenue" here is the real price of orders whose `payment_status = 'paid'`, bucketed by their real
+`paid_at` day, not by when the order was merely placed. The day-bucketing itself
+(`bucketCountsByDay`/`bucketAmountsByDay`) is pure and unit-tested, and always zero-fills every day
+in the window so a chart never has to guess whether a gap means "no data" or "genuinely zero that
+day." Rendered as plain proportional-height divs (`Sparkbars` in `AdminQueue.jsx`) — no charting
+library, matching this dashboard's existing zero-dependency visual style.
+
+## Admin alert center
+
+A new **Alerts** tab in the Admin queue, visible to every admin, consolidates real signals this app
+already computes for their own dedicated tabs — deliberately not a new signal
+(`lib/alerts.ts#getAdminAlerts`): open disputes (payments held on a reported problem), a backlog of
+`manual_required` payouts, pending seller verification submissions, sellers at or above the same
+30% dispute-rate threshold the Risk tab already colors red, and open support tickets. Each item
+only appears for an admin whose role actually grants that item's underlying permission domain
+(disputes/risk → moderation, payouts → finance, verification → verification, tickets → support), so
+a scoped admin never sees a count for a tab they can't open — and tapping an alert jumps straight to
+that tab.
+
+## Admin broadcast notifications
+
+A super admin can send a real announcement — to all users, buyers only, or sellers only — from the
+Admin tools tab (`POST /api/admin/broadcast`, `lib/broadcast.ts`). It fans out through the exact
+same `notifications` table every other real notification in this app already writes to: a
+recipient sees it exactly where they already see every other notification, and anyone who's turned
+notifications off is skipped, same as `notifyBestEffort` everywhere else. No new delivery mechanism
+was added. Sending is rate-limited per admin (5/day) and logged to the admin audit trail. Gated on
+`super_admin` specifically, not any single `AdminPermission` domain — reaching every user on the
+platform at once is categorically more sensitive than any one scoped action.
+
 ## Image uploads
 
 Product photos are stored in Supabase Storage. The `product-images` bucket is created
@@ -619,5 +681,6 @@ a seller's public rating and their New/Verified/Trusted level — see `submitRev
 `lib/repo.ts` and "Seller trust & verification" above). Still not built: real per-seller storage
 metering, tier-themed public storefronts, a combined-benefit view for an account with both a Store
 plan and FindIt Pro, and platform transaction fees on boosts/listings beyond the marketplace order
-fee that already exists. Also not built: a support-ticket system and a broader notifications/
-alerts framework.
+fee that already exists. A support-ticket system, real platform analytics, an admin alert center,
+and admin broadcast notifications are all built now too (see "Support tickets", "Platform
+analytics", "Admin alert center", and "Admin broadcast notifications" above).
