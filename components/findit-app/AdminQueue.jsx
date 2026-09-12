@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3 } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -1422,6 +1422,98 @@ function RiskSignals({ onLoadRiskSignals }) {
   );
 }
 
+const ANALYTICS_WINDOWS = [
+  { value: 7, label: "7d" },
+  { value: 30, label: "30d" },
+  { value: 90, label: "90d" },
+];
+
+// A row of proportional-height divs — the same zero-dependency, plain-div
+// approach as StatCard above, deliberately not a charting library for one
+// bar chart. Height is relative to the window's own max, not a fixed scale,
+// so a quiet week and a busy one both render legibly.
+function Sparkbars({ points, valueKey, color }) {
+  const max = Math.max(1, ...points.map((p) => p[valueKey]));
+  return (
+    <div className="flex items-end gap-[3px] h-16">
+      {points.map((p) => (
+        <div
+          key={p.date}
+          title={`${p.date}: ${p[valueKey]}`}
+          className="flex-1 min-w-[2px] rounded-t-sm"
+          style={{ height: `${Math.max(2, (p[valueKey] / max) * 100)}%`, background: color }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AnalyticsSection({ title, points, valueKey, color, formatValue }) {
+  const total = points.reduce((sum, p) => sum + p[valueKey], 0);
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-[12px] font-semibold text-[#1E1B4B]">{title}</p>
+        <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+          {formatValue ? formatValue(total) : total}
+        </p>
+      </div>
+      <Sparkbars points={points} valueKey={valueKey} color={color} />
+      <div className="flex justify-between text-[9.5px] text-[#8A8372] mt-1.5">
+        <span>{points[0]?.date}</span>
+        <span>{points[points.length - 1]?.date}</span>
+      </div>
+    </div>
+  );
+}
+
+// Every series here is a live GROUP BY over real orders/users/sellers rows
+// (see lib/analytics.ts#getPlatformAnalytics) — never a projected trend.
+// Same self-loading convention as RiskSignals/CategoriesAdmin above.
+function AnalyticsAdmin({ onLoadAnalytics, showToast }) {
+  const [days, setDays] = useState(30);
+  const [analytics, setAnalytics] = useState(null);
+
+  useEffect(() => {
+    onLoadAnalytics(days)
+      .then(setAnalytics)
+      .catch((err) => {
+        setAnalytics(null);
+        showToast?.(err.message || "Couldn't load analytics.", "error");
+      });
+  }, [days]);
+
+  return (
+    <div>
+      <div className="flex gap-1.5 mb-4">
+        {ANALYTICS_WINDOWS.map((w) => (
+          <button
+            key={w.value}
+            onClick={() => setDays(w.value)}
+            className={`text-[12px] font-semibold px-3 py-1.5 rounded-full ${
+              days === w.value ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
+            }`}
+            style={days === w.value ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
+          >
+            {w.label}
+          </button>
+        ))}
+      </div>
+
+      {!analytics && <p className="text-[12px] text-[#6B6483]">Loading analytics…</p>}
+
+      {analytics && (
+        <>
+          <AnalyticsSection title={`Orders placed (last ${analytics.windowDays}d)`} points={analytics.orderVolume} valueKey="count" color="#7C3AED" />
+          <AnalyticsSection title="Revenue from paid orders" points={analytics.revenue} valueKey="amount" color="#F59E0B" formatValue={naira} />
+          <AnalyticsSection title="New signups" points={analytics.newUsers} valueKey="count" color="#22C55E" />
+          <AnalyticsSection title="New sellers" points={analytics.newSellers} valueKey="count" color="#3B82F6" />
+        </>
+      )}
+    </div>
+  );
+}
+
 const TICKET_STATUS_FILTERS = [
   { value: "", label: "All" },
   { value: "open", label: "Open" },
@@ -1664,6 +1756,7 @@ export default function AdminQueue({
   onLoadTicket,
   onSendTicketMessage,
   onResolveTicket,
+  onLoadAnalytics,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -1683,6 +1776,7 @@ export default function AdminQueue({
     can("users") && { key: "users", label: "Users", icon: Users },
     can("finance") && { key: "payments", label: "Payments", icon: CreditCard },
     can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
+    can("finance") && { key: "analytics", label: "Analytics", icon: BarChart3 },
     can("moderation") && { key: "categories", label: "Categories", icon: Tag },
     can("moderation") && { key: "risk", label: "Risk", icon: ShieldAlert },
     can("support") && { key: "support", label: "Support", icon: MessageCircle },
@@ -1807,6 +1901,18 @@ export default function AdminQueue({
             onUpdateBoostPlan={onUpdateBoostPlan}
             showToast={showToast}
           />
+        </>
+      )}
+
+      {activeTab === "analytics" && can("finance") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <BarChart3 size={13} className="text-[#7C3AED]" /> Platform analytics
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Real daily totals from actual orders/users/sellers — never a projected trend.
+          </p>
+          <AnalyticsAdmin onLoadAnalytics={onLoadAnalytics} showToast={showToast} />
         </>
       )}
 
