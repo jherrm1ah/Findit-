@@ -9,6 +9,8 @@ import {
   isValidProductImageUrl,
   ORDER_STATUSES,
   ValidationError,
+  assertSellerCanTransact,
+  isBoostActive,
 } from "./repo";
 
 // NOTE ON SCOPE: lib/repo.ts now talks to a real Supabase Postgres database
@@ -24,8 +26,12 @@ import {
 // automated test here.
 
 describe("validateProductInput", () => {
-  it("rejects an unknown category, empty name, and non-positive price", () => {
-    expect(() => validateProductInput({ category: "not-a-real-category" })).toThrow();
+  // Category validity moved to lib/categories.ts#isValidCategoryKey (DB-backed,
+  // an admin-editable table — not something this pure function can decide
+  // on its own anymore, and not unit-tested for the same DB-access reason
+  // every other DB-touching function in this app isn't — see the NOTE ON
+  // SCOPE above).
+  it("rejects empty name and non-positive price", () => {
     expect(() => validateProductInput({ name: "   " })).toThrow();
     expect(() => validateProductInput({ price: 0 })).toThrow();
     expect(() => validateProductInput({ price: -5 })).toThrow();
@@ -168,5 +174,64 @@ describe("isValidProductImageUrl", () => {
   it("rejects a different Supabase project's bucket, not just non-Supabase hosts", () => {
     const otherPrefix = "https://different-project.supabase.co/storage/v1/object/public/product-images/";
     expect(isValidProductImageUrl(`${otherPrefix}x.jpg`, prefix)).toBe(false);
+  });
+});
+
+// The real seller lifecycle gate (migration 013) — replaces three
+// previously-separate `status === "rejected"` checks that let a 'pending'
+// seller through everywhere. Only 'approved' should ever pass.
+describe("assertSellerCanTransact", () => {
+  it("allows an approved seller through", () => {
+    expect(() => assertSellerCanTransact("approved")).not.toThrow();
+  });
+
+  it("blocks pending — the actual bug fix: pending used to behave like approved", () => {
+    expect(() => assertSellerCanTransact("pending")).toThrow(ValidationError);
+  });
+
+  it("blocks rejected", () => {
+    expect(() => assertSellerCanTransact("rejected")).toThrow(ValidationError);
+  });
+
+  it("blocks suspended", () => {
+    expect(() => assertSellerCanTransact("suspended")).toThrow(ValidationError);
+  });
+
+  it("blocks a non-seller (null status) with its own message rather than crashing", () => {
+    expect(() => assertSellerCanTransact(null)).toThrow(ValidationError);
+  });
+
+  it("gives each blocked status a distinct, actionable message — never a bare 403", () => {
+    const messages = new Set(
+      (["pending", "rejected", "suspended", null] as const).map((s) => {
+        try {
+          assertSellerCanTransact(s);
+          return "";
+        } catch (err) {
+          return (err as Error).message;
+        }
+      })
+    );
+    expect(messages.size).toBe(4);
+  });
+});
+
+describe("isBoostActive", () => {
+  const NOW = new Date("2026-06-15T12:00:00Z").getTime();
+
+  it("is false when never boosted (null)", () => {
+    expect(isBoostActive(null, NOW)).toBe(false);
+  });
+
+  it("is true while the boosted_until timestamp is still in the future", () => {
+    expect(isBoostActive("2026-06-16T00:00:00Z", NOW)).toBe(true);
+  });
+
+  it("is false once boosted_until has passed — no cron needed to flip this", () => {
+    expect(isBoostActive("2026-06-14T00:00:00Z", NOW)).toBe(false);
+  });
+
+  it("is false at the exact expiry instant (strictly after, not at-or-after)", () => {
+    expect(isBoostActive("2026-06-15T12:00:00Z", NOW)).toBe(false);
   });
 });

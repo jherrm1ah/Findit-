@@ -62,6 +62,14 @@ funds UI as a simulated state) — see "Next steps" below.
   real coordinates to sort listings, sellers, and (for sellers) open requests by actual distance —
   "near you" works the same whether you're in Lagos, Nairobi, or anywhere else. See "Location
   awareness" below.
+- **Store plans** — every seller account has a real subscription (Free by default) that actually
+  gates what their store can do — currently the number of active listings, backend-enforced, not
+  just hidden buttons. A "Store plan" card on the Seller Dashboard links to a plan-comparison screen
+  to upgrade, start a trial, or cancel. See "Store subscriptions" below.
+- **Seller trust & verification** — a multi-step wizard (business info, location, evidence, review)
+  that a seller can complete any time from their dashboard, reviewed by an admin, driving a public
+  New/Verified/Trusted badge on their storefront. Doesn't block selling — it's trust information for
+  buyers, not a gate. See "Seller trust & verification" below.
 
 ## Stack
 
@@ -85,6 +93,23 @@ needs one more script — `supabase/migrations/002_add_location.sql` (SQL Editor
 only adds new columns (`lat`/`lng` on `users`, `products`, `requests`); it doesn't touch existing
 data. A brand-new project doesn't need this — `schema.sql` already includes those columns.
 
+**If you already had this app running before Store subscriptions were added:** run
+`supabase/migrations/010_store_subscriptions.sql` (SQL Editor → paste → Run). It adds the
+`subscription_plans`/`subscriptions`/`subscription_events`/`payments` tables (seeded with the real
+plan prices/limits) and a `products.active` column defaulting to `true` — every existing listing
+keeps showing exactly as it does today. Then also run
+`supabase/migrations/011_store_branding.sql`, which adds `logo_url`/`banner_url` to `sellers` (real
+backing for the plan's customization benefit — see "Store subscriptions" below). A brand-new
+project doesn't need either — `schema.sql` already includes both.
+
+**If you already had this app running before seller trust & verification was added:** run
+`supabase/migrations/012_seller_verification.sql`, which adds `email` to `users`; seller-type/
+category/description/location/verification-status columns to `sellers`; and two new tables,
+`seller_verification_details` and `seller_verification_evidence` (see "Seller trust &
+verification" below). Nothing existing changes — every seller's `verification_status` starts at
+`'incomplete'`, the same as a freshly signed-up one. A brand-new project doesn't need this —
+`schema.sql` already includes it.
+
 ### 2. Configure environment variables
 
 Copy `.env.example` to `.env.local` and fill in:
@@ -95,6 +120,11 @@ Copy `.env.example` to `.env.local` and fill in:
 - `GEMINI_API_KEY` — from [ai.google.dev](https://ai.google.dev) ("Get API key"). Optional: without
   it, everything else works, and the AI-suggest button on the request form shows a clear error
   instead of a fake response.
+- `PAYSTACK_SECRET_KEY` — from [dashboard.paystack.com](https://dashboard.paystack.com) (Settings →
+  API Keys & Webhooks; use the TEST key while developing). Optional: without it, Free and
+  trial-eligible Store plan changes still work (no payment involved), and a plan that genuinely
+  needs payment reports "not configured" instead of pretending to charge anyone — see "Store
+  subscriptions" below.
 
 ### 3. Install and run
 
@@ -211,10 +241,38 @@ true rather than just copy:
    An admin resolves it through `POST /api/admin/disputes` — `released` (pay the seller) or
    `refunded` (return the buyer's money) — and both outcomes are written to the admin audit log.
 
-`escrow_status` is `held | released | disputed | refunded`. **No payment provider is wired up
-yet**, so this column is the *record* of what should happen to the money — the hook a provider
-integration reads later, and what buyers, sellers and admins see in the app today. Nothing here
-moves real funds on its own.
+`escrow_status` is `unpaid | held | released | disputed | refunded`. **A real Paystack charge is
+now required before it ever reaches `held`** — see "Real marketplace payments" below; nothing above
+in this section changed, it's just that "released"/"refunded" now trigger an actual Paystack
+Transfer/refund instead of only flipping this column.
+
+## Real marketplace payments
+
+An order starts `payment_status: 'pending'`/`escrow_status: 'unpaid'` and can't advance past
+"Awaiting payment" until a real Paystack charge succeeds (`lib/payments.ts#confirmOrderPayment`,
+called only from `POST /api/payments/paystack/webhook` once Paystack confirms it — never on a
+client-supplied "I paid"). `POST /api/orders/[id]/pay` starts that checkout, mirroring the same
+Paystack machinery Store subscriptions and FindIt Pro use.
+
+- **Platform fee.** An append-only, admin-editable `platform_fee_config` table (finance domain,
+  `GET`/`PATCH /api/admin/fee-config`) holds the current commission in basis points. The fee is
+  snapshotted onto the order (`platform_fee_bps`/`platform_fee_amount`/`seller_payout_amount`)
+  the moment it's paid and never recomputed — a later fee change never rewrites what an
+  already-paid order was actually charged.
+- **Seller payouts.** Once a buyer confirms delivery, `initiateSellerPayout` fires a real Paystack
+  Transfer to the seller's bank account (set via `GET`/`PATCH /api/sellers/me/payout-account`,
+  resolved against Paystack's real account-name lookup before saving) — or records an honestly
+  labeled `manual_required` payout for an admin to settle off-platform if no payout account is on
+  file. A database-level `unique(order_id)` on `payouts` makes a double payout impossible.
+- **Refunds.** An admin's "refund" decision on a disputed order (`POST /api/admin/disputes`)
+  reverses the buyer's real original Paystack charge, not just this column.
+- **Admin ledgers.** The "Payments" tab in the Admin queue (finance domain) edits the platform fee
+  and shows the real payout ledger (with a "Mark paid" action for the `manual_required` escape
+  hatch) — `GET /api/admin/transactions` also exposes the full payment ledger (orders and
+  subscriptions) via the API, with no dedicated screen yet.
+- **No live Paystack keys exist in this environment.** Every one of the above checks
+  `isPaystackConfigured()` first and returns a clear "not configured" result instead of pretending
+  to charge or pay anyone — see `.env.example` for `PAYSTACK_SECRET_KEY`.
 
 **Becoming a seller.** Phone numbers are unique per account, so a buyer who later wants to sell
 can't just sign up again. `POST /api/auth/become-seller` → `becomeSeller()` converts the existing
@@ -259,6 +317,269 @@ code, using the service role key server-side only. See the note at the top of `s
 for more detail, and if you migrate to Supabase Auth later, that's where real per-user RLS policies
 would go.
 
+## Listing boosts
+
+A seller can pay (via Paystack) to move one of their own listings to the front of Home/Browse for
+a fixed window — reuses the same `payments` table/webhook machinery as orders/subscriptions
+(`payments.kind = 'boost'`) rather than a parallel payment system. Pricing lives in `boost_plans`
+as real, admin-editable data (`GET`/`PATCH /api/admin/boost-plans`, edited in the Admin queue's
+"Plans" tab under "Listing boosts") — the seller picks a plan from `SellerDashboard.jsx`'s "Boost"
+button on any of their own active listings, which starts a real Paystack checkout the same way
+`POST /api/orders/[id]/pay` does.
+
+- **Activation is webhook-only** (`lib/boosts.ts#activateBoost`), never on the checkout route's own
+  response — the same rule every other payment in this app follows.
+- **`products.boosted_until`** is the one column display order actually reads (`lib/repo.ts#sortForDisplay`,
+  unit-tested via `isBoostActive`) — a boost outranks the Store-plan "featured" tier (a seller paid
+  for this *specific* listing, not an ambient plan benefit), and needs no cron to "expire": the
+  sort just stops caring once `now()` passes the timestamp.
+- **Buying a second boost while one is active extends it** rather than a shorter new plan
+  overwriting a longer remaining window — `activateBoost` always starts from
+  `max(now(), current boosted_until)`.
+- **No live Paystack keys exist in this environment** — same "not configured" degradation as every
+  other payment flow here.
+
+## Store subscriptions
+
+Every seller account owns exactly one Store subscription — Free by default, provisioned the moment
+an account becomes a seller (`ensureDefaultStoreSubscription` in `lib/auth.ts`). Plans are real
+database rows (`subscription_plans`), not hard-coded in the frontend, specifically so an admin can
+change a price or limit without touching code:
+
+| Plan | Price | Active listings |
+| --- | --- | --- |
+| Free Seller | ₦0/mo | 10 |
+| Basic Store | ₦2,000/mo | 50 |
+| Business Store | ₦5,000/mo | 200 |
+| Pro Store | ₦10,000/mo | Unlimited |
+| FindIt Pro (platform-wide, separate from Store plans) | ₦3,500/mo or ₦35,000/yr | — |
+
+- **Backend-enforced, not just hidden buttons.** `createProduct`/reactivating a listing both call
+  `assertCanActivateProduct` (`lib/subscriptions.ts`) before touching the database — a Free seller
+  at 10/10 can't create an 11th listing by hitting the API directly, the same way every other limit
+  in this app is enforced server-side first.
+- **Downgrade never deletes data.** A plan change that tightens the product limit deactivates
+  (`products.active = false`) whichever of the seller's own listings are over the new limit —
+  oldest listings stay active first — rather than deleting anything. A deactivated listing
+  disappears from Home/Browse but still shows on the seller's own dashboard, marked "Hidden — over
+  plan limit," until they upgrade again or make room themselves.
+- **Trials.** A paid Store plan a seller hasn't already trialed starts a 30-day trial with no
+  payment required (`trial_days` on the plan row — admin-editable). This app has no scheduled job
+  runner, so instead of a cron sweeping expired trials, a trial (or an unpaid billing period) is
+  lazily resolved back to Free the next time that seller's subscription is read — never deleting
+  their store or listings, just dropping the plan.
+- **Cancelling** takes effect immediately (straight back to Free) rather than "at period end," for
+  the same reason: no scheduled job exists here to expire it later, and Free never deletes data, so
+  an immediate, honest cancel is more truthful than a promise this codebase can't keep on its own.
+- **Paystack.** `lib/paystack.ts` wraps Paystack's REST API directly (no SDK) — initializing a
+  transaction, verifying one, and verifying a webhook's HMAC-SHA512 signature
+  (`POST /api/payments/paystack/webhook`, which is what actually flips a subscription to `active`
+  once a charge succeeds — never trust a client-supplied "I paid"). With no `PAYSTACK_SECRET_KEY`
+  set, a plan change that genuinely needs payment returns a clear "not configured" response instead
+  of pretending to charge anyone; `POST /api/admin/subscriptions/grant` (admin-only, audit-logged)
+  activates a paid plan manually in the meantime — for a seller who paid off-platform, or for
+  testing the upgrade flow with no live Paystack account.
+- **Admin control.** `GET /api/admin/subscription-plans` / `PATCH /api/admin/subscription-plans/[id]`
+  edit any plan's price, limits, or features — no deploy needed. A real editor screen lives in the
+  Admin queue's "Plans" tab (finance domain) — every plan (Store and FindIt Pro) as an editable card.
+  A price/limit change here never touches an existing subscriber's current billing period; it only
+  applies to what a new or renewing subscriber pays next.
+- **MRR and churn, on the Overview tab.** MRR is "current run-rate": today's active/trialing paid
+  subscribers (Store and FindIt Pro combined) at their *current* plan price, normalizing a yearly
+  subscriber's price across 12 months (`normalizedMonthlyRevenue` in `lib/subscriptions.ts`, unit
+  tested) — a plan price edit changes it on the next read, the same way every other "live plan" read
+  in this app works. Churn is shown as two plain counts over a trailing 30 days — cancellations and
+  expirations — rather than a percentage rate: a rate needs a cohort baseline ("how many paying
+  subscribers existed 30 days ago") this app has never snapshotted, so computing one would fabricate
+  precision the data doesn't support. Both counts exclude losing a *free* plan or an unpaid trial —
+  losing something that was never paid for isn't churn.
+- **Pay for it, get it — every plan feature is either real or explicitly not.** Beyond the product
+  limit, four more plan features are actually wired to real functionality, computed server-side from
+  the seller's *live* plan (`getStorePlanDisplayMap` in `lib/subscriptions.ts`), not shown from
+  anything a client sent: **analytics** (a real Store analytics card on the dashboard, computed from
+  that seller's own order data — Basic gets this-month totals, Business adds a top product, Pro adds
+  a 4-week revenue chart), **store customization** (a real logo/banner upload, gated server-side by
+  `assertCanCustomizeStore` and rendered on the public storefront), **featured placement** (Business/
+  Pro sellers' listings are stably sorted to the front of Home and Browse — a real reordering buyers
+  actually see, layered on top of, not replacing, "near you" distance sort), and the **Pro Store
+  badge** (shown next to the seller's name on their own dashboard and their public storefront). A
+  plan whose subscription lapses (see "Trials" above) loses every one of these on its very next
+  read — nothing lingers past what was actually paid for. **Priority support** has no real system
+  behind it yet (no support-ticket routing exists to prioritize) and is shown as "Coming soon" on
+  the plan-comparison screen rather than a checkmark — see `components/findit-app/StorePlans.jsx`.
+
+**Not built yet, deliberately out of scope for this pass:** real per-seller storage (MB) metering
+(`storage_limit_mb` exists on each plan as config/display data only — nothing in the upload path
+measures usage against it, and it isn't claimed as a feature to sellers for exactly that reason), a
+real priority-support system, and deeper tier-themed storefront layouts beyond the real logo/banner/
+Pro badge described above. Boost/featured-listing purchases and platform transaction fees still have
+no purchase flow (their pricing has an obvious home — another admin-editable `subscription_plans`
+-style table — but nothing built).
+
+## FindIt Pro
+
+A separate, account-wide membership (₦3,500/mo or ₦35,000/yr) — any signed-in account (buyer or
+seller) can subscribe, independent of whether that account also has a Store plan. It reuses the same
+`subscriptions`/`subscription_plans` tables as Store plans (`owner_type = 'platform'`, `owner_id =
+users.id`, plan id `findit_pro`) and the same Paystack checkout machinery, rather than a second,
+parallel payment system:
+
+- **Real checkout, real webhook confirmation.** `POST /api/me/subscription` starts a genuine
+  Paystack transaction the same way Store checkout does; the subscription only actually activates
+  once `POST /api/payments/paystack/webhook` verifies the charge — never on a client-supplied "I
+  paid." With no Paystack keys configured, it returns a clear "not configured" response instead
+  (see "Golden rule" above) — `POST /api/admin/subscriptions/grant` (now generalized for both Store
+  and FindIt Pro) is the same off-platform/testing escape hatch already used for Store plans.
+- **Cancelling is immediate**, for the same no-scheduled-job reason as Store plans — see "Store
+  subscriptions" above.
+- **Pay for it, get it applies here too.** The only benefit currently wired to something real is the
+  **FindIt Pro badge** shown on your own Profile screen (`components/findit-app/FindItPro.jsx`).
+  **Priority support** is shown as "Coming soon," same as the Store plans' identical claim — no
+  support-ticket system exists yet to prioritize. The plan row shares its `analytics_level` /
+  `customization_level` / `featured_listing_access` columns with Store plans for schema reasons, but
+  none of those correspond to anything a buyer can see, so none of them are shown as a FindIt Pro
+  feature — an honest gap, not an oversight.
+- **A real bug found and fixed while building this:** a lapsed or cancelled *platform* subscription
+  was, before this pass, being routed through the same "revert to Free" logic as a Store plan —
+  which would have reassigned it to the `store_free` plan row, a plan of the wrong `kind` entirely.
+  Platform subscriptions now resolve to their own terminal `expired`/`cancelled` status instead (see
+  `expirePlatformSubscription` in `lib/subscriptions.ts`).
+
+**Not built yet:** a combined-benefit view for an account that has both a Store plan and FindIt Pro,
+and the FindIt Pro badge isn't surfaced anywhere buyers interact with sellers (chat, orders) — only
+on the subscriber's own Profile screen.
+
+## Seller trust & verification
+
+Separate from the original pending/approved/rejected admin gate on `sellers.status` (which still
+controls whether a seller can transact at all — only `rejected` blocks it) is a richer trust layer:
+who is this seller, what do they sell, where do they operate, and what real evidence backs that up.
+It drives a public **New / Verified / Trusted** badge; it never blocks selling on its own — a brand
+new seller can list immediately, exactly as before.
+
+- **The wizard** (`components/findit-app/SellerOnboarding.jsx`, reached from a "Complete your seller
+  verification" card on the dashboard) collects seller type, category, description, social/website
+  links, location, and evidence (product/shop photos or a business page link) across a few real
+  steps with a progress indicator, then submits everything in one call
+  (`POST /api/sellers/me/verification`) — nothing is force-required beyond one real detail plus one
+  piece of evidence (`canSubmitVerification` in `lib/sellerVerificationLevels.ts`), so a legitimate
+  home-based seller with a single product photo and a WhatsApp handle clears it easily.
+- **Private data is physically separate, not just RLS-flagged.** A precise shop address, exact
+  coordinates, and uploaded evidence live in `seller_verification_details` /
+  `seller_verification_evidence` — never on `sellers` itself — specifically because this codebase
+  already runs several `select('*')` queries against `sellers`, and this is the one guarantee that
+  can't regress by accident later. Evidence photos go into a **private** Supabase Storage bucket
+  (`seller-verification`) and are only ever served as short-lived (10 minute) signed URLs, generated
+  fresh for the owning seller or an admin — never a public URL, never cached.
+- **RLS is enabled with no policies** on both new tables, the same as every other table in this
+  schema, for the same reason: no Supabase Auth session here means no `auth.uid()` to key a real
+  policy on. The actual boundary — a seller sees only their own submission, evidence reaches only
+  the owning seller or an admin — is enforced in the Next.js API layer.
+- **Trusted is computed, not declared.** `computeVerificationLevel` (`lib/sellerVerificationLevels.ts`,
+  unit tested) requires an actual admin approval first, then a real track record on top: at least 10
+  completed orders (by escrow outcome, not just reviewed ones — most buyers never leave a review),
+  zero disputed orders ever, and a buyer rating of 4+ where one exists. A seller who racks up orders
+  without ever being reviewed stays "New," never "Trusted" — the whole point is never claiming a
+  level FindIt hasn't actually earned or checked.
+- **Admin review** is a separate queue in the Admin Queue screen ("Seller trust verification," below
+  the basic account-approval list) — approve, ask for more information, or reject, each with a
+  reason shown back to the seller (never a silent rejection) and logged to the admin audit trail
+  like every other high-impact admin action here.
+- **Public display**: the storefront (`SellerProfile.jsx`) shows the New/Verified/Trusted badge
+  (tap it for what it means), a coarse public area/city/state (never the private shop address), and
+  "On FindIt since" from the account's real creation date.
+- **Email** (`users.email`, optional) was added mainly so a real address can back Paystack
+  transactions instead of the synthetic one `lib/paystack.ts` falls back to — this app is still
+  phone-first, email is never required to log in.
+
+**Not built yet, deliberately out of scope for this pass:** a map-picker for coordinates (a "use my
+current location" button covers the common case), a resubmission-history view beyond "reopen the
+wizard, see the last rejection reason," ID/document verification specifically (evidence today is
+photos and links, not a government ID upload), and admin-configurable Trusted thresholds
+(`TRUSTED_MIN_ORDERS`/`TRUSTED_MIN_RATING` are constants for now, not a `subscription_plans`-style
+editable row — revisit once there's enough real order volume to tune them against).
+
+## Risk signals
+
+A "Risk" tab in the Admin queue (moderation domain, `GET /api/admin/risk-signals`) ranks sellers by
+their real dispute rate — disputed orders (`escrow_status = 'disputed'`) divided by that seller's
+total real orders, computed live from `orders`, never a predicted or fabricated "fraud score."
+`computeSellerRiskSignals` (`lib/risk.ts`, unit-tested) is pure and does the actual ranking/
+filtering: a seller needs at least `MIN_ORDERS_FOR_DISPUTE_RATE` (3) real orders before a rate is
+shown at all, and zero disputes never shows up regardless of order count — a single dispute out of
+one order would read as "100% risk," which overstates what one data point can tell an admin. This
+is the same signal `computeVerificationLevel` (`lib/sellerVerificationLevels.ts`) already uses to
+decide a seller's public "Trusted" badge, surfaced here as a ranked admin list instead of folded
+into one buyer-facing badge.
+
+**Not built yet, deliberately out of scope for this pass:** any signal this app doesn't have real
+data to back — device/IP fingerprinting, payment-fraud pattern detection, duplicate-account
+clustering beyond the existing exact business-name match (`lib/sellerIdentityMatch.ts`, built for a
+different purpose — data-integrity backfill, not fraud). Adding those would mean inventing a signal
+this app can't actually compute honestly.
+
+## Support tickets
+
+Help & support (`components/findit-app/HelpSupport.jsx`) is no longer just a static FAQ plus a
+`mailto:` link — a buyer or seller can now open a real in-app ticket and get a real reply from an
+admin, right there. Tickets mirror the shape of the existing 1:1 buyer/seller `conversations`/
+`messages` chat (`support_tickets` / `support_ticket_messages`, migration 019, see `lib/support.ts`)
+with one deliberate difference: unread tracking is two plain booleans on the ticket row
+(`user_has_unread`/`admin_has_unread`), not per-message read receipts, because any admin with the
+**support** permission domain can answer any ticket — there's no one fixed second party the way
+there is in a buyer/seller conversation.
+
+- A ticket starts `open`, can be marked `resolved` only by an explicit admin action (never
+  automatically), and the owning user's own next message on a resolved ticket reopens it — a
+  resolved ticket with an unanswered follow-up underneath it staying "resolved" would hide exactly
+  the thing that most needs attention. An admin's own reply never changes status on its own.
+- The buyer/seller side reuses `Thread.jsx` (the same generic message-thread UI as buyer/seller
+  chat) by mapping `{id, body, createdAt, isAdmin}` to `{..., mine: !isAdmin}` client-side — no new
+  UI component for the conversation itself.
+- The admin side is a new **Support** tab in the Admin queue (support domain,
+  `GET /api/admin/support/tickets`, optionally `?status=open|resolved`): a list of every ticket
+  across every user, and opening one swaps in a reply/resolve view in place (not a separate
+  overlay, since "Mark resolved" needs to live in that same header). Resolving is audit-logged.
+- An admin's reply notifies the ticket's owner through the same `notifyBestEffort` every other real
+  notification in this app already goes through — gated on that user's own notification preference,
+  never forced.
+
+## Platform analytics
+
+A new **Analytics** tab in the Admin queue (finance domain, `GET /api/admin/analytics?days=`) shows
+daily order volume, revenue from paid orders, new-user signups, and new-seller signups over a
+7/30/90-day window an admin picks — every series is a live `GROUP BY` over real `orders`/`users`/
+`sellers` rows (`lib/analytics.ts#getPlatformAnalytics`), never a projected or simulated trend.
+"Revenue" here is the real price of orders whose `payment_status = 'paid'`, bucketed by their real
+`paid_at` day, not by when the order was merely placed. The day-bucketing itself
+(`bucketCountsByDay`/`bucketAmountsByDay`) is pure and unit-tested, and always zero-fills every day
+in the window so a chart never has to guess whether a gap means "no data" or "genuinely zero that
+day." Rendered as plain proportional-height divs (`Sparkbars` in `AdminQueue.jsx`) — no charting
+library, matching this dashboard's existing zero-dependency visual style.
+
+## Admin alert center
+
+A new **Alerts** tab in the Admin queue, visible to every admin, consolidates real signals this app
+already computes for their own dedicated tabs — deliberately not a new signal
+(`lib/alerts.ts#getAdminAlerts`): open disputes (payments held on a reported problem), a backlog of
+`manual_required` payouts, pending seller verification submissions, sellers at or above the same
+30% dispute-rate threshold the Risk tab already colors red, and open support tickets. Each item
+only appears for an admin whose role actually grants that item's underlying permission domain
+(disputes/risk → moderation, payouts → finance, verification → verification, tickets → support), so
+a scoped admin never sees a count for a tab they can't open — and tapping an alert jumps straight to
+that tab.
+
+## Admin broadcast notifications
+
+A super admin can send a real announcement — to all users, buyers only, or sellers only — from the
+Admin tools tab (`POST /api/admin/broadcast`, `lib/broadcast.ts`). It fans out through the exact
+same `notifications` table every other real notification in this app already writes to: a
+recipient sees it exactly where they already see every other notification, and anyone who's turned
+notifications off is skipped, same as `notifyBestEffort` everywhere else. No new delivery mechanism
+was added. Sending is rate-limited per admin (5/day) and logged to the admin audit trail. Gated on
+`super_admin` specifically, not any single `AdminPermission` domain — reaching every user on the
+platform at once is categorically more sensitive than any one scoped action.
+
 ## Image uploads
 
 Product photos are stored in Supabase Storage. The `product-images` bucket is created
@@ -267,13 +588,26 @@ automatically the first time a seller uploads a photo — no manual setup beyond
 everything else in the app still fails to start (they're required for the database too now, not
 just uploads).
 
+## Categories admin
+
+Product/request categories moved from a hardcoded object to a real, admin-editable table
+(`categories`, see `lib/categoryCatalog.ts` and migration 017) — the same "price/limits as data,
+not code" pattern already used for `subscription_plans`. An admin edits categories in the Admin
+queue's "Categories" tab (moderation domain): add a new one, rename a label, change its icon, or
+deactivate it — never delete, since a listing/request already tagged with a category still needs
+a label to display even after it's deactivated for new use. `createProduct`/`updateProduct`/
+`createRequest` all validate a category against this table live, not against anything hardcoded.
+The client (`components/findit-app/data.js`) still ships the same 15 categories as an instant
+default so the UI never renders empty before its one fetch of `GET /api/categories` resolves —
+that fetch's result is applied on top, so an admin's edit shows up on next load without a deploy.
+
 ## AI request classification
 
 Optional. With `GEMINI_API_KEY` set, the "Suggest title, category & budget with AI" button on the
 request form sends the buyer's description to Gemini and gets back a structured suggestion
-(constrained to the app's real 15 categories) to prefill the form — the buyer can still edit
-anything before submitting. Without the key set, clicking the button shows a clear error instead of
-a fake response.
+(constrained to whatever categories are currently active in the database — see "Categories admin"
+above, not a fixed list) to prefill the form — the buyer can still edit anything before submitting.
+Without the key set, clicking the button shows a clear error instead of a fake response.
 
 ## Location awareness
 
@@ -311,8 +645,13 @@ project rather than a local SQLite file, and this environment may not have netwo
 Supabase, the automated tests cover the real business logic that doesn't require a live database —
 input validation (listings, offers), the forward-only order-status rule, seller-stats aggregation
 math, password hashing, phone normalization (`lib/phone.ts`), OTP code generation/hashing/config
-(`lib/otp.ts`), and the real-world distance math behind "near you" — extracted into pure,
-directly-testable functions in `lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`.
+(`lib/otp.ts`), the real-world distance math behind "near you", which listings a Store plan
+downgrade deactivates (`selectProductsToDeactivate` in `lib/subscriptions.ts` — oldest kept active
+first, nothing ever deleted), and how a seller's New/Verified/Trusted level and minimum-evidence bar
+are computed (`computeVerificationLevel`/`canSubmitVerification` in
+`lib/sellerVerificationLevels.ts`) — extracted into pure, directly-testable functions in
+`lib/repo.ts`/`lib/auth.ts`/`lib/phone.ts`/`lib/otp.ts`/`lib/geo.ts`/`lib/subscriptions.ts`/
+`lib/sellerVerificationLevels.ts`.
 The database-touching paths (signup/login, creating orders, accepting offers, messaging, the full
 OTP send/verify/resend cycle against `otp_verifications`, saving a product's/request's location,
 etc.) need to be verified by actually running the app against a real Supabase project, the same way
@@ -320,13 +659,47 @@ you'd test any app whose database lives outside your own machine. The OTP UI flo
 countdown, resend, error states) was verified end-to-end with mocked API responses via Playwright,
 the same way the rest of this app's UI has been throughout this project.
 
+**Integration tests for the riskiest multi-step flows** (`lib/orderFlows.integration.test.ts`) run
+the actual `acceptOffer`/`confirmOrderPayment` functions — not reimplemented test-only logic —
+against `lib/testing/fakeSupabase.ts`, a minimal in-memory stand-in for the Supabase client (just
+enough of `.from()/.select()/.insert()/.update()/.eq()/...` to run real multi-table flows). These
+specifically regression-test the two race conditions a security audit found and fixed in this
+codebase: double-accepting the same offer, and a Paystack webhook redelivering the same "payment
+succeeded" event twice. It's not a substitute for testing against a real Postgres database — no
+RLS, no real constraint enforcement, no network failures — but it catches a regression in the
+*business logic* of these flows without needing one. Extend it with more flows (escrow release,
+disputed-order resolution) following the same pattern before reaching for more unit tests of
+already-pure logic.
+
+**Continuous integration** (`.github/workflows/ci.yml`) runs `tsc --noEmit`, `npm test`, and
+`npm run build` on every push and pull request — the same three checks that have been run manually
+before every commit throughout this project, now enforced automatically instead of by discipline
+alone. It needs no secrets/environment variables: the production build never touches the database
+at build time (every API route is server-rendered on demand, not statically evaluated), so a
+missing `SUPABASE_URL` only ever matters once a route actually runs, not while it compiles.
+
 ## Next steps toward a real product
 
-A real Nigerian payment processor (e.g. Paystack or Flutterwave) for the escrow flow, real hosting/
-deployment (see the note in "Testing" — this repo has never been deployed to a live host), and a
-real seller ID/document verification system (currently admin approval is a judgment call, not a
-document check). Phone verification (OTP) at signup and password reset is fully built (see
-"Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
+Real hosting/deployment (see the note in "Testing" — this repo has never been deployed to a live
+host), and a real seller ID/document verification system (currently admin approval is a judgment
+call, not a document check). Phone verification (OTP) at signup and password reset is fully built
+(see "Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
 path has not been tested against Termii's live API from this environment (no network access here to
 termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
 documentation, not tested against a live account) — verify it end-to-end once a key is added.
+Order payments, platform fees, seller payouts, refunds, Store subscriptions, FindIt Pro, and
+listing boosts are all real and Paystack-wired now (see "Real marketplace payments", "Store
+subscriptions", "FindIt Pro", and "Listing boosts" above) — every one of them needs a real
+`PAYSTACK_SECRET_KEY` to actually move money (the integration is server-to-server REST, redirecting
+to Paystack's hosted checkout page, so no client-side public key is used); with none configured
+they degrade to clearly labeled "not configured" states rather than pretending to charge or pay
+anyone. The admin plan-editor screen, MRR/churn, admin-managed categories, and seller risk signals
+are all built now too (see "Store subscriptions", "Categories admin", and "Risk signals" above). A
+buyer review/rating system already existed before this pass (star ratings on delivered orders feed
+a seller's public rating and their New/Verified/Trusted level — see `submitReview` in
+`lib/repo.ts` and "Seller trust & verification" above). Still not built: real per-seller storage
+metering, tier-themed public storefronts, a combined-benefit view for an account with both a Store
+plan and FindIt Pro, and platform transaction fees on boosts/listings beyond the marketplace order
+fee that already exists. A support-ticket system, real platform analytics, an admin alert center,
+and admin broadcast notifications are all built now too (see "Support tickets", "Platform
+analytics", "Admin alert center", and "Admin broadcast notifications" above).

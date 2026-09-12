@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/auth";
 import { classifyRequest } from "@/lib/ai";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { errorResponse } from "@/lib/errors";
 
 const MAX_CALLS = 20;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -35,7 +36,6 @@ export async function POST(req: NextRequest) {
     const result = await classifyRequest(body.description);
     return NextResponse.json({ result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Couldn't classify that request.";
-    return NextResponse.json({ error: message }, { status: 502 });
+    return errorResponse(err, "Couldn't classify that request.");
   }
 }

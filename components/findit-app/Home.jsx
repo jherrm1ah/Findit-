@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
-  ArrowRight, X, ChevronRight, Home as HomeIcon, Sparkles,
+  ArrowRight, X, ChevronRight, Home as HomeIcon,
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
   LayoutDashboard, MapPin,
 } from "lucide-react";
@@ -26,13 +26,20 @@ export default function Home({
 
   // With a real location, show the newest listings sorted nearest-first;
   // without one, fall back to plain recency (the API's default order) —
-  // there's no hardcoded city to fall back to.
-  const trending = myLocation
-    ? [...products]
-        .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
-        .sort((a, b) => a._km - b._km)
-        .slice(0, 8)
-    : products.slice(0, 8);
+  // there's no hardcoded city to fall back to. Either way, a final stable
+  // sort pulls Business/Pro sellers' listings to the front as a group
+  // (real placement for the Store subscription "featured" benefit — see
+  // sortFeaturedFirst in lib/repo.ts) without disturbing the near-you order
+  // within each group, since Array.sort is stable.
+  const trending = (
+    myLocation
+      ? [...products]
+          .map((p) => ({ ...p, _km: p.lat != null && p.lng != null ? haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng) : Infinity }))
+          .sort((a, b) => a._km - b._km)
+      : [...products]
+  )
+    .sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured))
+    .slice(0, 8);
 
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },

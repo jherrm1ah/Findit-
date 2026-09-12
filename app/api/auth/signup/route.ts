@@ -24,6 +24,7 @@ export async function POST(req: NextRequest) {
     name?: string;
     role?: string;
     businessName?: string;
+    email?: string;
   };
   try {
     body = await req.json();
@@ -35,9 +36,9 @@ export async function POST(req: NextRequest) {
   if (!phone || phone.trim().length < 10) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
-  if (!password || password.length < 4) {
+  if (!password || password.length < 8) {
     return NextResponse.json(
-      { error: "Password must be at least 4 characters." },
+      { error: "Password must be at least 8 characters." },
       { status: 400 }
     );
   }
@@ -68,6 +69,7 @@ export async function POST(req: NextRequest) {
       role,
       businessName: role === "seller" ? businessName!.trim() : null,
       phoneVerified,
+      email: body.email,
     });
     if (isSmsConfigured()) await clearOtp(normalizedPhone, "signup");
     const token = await createSession(user.id);

@@ -22,6 +22,7 @@ export default function Login({ onDone, showToast }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("buyer");
   const [businessName, setBusinessName] = useState("");
+  const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [resending, setResending] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -54,7 +55,7 @@ export default function Login({ onDone, showToast }) {
     password.length >= 4 &&
     (mode === "login" || (name.trim() && (role === "buyer" || businessName.trim())));
 
-  const doSignup = () => api.signup({ phone, password, name, role, businessName });
+  const doSignup = () => api.signup({ phone, password, name, role, businessName, email: email.trim() || undefined });
 
   const submit = async () => {
     if (!valid || loading) return;
@@ -239,7 +240,7 @@ export default function Login({ onDone, showToast }) {
               type="password"
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="At least 4 characters"
+              placeholder="At least 8 characters"
               className="input"
             />
           </Field>
@@ -378,6 +379,17 @@ export default function Login({ onDone, showToast }) {
         {mode === "signup" && role === "seller" && (
           <Field label="Business name">
             <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Terra Gadgets" className="input" />
+          </Field>
+        )}
+        {mode === "signup" && role === "seller" && (
+          <Field label="Email (optional)">
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="input"
+            />
           </Field>
         )}
         <Field label="Phone number">

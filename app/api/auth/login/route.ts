@@ -46,6 +46,19 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+    // Only reachable once the password has already been proven correct, so
+    // this doesn't leak account-suspension status to anyone who doesn't
+    // already have the credentials.
+    if (user.suspended) {
+      return NextResponse.json(
+        {
+          error: user.suspendedReason
+            ? `Your account has been suspended: ${user.suspendedReason}. Contact FindIt support.`
+            : "Your account has been suspended. Contact FindIt support.",
+        },
+        { status: 403 }
+      );
+    }
 
     const token = await createSession(user.id);
     const res = NextResponse.json({ user });

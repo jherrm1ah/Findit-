@@ -59,6 +59,7 @@ export const api = {
   },
 
   getMySellerStatus: () => request("/api/sellers/me").then((d) => d.status),
+  getMyStoreBranding: () => request("/api/sellers/me").then((d) => ({ logoUrl: d.logoUrl, bannerUrl: d.bannerUrl })),
 
   getSavedIds: () => request("/api/saved").then((d) => d.productIds),
   saveItem: (productId) =>
@@ -76,6 +77,7 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
+  payForOrder: (orderId) => request(`/api/orders/${orderId}/pay`, { method: "POST" }),
   submitOrderReview: (orderId, payload) =>
     request(`/api/orders/${orderId}`, {
       method: "PATCH",
@@ -114,6 +116,15 @@ export const api = {
   getSellers: () => request("/api/sellers").then((d) => d.sellers),
   getAdminActions: () => request("/api/admin/actions").then((d) => d.actions),
   getReportedOrders: () => request("/api/admin/disputes").then((d) => d.orders),
+  getSellerIdentityReport: () => request("/api/admin/seller-identity"),
+  runSellerIdentityBackfill: (apply) =>
+    request("/api/admin/seller-identity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ apply: Boolean(apply) }),
+    }),
+  messageBuyerAboutOrder: (orderId) =>
+    request(`/api/orders/${orderId}/message`, { method: "POST" }),
   resolveOrderIssue: (orderId, outcome) =>
     request("/api/admin/disputes", {
       method: "POST",
@@ -121,13 +132,123 @@ export const api = {
       body: JSON.stringify({ orderId, outcome }),
     }).then((d) => d.order),
   getOtpStats: () => request("/api/admin/otp-stats").then((d) => d.stats),
+  getAdminOverview: () => request("/api/admin/overview").then((d) => d.overview),
+  getFeeConfig: () => request("/api/admin/fee-config"),
+  setFeeConfig: (feeBps) =>
+    request("/api/admin/fee-config", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ feeBps }),
+    }),
+  getPayouts: (status) => request(`/api/admin/payouts${status ? `?status=${status}` : ""}`).then((d) => d.payouts),
+  markPayoutPaid: (id) => request(`/api/admin/payouts/${id}`, { method: "PATCH" }),
+  getBoostPlans: () => request("/api/boost-plans").then((d) => d.plans),
+  boostProduct: (productId, boostPlanId) =>
+    request(`/api/products/${productId}/boost`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ boostPlanId }),
+    }),
+  getAdminBoostPlans: () => request("/api/admin/boost-plans").then((d) => d.plans),
+  updateAdminBoostPlan: (id, patch) =>
+    request(`/api/admin/boost-plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.plan),
+  getRiskSignals: () => request("/api/admin/risk-signals").then((d) => d.signals),
+  getMyTickets: () => request("/api/support/tickets").then((d) => d.tickets),
+  createTicket: (subject, body) =>
+    request("/api/support/tickets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ subject, body }),
+    }).then((d) => d.ticket),
+  getTicket: (id) => request(`/api/support/tickets/${id}`),
+  sendTicketMessage: (id, body) =>
+    request(`/api/support/tickets/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }).then((d) => d.message),
+  getAdminTickets: (status) => request(`/api/admin/support/tickets${status ? `?status=${status}` : ""}`).then((d) => d.tickets),
+  getAdminTicket: (id) => request(`/api/admin/support/tickets/${id}`),
+  sendAdminTicketMessage: (id, body) =>
+    request(`/api/admin/support/tickets/${id}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    }).then((d) => d.message),
+  resolveTicket: (id) =>
+    request(`/api/admin/support/tickets/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "resolved" }),
+    }).then((d) => d.ticket),
+  getAdminAnalytics: (days) => request(`/api/admin/analytics${days ? `?days=${days}` : ""}`).then((d) => d.analytics),
+  getAdminAlerts: () => request("/api/admin/alerts").then((d) => d.alerts),
+  sendAdminBroadcast: (title, body, audience) =>
+    request("/api/admin/broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, audience }),
+    }).then((d) => d.result),
+  getCategories: () => request("/api/categories").then((d) => d.categories),
+  getAdminCategories: () => request("/api/admin/categories").then((d) => d.categories),
+  createCategory: (label, iconKey, sortOrder) =>
+    request("/api/admin/categories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label, iconKey, sortOrder }),
+    }).then((d) => d.category),
+  updateCategory: (id, patch) =>
+    request(`/api/admin/categories/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.category),
+  getAdminSubscriptionPlans: () => request("/api/admin/subscription-plans").then((d) => d.plans),
+  updateSubscriptionPlan: (id, patch) =>
+    request(`/api/admin/subscription-plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.plan),
+  getTransactions: ({ kind, page } = {}) => {
+    const params = new URLSearchParams();
+    if (kind) params.set("kind", kind);
+    if (page) params.set("page", String(page));
+    const qs = params.toString();
+    return request(`/api/admin/transactions${qs ? `?${qs}` : ""}`);
+  },
+  getSellerVerifications: () => request("/api/admin/seller-verifications").then((d) => d.submissions),
+  reviewSellerVerification: (sellerId, action, reason) =>
+    request(`/api/admin/seller-verifications/${sellerId}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, reason }),
+    }),
   lookupUserByPhone: (phone) =>
     request(`/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`).then((d) => d.user),
-  promoteToAdmin: (phone) =>
+  getAdminUsers: ({ role, search, page } = {}) => {
+    const params = new URLSearchParams();
+    if (role) params.set("role", role);
+    if (search) params.set("search", search);
+    if (page) params.set("page", String(page));
+    const qs = params.toString();
+    return request(`/api/admin/users${qs ? `?${qs}` : ""}`);
+  },
+  setUserSuspended: (id, suspended, reason) =>
+    request(`/api/admin/users/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ suspended, reason }),
+    }).then((d) => d.user),
+  promoteToAdmin: (phone, adminRole) =>
     request("/api/admin/promote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone }),
+      body: JSON.stringify({ phone, adminRole }),
     }).then((d) => d.user),
   demoteFromAdmin: (phone) =>
     request("/api/admin/demote", {
@@ -135,11 +256,11 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone }),
     }).then((d) => d.user),
-  setSellerStatus: (id, status) =>
+  setSellerStatus: (id, status, reason) =>
     request(`/api/sellers/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, reason }),
     }).then((d) => d.seller),
 
   classifyRequest: (description) =>
@@ -251,6 +372,47 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled }),
     }).then((d) => d.user),
+
+  getStorePlans: () => request("/api/subscriptions/plans"),
+  getMyStorePlan: () => request("/api/sellers/me/subscription"),
+  changeStorePlan: (planId, billingPeriod = "monthly") =>
+    request("/api/sellers/me/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId, billingPeriod }),
+    }),
+  cancelStorePlan: () => request("/api/sellers/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  getFindItPro: () => request("/api/me/subscription"),
+  subscribeFindItPro: (planId, billingPeriod = "monthly") =>
+    request("/api/me/subscription", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ planId, billingPeriod }),
+    }),
+  cancelFindItPro: () => request("/api/me/subscription", { method: "DELETE" }).then((d) => d.subscription),
+  getBanks: () => request("/api/payments/banks"),
+  getPayoutAccount: () => request("/api/sellers/me/payout-account"),
+  setPayoutAccount: (accountNumber, bankCode) =>
+    request("/api/sellers/me/payout-account", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ accountNumber, bankCode }),
+    }),
+  getMyVerification: () => request("/api/sellers/me/verification"),
+  submitVerification: (fields, photosByKind) => {
+    const fd = new FormData();
+    fd.append("fields", JSON.stringify(fields));
+    for (const [kind, files] of Object.entries(photosByKind || {})) {
+      for (const file of files) fd.append(`photo_${kind}`, file);
+    }
+    return request("/api/sellers/me/verification", { method: "POST", body: fd });
+  },
+  updateStoreBranding: (logoUrl, bannerUrl) =>
+    request("/api/sellers/me/branding", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ logoUrl, bannerUrl }),
+    }),
 
   getConversations: () => request("/api/messages").then((d) => d.conversations),
   startConversation: (sellerBusinessName) =>

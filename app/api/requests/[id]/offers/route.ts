@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { addSellerOfferToRequest, getSellerStatusForUser } from "@/lib/repo";
+import { addSellerOfferToRequest, getSellerStatusForUser, assertSellerCanTransact, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -16,12 +16,10 @@ export async function POST(
     return NextResponse.json({ error: "Seller access required." }, { status: 403 });
   }
 
-  const status = await getSellerStatusForUser(user.id);
-  if (status === "rejected") {
-    return NextResponse.json(
-      { error: "Your seller account isn't approved to send offers." },
-      { status: 403 }
-    );
+  try {
+    assertSellerCanTransact(await getSellerStatusForUser(user.id));
+  } catch (err) {
+    return errorResponse(err, "Your seller account isn't approved to send offers.");
   }
 
   const { allowed, retryAfterSeconds } = checkRateLimit(`offer:${user.id}`, MAX_OFFERS, WINDOW_MS);
@@ -52,7 +50,9 @@ export async function POST(
   }
 
   try {
-    const offer = await addSellerOfferToRequest(params.id, user.businessName!, {
+    // See the products route — same seller_id dual-write.
+    const sellerId = await getSellerIdForUser(user.id);
+    const offer = await addSellerOfferToRequest(params.id, user.businessName!, sellerId, {
       price: body.price,
       delivery: body.delivery,
       eta: body.eta,

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { submitOrderReview, updateOrderStatus, getOrder, assertSellerCanSetStatus } from "@/lib/repo";
+import { submitOrderReview, updateOrderStatus, getOrder, assertSellerCanSetStatus, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
+import { sellerOwnsItem } from "@/lib/sellerIdentityMatch";
 
 export async function PATCH(
   req: NextRequest,
@@ -24,7 +25,14 @@ export async function PATCH(
     if (!existing) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
-    const canManage = user.role === "admin" || (user.role === "seller" && user.businessName === existing.seller);
+    // Matching by business name alone isn't safe once two sellers can share
+    // a name (business_name has no uniqueness constraint) — sellerOwnsItem
+    // also requires seller_id to agree when both sides have one. See
+    // migration 009.
+    const canManage =
+      user.role === "admin" ||
+      (user.role === "seller" &&
+        sellerOwnsItem(user.businessName, await getSellerIdForUser(user.id), existing.seller, existing.sellerId));
     if (!canManage) {
       return NextResponse.json(
         { error: "Only the seller on this order (or an admin) can update its status." },

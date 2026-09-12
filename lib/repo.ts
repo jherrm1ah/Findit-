@@ -1,14 +1,13 @@
 import { getDb, assertNoError } from "./db";
-import { CATEGORY_LABELS } from "./categories";
+import { ValidationError } from "./errors";
+import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
+import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
+import { isValidCategoryKey } from "./categoryCatalog";
 
-export const CATEGORY_KEYS = Object.keys(CATEGORY_LABELS);
-
-// Thrown for real, user-facing validation problems (bad input, business-rule
-// violations) — safe to show verbatim to the client. Anything else that
-// escapes a repo function (a Postgres/network error via assertNoError, etc.)
-// is NOT a ValidationError and must never be shown to the client as-is; see
-// lib/errors.ts#toClientError, used by every API route's catch block.
-export class ValidationError extends Error {}
+// Re-exported for backward compatibility — every other module in this app
+// imports ValidationError from here (its original home); see lib/errors.ts
+// for why the class itself now lives there.
+export { ValidationError };
 
 function randomId(prefix: string): string {
   return (
@@ -26,6 +25,10 @@ export type Product = {
   name: string;
   price: number;
   seller: string;
+  // Reliable identity alongside the text name above — see migration 009 and
+  // lib/sellerIdentityMatch.ts. Null until backfilled/dual-written; not read
+  // by any user-facing logic yet.
+  sellerId: string | null;
   imageUrl: string | null;
   art: number;
   createdAt: string;
@@ -38,6 +41,29 @@ export type Product = {
   // not stored on the product row. See getSellerStatsMap().
   verified: boolean;
   rating: number | null;
+  // false only when a Store subscription downgrade pushed this listing over
+  // the new plan's product limit (see lib/subscriptions.ts) — the listing
+  // still exists with all its data, it's just hidden from buyers until the
+  // seller upgrades again or another listing is deactivated in its place.
+  active: boolean;
+  // Real, server-computed Store subscription benefits — see SellerStats in
+  // the Products section below. All derived from the seller's LIVE plan at
+  // read time, never from anything a client sent.
+  sellerProBadge: boolean; // Pro Store plan only
+  sellerFeatured: boolean; // Business/Pro — real placement boost, see listProducts()
+  sellerLogoUrl: string | null; // set only when the seller's plan allows branding
+  sellerBannerUrl: string | null;
+  // Seller trust & verification — see computeVerificationLevel in
+  // lib/sellerVerificationLevels.ts. sellerLocation is the coarse, public-
+  // safe area a seller entered during verification (never the private
+  // shop address); null until they've submitted it.
+  sellerVerificationLevel: VerificationLevel;
+  sellerLocation: string | null;
+  sellerMemberSince: string | null;
+  // Null = not currently boosted. A real Paystack-paid promotion (see
+  // lib/boosts.ts) — see isBoostActive/sortForDisplay below for how this
+  // affects display order.
+  boostedUntil: string | null;
 };
 
 export type Order = {
@@ -45,6 +71,9 @@ export type Order = {
   userId: string;
   item: string;
   seller: string;
+  // Reliable identity alongside the text name above — see migration 009 and
+  // lib/sellerIdentityMatch.ts. Null until backfilled/dual-written.
+  sellerId: string | null;
   price: number;
   status: string;
   canReview: boolean;
@@ -57,9 +86,20 @@ export type Order = {
   escrowStatus: EscrowStatus;
   issueReportedAt: string | null;
   issueNote: string | null;
+  // Real payment tracking (migration 016) — see lib/payments.ts. Distinct
+  // from escrowStatus, which describes where already-collected money sits;
+  // this is whether THIS order has actually been paid for at all.
+  paymentStatus: PaymentStatus;
+  paidAt: string | null;
+  // Snapshotted once at payment confirmation — never recomputed from a
+  // later fee change. Null until paymentStatus === "paid".
+  platformFeeBps: number | null;
+  platformFeeAmount: number | null;
+  sellerPayoutAmount: number | null;
 };
 
-export type EscrowStatus = "held" | "released" | "disputed" | "refunded";
+export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
+export type PaymentStatus = "pending" | "paid" | "failed";
 
 export type Notification = {
   id: string;
@@ -70,12 +110,15 @@ export type Notification = {
   time: string;
 };
 
+export type SellerStatus = "pending" | "approved" | "rejected" | "suspended";
+
 export type Seller = {
   id: string;
   userId: string;
   name: string;
   phone: string | null;
-  status: "pending" | "approved" | "rejected";
+  status: SellerStatus;
+  statusReason: string | null;
   createdAt: string;
 };
 
@@ -136,7 +179,25 @@ function timeAgo(iso: string): string {
 /*  real approval status (sellers.status) and real order reviews.       */
 /* ------------------------------------------------------------------ */
 
-type SellerStats = { verified: boolean; rating: number | null; orderCount: number };
+type BaseSellerStats = { verified: boolean; rating: number | null; orderCount: number };
+
+type SellerStats = BaseSellerStats & {
+  // Live Store-subscription-derived display fields — computed server-side
+  // from the seller's current plan (see getStorePlanDisplayMap in
+  // lib/subscriptions.ts), never accepted from a client. A seller whose
+  // plan lapses stops showing these on their very next listing read, same
+  // as their own dashboard.
+  proBadge: boolean;
+  featured: boolean;
+  logoUrl: string | null;
+  bannerUrl: string | null;
+  // Seller trust & verification (migration 012) — see
+  // lib/sellerVerification.ts#computeVerificationLevel. Never claims
+  // Verified/Trusted without a real admin review behind it.
+  verificationLevel: VerificationLevel;
+  publicLocation: string | null;
+  memberSince: string | null;
+};
 
 // Pure — takes already-fetched rows and computes the stats map. Split out
 // from getSellerStatsMap() so this (the actual business logic: how a
@@ -146,8 +207,8 @@ type SellerStats = { verified: boolean; rating: number | null; orderCount: numbe
 export function computeSellerStatsMap(
   sellerRows: Array<{ name: string; status: string }>,
   reviewedOrderRows: Array<{ seller: string; my_rating: number | null }>
-): Map<string, SellerStats> {
-  const map = new Map<string, SellerStats>();
+): Map<string, BaseSellerStats> {
+  const map = new Map<string, BaseSellerStats>();
 
   for (const row of sellerRows) {
     map.set(row.name, { verified: row.status === "approved", rating: null, orderCount: 0 });
@@ -171,10 +232,18 @@ export function computeSellerStatsMap(
   return map;
 }
 
+// seller_id is what actually keys getStorePlanDisplayMap (it's a real FK,
+// not a mutable text name) — but computeSellerStatsMap above is keyed by
+// business_name, the same pre-existing convention every other seller-facing
+// read in this app still uses. If two different seller accounts share a
+// name (the exact scenario migration 009 exists for), the last one wins
+// here too — an existing limitation of name-keyed stats, not a new one.
 async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
   const db = getDb();
 
-  const sellersResult = await db.from("sellers").select("name, status");
+  const sellersResult = await db
+    .from("sellers")
+    .select("id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
   const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
 
   const ordersResult = await db
@@ -183,14 +252,86 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
     .eq("reviewed", true);
   const orderRows = assertNoError(ordersResult, "loading order reviews") as Row[];
 
-  return computeSellerStatsMap(
-    sellerRows.map((r) => ({ name: r.name as string, status: r.status as string })),
-    orderRows.map((r) => ({ seller: r.seller as string, my_rating: r.my_rating as number | null }))
-  );
+  // Separate from the reviewed-order rating above: "Trusted" (see
+  // computeVerificationLevel) needs a real completed-order count, and most
+  // buyers never leave a review, so the rating-based orderCount would
+  // massively undercount it.
+  const escrowResult = await db.from("orders").select("seller, escrow_status").in("escrow_status", ["released", "disputed"]);
+  const escrowRows = assertNoError(escrowResult, "loading order outcomes") as Row[];
+  const completedBySeller = new Map<string, number>();
+  const disputedBySeller = new Map<string, number>();
+  for (const row of escrowRows) {
+    const seller = row.seller as string;
+    if (row.escrow_status === "released") completedBySeller.set(seller, (completedBySeller.get(seller) ?? 0) + 1);
+    if (row.escrow_status === "disputed") disputedBySeller.set(seller, (disputedBySeller.get(seller) ?? 0) + 1);
+  }
+
+  const [baseMap, displayMap] = await Promise.all([
+    Promise.resolve(
+      computeSellerStatsMap(
+        sellerRows.map((r) => ({ name: r.name as string, status: r.status as string })),
+        orderRows.map((r) => ({ seller: r.seller as string, my_rating: r.my_rating as number | null }))
+      )
+    ),
+    getStorePlanDisplayMap(),
+  ]);
+
+  const map = new Map<string, SellerStats>();
+  for (const row of sellerRows) {
+    const name = row.name as string;
+    const base = baseMap.get(name) ?? { verified: false, rating: null, orderCount: 0 };
+    const display = displayMap.get(row.id as string);
+    const publicLocation = [row.public_area, row.public_city, row.public_state]
+      .filter((v): v is string => Boolean(v && String(v).trim()))
+      .join(", ") || null;
+    map.set(name, {
+      ...base,
+      proBadge: display?.proBadge ?? false,
+      featured: display?.featuredListingAccess ?? false,
+      logoUrl: (row.logo_url as string | null) ?? null,
+      bannerUrl: (row.banner_url as string | null) ?? null,
+      verificationLevel: computeVerificationLevel({
+        verificationStatus: row.verification_status as VerificationStatus,
+        orderCount: completedBySeller.get(name) ?? 0,
+        disputeCount: disputedBySeller.get(name) ?? 0,
+        avgRating: base.rating,
+      }),
+      publicLocation,
+      memberSince: (row.created_at as string | null) ?? null,
+    });
+  }
+  // A name that shows up only via order rows (no matching sellers-table
+  // row) — same "Ghost Seller" edge case computeSellerStatsMap already
+  // handles — has no plan to speak of, so it gets the same falsy defaults
+  // statsFor() would give it anyway.
+  for (const [name, base] of baseMap) {
+    if (!map.has(name)) {
+      map.set(name, { ...base, ...DEFAULT_TIER_FIELDS });
+    }
+  }
+
+  return map;
 }
 
+const DEFAULT_TIER_FIELDS = {
+  proBadge: false,
+  featured: false,
+  logoUrl: null,
+  bannerUrl: null,
+  verificationLevel: "new" as VerificationLevel,
+  publicLocation: null,
+  memberSince: null,
+};
+
+const DEFAULT_SELLER_STATS: SellerStats = {
+  verified: false,
+  rating: null,
+  orderCount: 0,
+  ...DEFAULT_TIER_FIELDS,
+};
+
 function statsFor(map: Map<string, SellerStats>, seller: string): SellerStats {
-  return map.get(seller) ?? { verified: false, rating: null, orderCount: 0 };
+  return map.get(seller) ?? DEFAULT_SELLER_STATS;
 }
 
 /* ------------------------------------------------------------------ */
@@ -204,6 +345,7 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     name: row.name as string,
     price: row.price as number,
     seller: row.seller as string,
+    sellerId: (row.seller_id as string | null) ?? null,
     imageUrl: (row.image_url as string | null) ?? null,
     art: row.art as number,
     createdAt: row.created_at as string,
@@ -211,7 +353,47 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     lng: (row.lng as number | null) ?? null,
     verified: stats.verified,
     rating: stats.rating,
+    active: row.active !== false,
+    sellerProBadge: stats.proBadge,
+    sellerFeatured: stats.featured,
+    sellerLogoUrl: stats.logoUrl,
+    sellerBannerUrl: stats.bannerUrl,
+    sellerVerificationLevel: stats.verificationLevel,
+    sellerLocation: stats.publicLocation,
+    sellerMemberSince: stats.memberSince,
+    boostedUntil: (row.boosted_until as string | null) ?? null,
   };
+}
+
+// Pure — is this listing's boost still in its paid-for window right now?
+// Unit-testable without a database. No cron ever "expires" a boost: this is
+// the one check standing between "still boosted" and quietly staying
+// boosted forever, the same role isSubscriptionLapsed plays for a Store
+// plan (lib/subscriptions.ts).
+export function isBoostActive(boostedUntil: string | null, now: number = Date.now()): boolean {
+  return Boolean(boostedUntil && new Date(boostedUntil).getTime() > now);
+}
+
+// Real placement for the Store subscription "featured listing" benefit
+// (Business/Pro plans) — a stable sort keeps everything else in its
+// existing recency order, it just pulls featured sellers' listings to the
+// front as a group. Buyers with a real location still see the app's other
+// core promise — "near you" — respected within each group, since Home/
+// Browse layer their own distance sort on top of whatever order this
+// returns; see the "featured" stable-sort note in those two components.
+function sortFeaturedFirst(products: Product[]): Product[] {
+  return [...products].sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured));
+}
+
+// A boost outranks the Store-plan "featured" tier — a seller paid for this
+// SPECIFIC listing, not an ambient plan benefit — but both are stable sorts
+// layered the same way: pull the group to the front, leave everyone else's
+// relative order untouched. Array.prototype.sort is stable in every engine
+// this app runs on, so layering a second stable sort on top of the first
+// never disturbs what sortFeaturedFirst already decided.
+function sortForDisplay(products: Product[]): Product[] {
+  const featuredFirst = sortFeaturedFirst(products);
+  return [...featuredFirst].sort((a, b) => Number(isBoostActive(b.boostedUntil)) - Number(isBoostActive(a.boostedUntil)));
 }
 
 export async function listProducts(): Promise<Product[]> {
@@ -219,7 +401,7 @@ export async function listProducts(): Promise<Product[]> {
   const result = await db.from("products").select("*").order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing products") as Row[];
   const stats = await getSellerStatsMap();
-  return rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string)));
+  return sortForDisplay(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
 }
 
 export async function getProduct(id: string): Promise<Product | null> {
@@ -234,16 +416,16 @@ export async function getProduct(id: string): Promise<Product | null> {
 let productSeq = 0;
 
 // Pure — the actual listing-validity rules, unit-testable without a
-// database. category/name are only checked when provided, so this also
-// covers a partial update patch.
+// database. name/price are only checked when provided, so this also covers
+// a partial update patch. Category validity is NOT checked here — unlike
+// name/price it depends on live DB state (an admin-editable table, see
+// lib/categories.ts), so createProduct/updateProduct check it separately
+// with an explicit await right where they already talk to the database.
 export function validateProductInput(input: {
   category?: string;
   name?: string;
   price?: number;
 }): void {
-  if (input.category !== undefined && !CATEGORY_KEYS.includes(input.category)) {
-    throw new ValidationError("Unknown category.");
-  }
   if (input.name !== undefined && !input.name.trim()) {
     throw new ValidationError("Name is required.");
   }
@@ -265,11 +447,29 @@ export async function createProduct(input: {
   name: string;
   price: number;
   seller: string;
+  // The caller's own seller account id, looked up via getSellerIdForUser —
+  // dual-written alongside the text name so seller_id starts being trustworthy
+  // for every NEW listing, without changing anything about how listings are
+  // read or displayed today.
+  sellerId?: string | null;
   imageUrl?: string | null;
   lat?: number | null;
   lng?: number | null;
 }): Promise<Product> {
   validateProductInput(input);
+  if (!(await isValidCategoryKey(input.category))) {
+    throw new ValidationError("Unknown category.");
+  }
+
+  // Backend-enforced, not a frontend nicety: a Free seller at their listing
+  // cap can't bypass the "Add listing" button by hitting this API directly.
+  // Only checked when the caller's seller_id is known — an account whose
+  // seller_id hasn't been backfilled yet (pre-migration-009 data) can't have
+  // its plan looked up reliably, so it falls back to today's behavior
+  // (no limit) rather than blocking a real seller over a migration gap.
+  if (input.sellerId) {
+    await assertCanActivateProduct(input.sellerId);
+  }
 
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
@@ -281,6 +481,7 @@ export async function createProduct(input: {
       name: input.name.trim(),
       price: Math.round(input.price),
       seller: input.seller,
+      seller_id: input.sellerId ?? null,
       image_url: input.imageUrl ?? null,
       lat: input.lat ?? null,
       lng: input.lng ?? null,
@@ -301,12 +502,26 @@ export async function updateProduct(
     imageUrl: string | null;
     lat: number | null;
     lng: number | null;
+    // Reactivating a listing a plan downgrade hid goes through the same
+    // limit check createProduct does — a seller can't work around their
+    // plan's cap by flipping an existing listing back on instead of making
+    // a new one.
+    active: boolean;
   }>
 ): Promise<Product | null> {
   const existing = await getProduct(id);
   if (!existing) return null;
 
   validateProductInput(patch);
+  if (patch.category !== undefined && !(await isValidCategoryKey(patch.category))) {
+    throw new ValidationError("Unknown category.");
+  }
+
+  // Same fallback-skip as createProduct: only enforced when this listing's
+  // seller_id is known.
+  if (patch.active === true && !existing.active && existing.sellerId) {
+    await assertCanActivateProduct(existing.sellerId);
+  }
 
   const db = getDb();
   const result = await db
@@ -318,6 +533,7 @@ export async function updateProduct(
       image_url: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
       lat: patch.lat !== undefined ? patch.lat : existing.lat,
       lng: patch.lng !== undefined ? patch.lng : existing.lng,
+      active: patch.active !== undefined ? patch.active : existing.active,
     })
     .eq("id", id);
   assertNoError(result, "updating product");
@@ -341,6 +557,7 @@ function rowToOrder(row: Row): Order {
     userId: row.user_id as string,
     item: row.item as string,
     seller: row.seller as string,
+    sellerId: (row.seller_id as string | null) ?? null,
     price: row.price as number,
     status: row.status as string,
     canReview: Boolean(row.can_review),
@@ -350,9 +567,14 @@ function rowToOrder(row: Row): Order {
     requestId: (row.request_id as string | null) ?? null,
     createdAt: row.created_at as string,
     buyerConfirmedAt: (row.buyer_confirmed_at as string | null) ?? null,
-    escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "held"),
+    escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "unpaid"),
     issueReportedAt: (row.issue_reported_at as string | null) ?? null,
     issueNote: (row.issue_note as string | null) ?? null,
+    paymentStatus: ((row.payment_status as PaymentStatus | null) ?? "pending"),
+    paidAt: (row.paid_at as string | null) ?? null,
+    platformFeeBps: (row.platform_fee_bps as number | null) ?? null,
+    platformFeeAmount: (row.platform_fee_amount as number | null) ?? null,
+    sellerPayoutAmount: (row.seller_payout_amount as number | null) ?? null,
   };
 }
 
@@ -364,21 +586,46 @@ export const ORDER_STATUSES = [
   "Delivered",
 ] as const;
 
-// A buyer's own orders, plus (when sellerName is given) orders placed
-// against that seller's business name so they have something to fulfill.
-// There is no more "shared guest content" — every order belongs to a real
+// A buyer's own orders, plus (when a seller is given) orders placed
+// against that seller's account so they have something to fulfill. There
+// is no more "shared guest content" — every order belongs to a real
 // logged-in buyer (see the "guest checkout" note in app/api/orders/route.ts).
-export async function listOrders(userId: string, sellerName?: string | null): Promise<Order[]> {
+export async function listOrders(
+  userId: string,
+  seller?: { name: string; id: string | null } | null
+): Promise<Order[]> {
   const db = getDb();
-  let query = db.from("orders").select("*");
-  if (sellerName) {
-    query = query.or(`user_id.eq.${userId},seller.eq.${sellerName}`);
-  } else {
-    query = query.eq("user_id", userId);
+  if (!seller) {
+    const result = await db.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false });
+    const rows = assertNoError(result, "listing orders") as Row[];
+    return rows.map(rowToOrder);
   }
-  const result = await query.order("created_at", { ascending: false });
-  const rows = assertNoError(result, "listing orders") as Row[];
-  return rows.map(rowToOrder);
+
+  // business_name has no uniqueness constraint (see the seller_id migration
+  // rationale), so a plain name match alone would return a DIFFERENT
+  // seller's entire order history to anyone who signs up with the same
+  // name. When this seller has a real seller_id, match orders by that
+  // instead — safe even under a name collision — and only fall back to a
+  // name match for orders that predate the seller_id backfill (seller_id
+  // still null on the row itself, so a name collision can't misattribute
+  // them to the wrong account). Only a seller with no seller_id resolvable
+  // at all (shouldn't normally happen for an existing account) falls back
+  // to the legacy name-only match.
+  const queries = [db.from("orders").select("*").eq("user_id", userId)];
+  if (seller.id) {
+    queries.push(db.from("orders").select("*").eq("seller_id", seller.id));
+    queries.push(db.from("orders").select("*").eq("seller", seller.name).is("seller_id", null));
+  } else {
+    queries.push(db.from("orders").select("*").eq("seller", seller.name));
+  }
+
+  const results = await Promise.all(queries);
+  const rowSets = results.map((r, i) => assertNoError(r, i === 0 ? "listing orders" : "listing seller orders") as Row[]);
+  const byId = new Map<string, Row>();
+  for (const row of rowSets.flat()) byId.set(row.id as string, row);
+  return [...byId.values()]
+    .map(rowToOrder)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 // Internal — every field here must already be trusted (derived from a real
@@ -388,6 +635,10 @@ export async function listOrders(userId: string, sellerName?: string | null): Pr
 async function insertOrder(input: {
   item: string;
   seller: string;
+  // See sellerId on createProduct — same dual-write, carried through from
+  // whichever product/offer this order was created from (both already carry
+  // their own seller_id by the time this runs).
+  sellerId?: string | null;
   price: number;
   status: string;
   requestId?: string | null;
@@ -402,6 +653,7 @@ async function insertOrder(input: {
       user_id: input.userId,
       item: input.item,
       seller: input.seller,
+      seller_id: input.sellerId ?? null,
       price: input.price,
       status: input.status,
       request_id: input.requestId ?? null,
@@ -434,19 +686,24 @@ export async function createOrderFromProduct(
   const order = await insertOrder({
     item: product.name,
     seller: product.seller,
+    sellerId: product.sellerId,
     price: product.price * qty,
     status: "Awaiting payment",
     userId,
   });
 
-  await notifySellerOfNewOrder(product.seller, order);
+  // No seller notification here — the seller learns about this order once
+  // it's actually paid for (see lib/payments.ts#confirmOrderPayment), not
+  // the moment a buyer starts checkout on something they might never pay.
   return order;
 }
 
 // Shared by both ways an order gets created (direct purchase and accepting
 // a request offer) — looks the seller's account up by business name so the
 // notification lands on the right user, not just a string on the order row.
-async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
+// Called only once a payment is actually confirmed (lib/payments.ts), never
+// at order creation.
+export async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
   const seller = await findUserByBusinessName(sellerBusinessName);
   if (!seller) return; // seller hasn't joined FindIt as an account directly — nothing to notify
   await notifyBestEffort({
@@ -544,6 +801,15 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   const existing = await getOrder(id);
   if (!existing) return null;
   validateStatusTransition(existing.status, status);
+
+  // A seller can't move an order past "Awaiting payment" until it's
+  // actually been paid for — otherwise this would let a seller mark an
+  // unpaid order "Dispatched" with nothing backing it. Real-money
+  // confirmation only ever comes from the Paystack webhook (see
+  // lib/payments.ts#confirmOrderPayment), never from this endpoint.
+  if (status !== "Awaiting payment" && existing.paymentStatus !== "paid") {
+    throw new ValidationError("This order hasn't been paid for yet.");
+  }
 
   const db = getDb();
   const result = await db
@@ -855,7 +1121,8 @@ function rowToSeller(row: Row): Seller {
     userId: row.user_id as string,
     name: row.name as string,
     phone: (userRow?.phone as string | undefined) ?? null,
-    status: row.status as Seller["status"],
+    status: row.status as SellerStatus,
+    statusReason: (row.status_reason as string | null) ?? null,
     createdAt: row.created_at as string,
   };
 }
@@ -870,23 +1137,143 @@ export async function listSellers(): Promise<Seller[]> {
   return rows.map(rowToSeller);
 }
 
-// Used to block a rejected seller from taking further marketplace actions
-// (new listings, uploads, offers) — otherwise an admin's "reject" click has
-// no real effect, since role alone (checked everywhere else) doesn't change
-// when a seller is rejected. Returns null for a non-seller (e.g. an admin),
-// which correctly never matches the 'rejected' check callers do.
-export async function getSellerStatusForUser(userId: string): Promise<Seller["status"] | null> {
+// Bulk, one-query version of countActiveProducts (lib/subscriptions.ts) —
+// for the admin seller list, which needs every seller's count at once, not
+// one at a time. Keyed by seller_id, so a listing with no seller_id yet
+// (pre-migration-009 data) just doesn't contribute to any seller's count
+// rather than throwing.
+export async function activeProductCountsBySeller(): Promise<Map<string, number>> {
+  const db = getDb();
+  const result = await db
+    .from("products")
+    .select("seller_id")
+    .eq("active", true)
+    .not("seller_id", "is", null);
+  const rows = assertNoError(result, "counting active listings by seller") as Row[];
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const sellerId = row.seller_id as string;
+    counts.set(sellerId, (counts.get(sellerId) ?? 0) + 1);
+  }
+  return counts;
+}
+
+// Real counts for the admin overview — one query per lifecycle status,
+// nothing inferred or cached.
+export async function getSellerStatusCounts(): Promise<{ pending: number; approved: number; rejected: number; suspended: number }> {
+  const db = getDb();
+  const [pending, approved, rejected, suspended] = await Promise.all([
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "pending"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "approved"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "rejected"),
+    db.from("sellers").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+  ]);
+  for (const [label, result] of [["pending", pending], ["approved", approved], ["rejected", rejected], ["suspended", suspended]] as const) {
+    if (result.error) throw new Error(`counting ${label} sellers: ${result.error.message}`);
+  }
+  return {
+    pending: pending.count ?? 0,
+    approved: approved.count ?? 0,
+    rejected: rejected.count ?? 0,
+    suspended: suspended.count ?? 0,
+  };
+}
+
+// Real count for the admin overview — orders a buyer flagged that no admin
+// has resolved yet (see resolveOrderIssue, which clears escrow_status off
+// 'disputed').
+export async function countDisputedOrders(): Promise<number> {
+  const db = getDb();
+  const result = await db.from("orders").select("id", { count: "exact", head: true }).eq("escrow_status", "disputed");
+  if (result.error) throw new Error(`counting disputed orders: ${result.error.message}`);
+  return result.count ?? 0;
+}
+
+// Used to gate every restricted seller action (new listings, uploads,
+// offers) against the seller's real lifecycle state — otherwise an admin's
+// approve/reject/suspend click has no actual effect, since role alone
+// (checked everywhere else) doesn't change with seller status. Returns null
+// for a non-seller (e.g. an admin), which correctly never matches
+// 'approved' below.
+export async function getSellerStatusForUser(userId: string): Promise<SellerStatus | null> {
   const db = getDb();
   const result = await db.from("sellers").select("status").eq("user_id", userId).maybeSingle();
   const row = assertNoError(result, "checking seller status") as Row | null;
-  return (row?.status as Seller["status"] | undefined) ?? null;
+  return (row?.status as SellerStatus | undefined) ?? null;
 }
 
-export async function setSellerStatus(id: string, status: Seller["status"]): Promise<Seller | null> {
+// The single source of truth for "can this seller take a restricted action
+// right now" — replaces three previously-separate inline
+// `status === "rejected"` checks (uploads, listings, offers), each of which
+// silently let a 'pending' seller through since pending only differed from
+// approved in the admin's own head, not in enforced behavior. Pure and unit
+// tested: only 'approved' passes; pending/rejected/suspended each get a
+// message that tells the seller what's actually going on, not a bare 403.
+export function assertSellerCanTransact(status: SellerStatus | null): void {
+  if (status === "approved") return;
+  if (status === "pending") {
+    throw new ValidationError("Your seller account is still under review — you can list and sell once it's approved.");
+  }
+  if (status === "suspended") {
+    throw new ValidationError("Your seller account is suspended — contact FindIt support for details.");
+  }
+  if (status === "rejected") {
+    throw new ValidationError("Your seller account isn't approved to do that.");
+  }
+  throw new ValidationError("Seller account not found.");
+}
+
+// The caller's own sellers.id — looked up by the API routes that create a
+// listing or an offer, so the reliable seller_id (migration 009) can be
+// dual-written alongside the existing text business name. Null for a seller
+// account that somehow has no sellers row yet (shouldn't happen given
+// createUser/becomeSeller always create one, but this is a lookup, not an
+// assumption, so it degrades to "no seller_id recorded" rather than throwing).
+export async function getSellerBrandingForUser(
+  userId: string
+): Promise<{ logoUrl: string | null; bannerUrl: string | null } | null> {
+  const db = getDb();
+  const result = await db.from("sellers").select("logo_url, banner_url").eq("user_id", userId).maybeSingle();
+  const row = assertNoError(result, "loading store branding") as Row | null;
+  if (!row) return null;
+  return { logoUrl: (row.logo_url as string | null) ?? null, bannerUrl: (row.banner_url as string | null) ?? null };
+}
+
+export async function getSellerIdForUser(userId: string): Promise<string | null> {
+  const db = getDb();
+  const result = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
+  const row = assertNoError(result, "looking up seller id") as Row | null;
+  return (row?.id as string | undefined) ?? null;
+}
+
+// Real backing for the "customization" Store subscription benefit — gated
+// server-side (assertCanCustomizeStore) so a Free/Basic seller can't set
+// these just by knowing the endpoint exists. logoUrl/bannerUrl null clears
+// that image; undefined leaves it untouched.
+export async function updateSellerBranding(
+  sellerId: string,
+  patch: { logoUrl?: string | null; bannerUrl?: string | null }
+): Promise<void> {
+  await assertCanCustomizeStore(sellerId);
+
+  const columns: Record<string, unknown> = {};
+  if (patch.logoUrl !== undefined) columns.logo_url = patch.logoUrl;
+  if (patch.bannerUrl !== undefined) columns.banner_url = patch.bannerUrl;
+  if (Object.keys(columns).length === 0) return;
+
+  const db = getDb();
+  const result = await db.from("sellers").update(columns).eq("id", sellerId);
+  assertNoError(result, "updating store branding");
+}
+
+export async function setSellerStatus(id: string, status: SellerStatus, reason: string | null = null): Promise<Seller | null> {
+  if ((status === "rejected" || status === "suspended") && !reason?.trim()) {
+    throw new ValidationError("Give the seller a reason — never a silent rejection or suspension.");
+  }
   const db = getDb();
   const result = await db
     .from("sellers")
-    .update({ status })
+    .update({ status, status_reason: status === "approved" || status === "pending" ? null : reason!.trim() })
     .eq("id", id)
     .select("*, users(phone)")
     .maybeSingle();
@@ -894,16 +1281,18 @@ export async function setSellerStatus(id: string, status: Seller["status"]): Pro
   if (!row) return null;
   const seller = rowToSeller(row);
 
-  if (status === "approved" || status === "rejected") {
-    await notifyBestEffort({
-      userId: seller.userId,
-      type: "seller",
-      title: status === "approved" ? "You're approved to sell" : "Seller application update",
-      body:
-        status === "approved"
-          ? "Your seller account has been approved — you can now list products and respond to requests."
-          : "Your seller application wasn't approved this time.",
-    });
+  const NOTIFY: Record<SellerStatus, { title: string; body: string } | null> = {
+    pending: null,
+    approved: {
+      title: "You're approved to sell",
+      body: "Your seller account has been approved — you can now list products and respond to requests.",
+    },
+    rejected: { title: "Seller application update", body: `Your seller application wasn't approved: ${reason}` },
+    suspended: { title: "Your seller account is suspended", body: `FindIt has suspended your selling privileges: ${reason}` },
+  };
+  const notification = NOTIFY[status];
+  if (notification) {
+    await notifyBestEffort({ userId: seller.userId, type: "seller", ...notification });
   }
 
   return seller;
@@ -1100,7 +1489,7 @@ export async function createRequest(input: {
   condition: string;
   userId: string;
 }): Promise<RequestRow> {
-  if (input.category && !CATEGORY_KEYS.includes(input.category)) {
+  if (input.category && !(await isValidCategoryKey(input.category))) {
     throw new ValidationError("Unknown category.");
   }
   const db = getDb();
@@ -1158,6 +1547,9 @@ export function validateOfferInput(input: { price: number; delivery: string; eta
 export async function addSellerOfferToRequest(
   requestId: string,
   sellerName: string,
+  // See sellerId on createProduct — same dual-write, looked up by the caller
+  // via getSellerIdForUser.
+  sellerId: string | null,
   input: { price: number; delivery: string; eta: string; warranty: string; note?: string | null }
 ): Promise<Offer | null> {
   const db = getDb();
@@ -1174,6 +1566,7 @@ export async function addSellerOfferToRequest(
       id,
       request_id: requestId,
       seller: sellerName,
+      seller_id: sellerId,
       price: Math.round(input.price),
       delivery: input.delivery.trim(),
       eta: input.eta.trim(),
@@ -1222,25 +1615,42 @@ export async function acceptOffer(
   // caller can't distinguish "doesn't exist" from "not yours".
   if (request.user_id !== userId) return null;
 
-  await assertNoError(
-    await db.from("offers").update({ accepted: true }).eq("id", offerId),
-    "accepting offer"
-  );
+  // Conditional on accepted still being false — without this, accepting the
+  // same offer twice (a double-tap, a back-button-then-resubmit, or two
+  // near-simultaneous requests) creates a second real order from one offer,
+  // since nothing else here checks whether it was already accepted. Only
+  // the call that actually flips accepted false -> true proceeds; a second
+  // one gets treated the same as "not found" rather than creating a
+  // duplicate order.
+  const claimResult = await db
+    .from("offers")
+    .update({ accepted: true })
+    .eq("id", offerId)
+    .eq("accepted", false)
+    .select("id")
+    .maybeSingle();
+  const claimed = assertNoError(claimResult, "accepting offer") as Row | null;
+  if (!claimed) return null;
+
   await assertNoError(
     await db.from("requests").update({ status: "matched" }).eq("id", requestId),
     "updating request status"
   );
 
+  // "Awaiting payment", not "Seller preparing" — accepting an offer doesn't
+  // move any money by itself; the buyer still has to actually pay (see
+  // lib/payments.ts#initiateOrderPayment) before the seller is told to
+  // start preparing anything.
   const order = await insertOrder({
     item: request.title as string,
     seller: offer.seller as string,
+    sellerId: (offer.seller_id as string | null) ?? null,
     price: offer.price as number,
-    status: "Seller preparing",
+    status: "Awaiting payment",
     requestId,
     userId,
   });
 
-  await notifySellerOfNewOrder(offer.seller as string, order);
   return { order };
 }
 
@@ -1323,7 +1733,10 @@ export async function findUserByBusinessName(name: string): Promise<PublicUser |
   return row ? rowToPublicUser(row) : null;
 }
 
-async function getPublicUser(id: string): Promise<PublicUser | null> {
+// Exported so a seller-initiated conversation (see
+// app/api/orders/[id]/message/route.ts) can look up the buyer's
+// display name — never their phone, password, or anything else private.
+export async function getPublicUser(id: string): Promise<PublicUser | null> {
   const db = getDb();
   const result = await db.from("users").select("*").eq("id", id).maybeSingle();
   const row = assertNoError(result, "loading user") as Row | null;
@@ -1348,7 +1761,25 @@ export async function getOrCreateConversation(buyerId: string, sellerId: string)
   const insertResult = await db
     .from("conversations")
     .insert({ id, buyer_id: buyerId, seller_id: sellerId });
-  assertNoError(insertResult, "creating conversation");
+  if (insertResult.error) {
+    // 23505 = unique_violation on (buyer_id, seller_id) — a concurrent
+    // request (e.g. a double-tap on "message seller") already created this
+    // exact conversation between the read above and this insert. That's a
+    // race, not a real failure: use the one that won instead of surfacing
+    // an error, and never retry the insert itself (that would risk a
+    // second row with a different id colliding on the same unique pair).
+    if (insertResult.error.code === "23505") {
+      const raceResult = await db
+        .from("conversations")
+        .select("id")
+        .eq("buyer_id", buyerId)
+        .eq("seller_id", sellerId)
+        .single();
+      const race = assertNoError(raceResult, "loading conversation after a race") as Row;
+      return race.id as string;
+    }
+    throw new Error(`creating conversation: ${insertResult.error.message}`);
+  }
   return id;
 }
 

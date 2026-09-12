@@ -6,7 +6,7 @@ import type { MetadataRoute } from "next";
 // like a native app; this is what actually makes that installable.
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "FindIt Naija",
+    name: "FindIt",
     short_name: "FindIt",
     description: "Request-first marketplace connecting buyers to verified sellers.",
     start_url: "/",

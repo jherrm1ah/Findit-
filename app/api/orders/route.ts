@@ -1,15 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOrders, createOrderFromProduct } from "@/lib/repo";
+import { listOrders, createOrderFromProduct, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
+import { checkRateLimit } from "@/lib/rateLimit";
+
+const MAX_ORDERS = 20;
+const WINDOW_MS = 60 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
   const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to see your orders." }, { status: 401 });
   }
-  const sellerName = user.role === "seller" ? user.businessName : null;
-  return NextResponse.json({ orders: await listOrders(user.id, sellerName) });
+  const seller =
+    user.role === "seller" && user.businessName
+      ? { name: user.businessName, id: await getSellerIdForUser(user.id) }
+      : null;
+  return NextResponse.json({ orders: await listOrders(user.id, seller) });
 }
 
 export async function POST(req: NextRequest) {
@@ -31,6 +38,14 @@ export async function POST(req: NextRequest) {
 
   if (!body.productId) {
     return NextResponse.json({ error: "productId is required" }, { status: 400 });
+  }
+
+  const { allowed, retryAfterSeconds } = checkRateLimit(`order:${user.id}`, MAX_ORDERS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many orders placed recently. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
   }
 
   // item/seller/price are NEVER taken from the client here — only which

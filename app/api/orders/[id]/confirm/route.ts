@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { confirmDelivery } from "@/lib/repo";
+import { initiateSellerPayout } from "@/lib/payments";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 
@@ -21,6 +22,14 @@ export async function POST(
       // either way, so this can't be used to probe other people's orders.
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
+    // Best-effort: the buyer's confirmation is what matters here and must
+    // succeed regardless of payout mechanics — initiateSellerPayout already
+    // records its own outcome (paid/processing/manual_required/failed) on
+    // the payouts ledger, so a failure here isn't silently lost, just not
+    // something that should undo what the buyer just did.
+    initiateSellerPayout(order).catch((err) => {
+      console.error("[orders/confirm] payout initiation failed", err);
+    });
     return NextResponse.json({ order });
   } catch (err) {
     return errorResponse(err, "Couldn't confirm that order.");

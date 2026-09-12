@@ -61,8 +61,13 @@ export async function POST(req: NextRequest) {
     // purpose === "reset": never reveal whether an account exists for this
     // phone — respond identically either way, and only actually spend an
     // SMS (and create a verification record) when there's a real account
-    // behind it.
+    // behind it. The response body alone isn't enough: the real path below
+    // also does a DB write and a network call to Termii, which takes
+    // noticeably longer than this early return — timing alone could still
+    // leak which case happened, so this waits roughly as long as that path
+    // typically takes before answering.
     if (!existing) {
+      await new Promise((resolve) => setTimeout(resolve, 150 + Math.random() * 200));
       return NextResponse.json({
         enabled: true,
         sent: true,

@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle } from "lucide-react";
+import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, CreditCard } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 
-export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, savedIds }) {
+export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -13,7 +13,24 @@ export default function Account({ openProduct, orders, products, onReview, onCon
   const [confirming, setConfirming] = useState(null); // order id being confirmed
   const [reporting, setReporting] = useState(null);   // order id being reported
   const [issueNote, setIssueNote] = useState("");
+  const [paying, setPaying] = useState(null); // order id being paid
   const saved = products.filter((p) => savedIds.includes(p.id));
+
+  const pay = async (orderId) => {
+    setPaying(orderId);
+    try {
+      const result = await onPayOrder(orderId);
+      if (result.configured === false) {
+        showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
+      } else if (result.checkoutUrl) {
+        window.location.href = result.checkoutUrl;
+      }
+    } catch (err) {
+      showToast?.(err.message || "Couldn't start payment — try again.", "error");
+    } finally {
+      setPaying(null);
+    }
+  };
 
   const submitReview = async (orderId) => {
     setSubmitting(true);
@@ -57,6 +74,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
 
   // Where the buyer's money stands, in their words rather than ours.
   const ESCROW_COPY = {
+    unpaid: { icon: CreditCard, tone: "text-[#8A8372]", text: "Awaiting your payment" },
     held: { icon: ShieldCheck, tone: "text-[#7C3AED]", text: "Payment held by FindIt" },
     released: { icon: ShieldCheck, tone: "text-[#16A34A]", text: "Payment released to the seller" },
     disputed: { icon: AlertTriangle, tone: "text-[#D97706]", text: "Problem reported — FindIt is reviewing it" },
@@ -102,6 +120,22 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 </div>
               );
             })()}
+
+            {/* An order created straight from "Buy now" already went through
+                Checkout's own "Pay now" — this covers the other path, an
+                accepted request offer, which lands here still unpaid with
+                no other screen that offers to pay it. */}
+            {o.paymentStatus !== "paid" && (
+              <button
+                onClick={() => pay(o.id)}
+                disabled={paying === o.id}
+                className="w-full flex items-center justify-center gap-1.5 text-white text-[12.5px] font-semibold py-2.5 rounded-xl mb-2.5 disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                <CreditCard size={14} />
+                {paying === o.id ? "Starting checkout…" : `Pay ${naira(o.price)}`}
+              </button>
+            )}
 
             {/* Only the buyer can end an order. Until they tap this, the money
                 stays with FindIt no matter what the seller marked. */}
