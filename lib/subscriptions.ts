@@ -778,9 +778,9 @@ export async function markSubscriptionPastDue(subscriptionId: string): Promise<v
   await logEvent(subscriptionId, "payment_failed");
 }
 
-// Real counts for the admin overview — no MRR/churn math yet (that needs a
-// transaction history this app doesn't have), just what plan every store
-// and platform subscription is actually on right now.
+// Real counts for the admin overview — what plan every store and platform
+// subscription is actually on right now. See getRevenueOverview below for
+// MRR/churn.
 export async function getSubscriptionOverviewCounts(): Promise<{
   paidStoreSubscriptions: number;
   freeStoreSubscriptions: number;
@@ -804,4 +804,75 @@ export async function getSubscriptionOverviewCounts(): Promise<{
     freeStoreSubscriptions: freeResult.count ?? 0,
     activePlatformSubscriptions: platformResult.count ?? 0,
   };
+}
+
+// Pure: one subscription's contribution to MRR, normalized to a monthly
+// figure regardless of billing period. A yearly subscriber's ₦35,000 counts
+// as ~₦2,917/mo here, the same way any standard MRR definition treats
+// annual billing — never the full ₦35,000 landing in a single month.
+export function normalizedMonthlyRevenue(
+  plan: { priceMonthly: number; priceYearly: number | null },
+  billingPeriod: BillingPeriod
+): number {
+  if (billingPeriod === "yearly") {
+    return (plan.priceYearly ?? plan.priceMonthly * 12) / 12;
+  }
+  return plan.priceMonthly;
+}
+
+// MRR here is "current run-rate": today's active/trialing paid subscribers
+// at their CURRENT plan price — the standard, forward-looking MRR
+// definition, not a sum of historical payments actually collected (which
+// this app also has, in `payments`, but that undercounts a plan whose price
+// just changed and overcounts a lapsed yearly subscriber's up-front
+// payment). An admin editing a plan's price updates MRR on the very next
+// read, same as every other "live plan" read in this file.
+//
+// Churn is reported as two plain counts over a trailing 30 days —
+// cancellations (buyer-initiated) and expirations (an unpaid period simply
+// lapsed) — rather than a percentage rate. A rate needs a cohort baseline
+// ("how many paying subscribers existed 30 days ago") this app has never
+// snapshotted, so computing one would fabricate precision the data doesn't
+// support; a real count from subscription_events does not. Both trial_ended
+// events and cancellations/expirations FROM a free plan are excluded —
+// losing something that was never paid for isn't churn.
+export async function getRevenueOverview(): Promise<{
+  mrr: number;
+  cancellations30d: number;
+  expirations30d: number;
+}> {
+  const db = getDb();
+  const [activeResult, plans] = await Promise.all([
+    db.from("subscriptions").select("plan_id, billing_period").in("status", ["active", "trialing"]),
+    listAllPlansForAdmin(),
+  ]);
+  const activeSubs = assertNoError(activeResult, "loading active subscriptions for revenue") as Row[];
+  const planById = new Map(plans.map((p) => [p.id, p]));
+
+  let mrr = 0;
+  for (const row of activeSubs) {
+    const plan = planById.get(row.plan_id as string);
+    if (!plan || plan.priceMonthly === 0) continue; // Free plans contribute nothing
+    mrr += normalizedMonthlyRevenue(plan, row.billing_period as BillingPeriod);
+  }
+
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const eventsResult = await db
+    .from("subscription_events")
+    .select("type, detail")
+    .in("type", ["cancelled", "expired"])
+    .gte("created_at", since);
+  const events = assertNoError(eventsResult, "loading churn events") as Row[];
+
+  let cancellations30d = 0;
+  let expirations30d = 0;
+  for (const event of events) {
+    const fromPlanId = (event.detail as { fromPlanId?: string } | null)?.fromPlanId;
+    const fromPlan = fromPlanId ? planById.get(fromPlanId) : null;
+    if (!fromPlan || fromPlan.priceMonthly === 0) continue; // only losing a PAID plan counts as churn
+    if (event.type === "cancelled") cancellations30d++;
+    else expirations30d++;
+  }
+
+  return { mrr: Math.round(mrr), cancellations30d, expirations30d };
 }

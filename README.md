@@ -358,9 +358,19 @@ change a price or limit without touching code:
   activates a paid plan manually in the meantime — for a seller who paid off-platform, or for
   testing the upgrade flow with no live Paystack account.
 - **Admin control.** `GET /api/admin/subscription-plans` / `PATCH /api/admin/subscription-plans/[id]`
-  edit any plan's price, limits, or features — no deploy needed. There's no dedicated admin screen
-  for this yet (see "Next steps" below); the API is real and usable from a script or a REST client
-  today.
+  edit any plan's price, limits, or features — no deploy needed. A real editor screen lives in the
+  Admin queue's "Plans" tab (finance domain) — every plan (Store and FindIt Pro) as an editable card.
+  A price/limit change here never touches an existing subscriber's current billing period; it only
+  applies to what a new or renewing subscriber pays next.
+- **MRR and churn, on the Overview tab.** MRR is "current run-rate": today's active/trialing paid
+  subscribers (Store and FindIt Pro combined) at their *current* plan price, normalizing a yearly
+  subscriber's price across 12 months (`normalizedMonthlyRevenue` in `lib/subscriptions.ts`, unit
+  tested) — a plan price edit changes it on the next read, the same way every other "live plan" read
+  in this app works. Churn is shown as two plain counts over a trailing 30 days — cancellations and
+  expirations — rather than a percentage rate: a rate needs a cohort baseline ("how many paying
+  subscribers existed 30 days ago") this app has never snapshotted, so computing one would fabricate
+  precision the data doesn't support. Both counts exclude losing a *free* plan or an unpaid trial —
+  losing something that was never paid for isn't churn.
 - **Pay for it, get it — every plan feature is either real or explicitly not.** Beyond the product
   limit, four more plan features are actually wired to real functionality, computed server-side from
   the seller's *live* plan (`getStorePlanDisplayMap` in `lib/subscriptions.ts`), not shown from
@@ -376,13 +386,13 @@ change a price or limit without touching code:
   behind it yet (no support-ticket routing exists to prioritize) and is shown as "Coming soon" on
   the plan-comparison screen rather than a checkmark — see `components/findit-app/StorePlans.jsx`.
 
-**Not built yet, deliberately out of scope for this pass:** an admin plan-editor screen, real
-per-seller storage (MB) metering (`storage_limit_mb` exists on each plan as config/display data
-only — nothing in the upload path measures usage against it, and it isn't claimed as a feature to
-sellers for exactly that reason), a real priority-support system, and deeper tier-themed storefront
-layouts beyond the real logo/banner/Pro badge described above. Boost/featured-listing purchases and
-platform transaction fees still have no purchase flow (their pricing has an obvious home — another
-admin-editable `subscription_plans`-style table — but nothing built).
+**Not built yet, deliberately out of scope for this pass:** real per-seller storage (MB) metering
+(`storage_limit_mb` exists on each plan as config/display data only — nothing in the upload path
+measures usage against it, and it isn't claimed as a feature to sellers for exactly that reason), a
+real priority-support system, and deeper tier-themed storefront layouts beyond the real logo/banner/
+Pro badge described above. Boost/featured-listing purchases and platform transaction fees still have
+no purchase flow (their pricing has an obvious home — another admin-editable `subscription_plans`
+-style table — but nothing built).
 
 ## FindIt Pro
 
@@ -547,7 +557,10 @@ real and Paystack-wired now (see "Real marketplace payments", "Store subscriptio
 Pro" above) — every one of them needs a real `PAYSTACK_SECRET_KEY` to actually move money (the
 integration is server-to-server REST, redirecting to Paystack's hosted checkout page, so no
 client-side public key is used); with none configured they degrade to clearly labeled "not configured" states
-rather than pretending to charge or pay anyone. Still not built: an admin plan-editor screen, real
-per-seller storage metering, tier-themed public storefronts, a combined-benefit view for an account
-with both a Store plan and FindIt Pro, and boost/featured-listing purchases with platform
-transaction fees (the database/plan-config shape has room for them, but no purchase flow exists).
+rather than pretending to charge or pay anyone. The admin plan-editor screen and MRR/churn are built
+now too (see "Store subscriptions" above). Still not built: real per-seller storage metering,
+tier-themed public storefronts, a combined-benefit view for an account with both a Store plan and
+FindIt Pro, and boost/featured-listing purchases with platform transaction fees (the database/
+plan-config shape has room for them, but no purchase flow exists). Also not built: a support-ticket
+system, a broader notifications/alerts framework, a buyer review/rating system feeding seller
+reputation, and admin-managed product categories.

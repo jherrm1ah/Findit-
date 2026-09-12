@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed } from "./subscriptions";
+import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed, normalizedMonthlyRevenue } from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
 // lib/subscriptions.ts (getSellerSubscription, changeStorePlan, etc.) need a
@@ -99,5 +99,24 @@ describe("isSubscriptionLapsed", () => {
   it("cancelled and expired are already-resolved terminal states, not checked here", () => {
     expect(isSubscriptionLapsed({ status: "cancelled" as const, trialEndsAt: null, currentPeriodEnd: "2026-01-01T00:00:00Z" }, 5000, NOW)).toBe(false);
     expect(isSubscriptionLapsed({ status: "expired" as const, trialEndsAt: null, currentPeriodEnd: "2026-01-01T00:00:00Z" }, 5000, NOW)).toBe(false);
+  });
+});
+
+describe("normalizedMonthlyRevenue", () => {
+  it("a monthly subscriber contributes their monthly price as-is", () => {
+    expect(normalizedMonthlyRevenue({ priceMonthly: 5000, priceYearly: 50000 }, "monthly")).toBe(5000);
+  });
+
+  it("a yearly subscriber's price is spread across 12 months, not counted in one", () => {
+    expect(normalizedMonthlyRevenue({ priceMonthly: 3500, priceYearly: 35000 }, "yearly")).toBeCloseTo(35000 / 12);
+  });
+
+  it("falls back to 12x the monthly price when a plan has no yearly price of its own", () => {
+    expect(normalizedMonthlyRevenue({ priceMonthly: 2000, priceYearly: null }, "yearly")).toBe(2000);
+  });
+
+  it("Free plans contribute nothing either way", () => {
+    expect(normalizedMonthlyRevenue({ priceMonthly: 0, priceYearly: null }, "monthly")).toBe(0);
+    expect(normalizedMonthlyRevenue({ priceMonthly: 0, priceYearly: null }, "yearly")).toBe(0);
   });
 });

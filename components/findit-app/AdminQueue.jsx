@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2 } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -582,8 +582,8 @@ function SellerAccountList({ sellers, onStatusChange }) {
 // actually grants that permission domain — a scoped admin never even
 // receives counts outside their own domains, let alone sees them rendered.
 // A card only navigates to another tab when a real, working screen exists
-// there; finance/user counts have no admin management screen yet (that's
-// later phases), so those render as plain numbers, not dead links.
+// there; a stat with nowhere real to send an admin (like the 30-day churn
+// counts below) renders as a plain number instead of a dead link.
 function StatCard({ label, value, onClick }) {
   const Tag = onClick ? "button" : "div";
   return (
@@ -654,9 +654,12 @@ function AdminOverview({ overview, onNavigate }) {
 
       {overview.finance && (
         <OverviewSection icon={CreditCard} title="Subscriptions">
-          <StatCard label="Paid store plans" value={overview.finance.paidStoreSubscriptions} />
-          <StatCard label="Free store plans" value={overview.finance.freeStoreSubscriptions} />
-          <StatCard label="FindIt Pro (buyers)" value={overview.finance.activePlatformSubscriptions} />
+          <StatCard label="Paid store plans" value={overview.finance.paidStoreSubscriptions} onClick={() => onNavigate("plans")} />
+          <StatCard label="Free store plans" value={overview.finance.freeStoreSubscriptions} onClick={() => onNavigate("plans")} />
+          <StatCard label="FindIt Pro (buyers)" value={overview.finance.activePlatformSubscriptions} onClick={() => onNavigate("plans")} />
+          <StatCard label="MRR" value={naira(overview.finance.mrr)} onClick={() => onNavigate("plans")} />
+          <StatCard label="Cancelled (30d)" value={overview.finance.cancellations30d} />
+          <StatCard label="Expired (30d)" value={overview.finance.expirations30d} />
         </OverviewSection>
       )}
     </div>
@@ -1018,6 +1021,152 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
   );
 }
 
+const LEVEL_OPTIONS = ["none", "basic", "advanced", "full"];
+
+// One plan's editable fields — the whole point of storing prices/limits as
+// DATA (see lib/subscriptions.ts#updatePlan): a price or limit change is a
+// PATCH here, never a code change or a deploy. Existing subscriptions keep
+// whatever plan_id they already reference, so editing a plan never silently
+// changes what an already-subscribed seller/buyer is currently paying for.
+function PlanEditorCard({ plan, onSave }) {
+  const [form, setForm] = useState({
+    name: plan.name,
+    priceMonthly: String(plan.priceMonthly),
+    priceYearly: plan.priceYearly === null ? "" : String(plan.priceYearly),
+    productLimit: plan.productLimit === null ? "" : String(plan.productLimit),
+    storageLimitMb: plan.storageLimitMb === null ? "" : String(plan.storageLimitMb),
+    analyticsLevel: plan.analyticsLevel,
+    customizationLevel: plan.customizationLevel,
+    featuredListingAccess: plan.featuredListingAccess,
+    prioritySupport: plan.prioritySupport,
+    proBadge: plan.proBadge,
+    trialDays: String(plan.trialDays),
+    sortOrder: String(plan.sortOrder),
+    active: plan.active,
+  });
+  const [saving, setSaving] = useState(false);
+
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+  const inputCls = "mt-1 w-full border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 text-[12.5px] outline-none";
+  const field = (label, input) => (
+    <label className="block">
+      <span className="text-[10.5px] font-semibold text-[#8A8372] uppercase tracking-wide">{label}</span>
+      {input}
+    </label>
+  );
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(plan.id, {
+        name: form.name,
+        priceMonthly: Number(form.priceMonthly) || 0,
+        priceYearly: form.priceYearly === "" ? null : Number(form.priceYearly),
+        productLimit: form.productLimit === "" ? null : Number(form.productLimit),
+        storageLimitMb: form.storageLimitMb === "" ? null : Number(form.storageLimitMb),
+        analyticsLevel: form.analyticsLevel,
+        customizationLevel: form.customizationLevel,
+        featuredListingAccess: form.featuredListingAccess,
+        prioritySupport: form.prioritySupport,
+        proBadge: form.proBadge,
+        trialDays: Number(form.trialDays) || 0,
+        sortOrder: Number(form.sortOrder) || 0,
+        active: form.active,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
+      <div className="flex items-center justify-between mb-3">
+        <input
+          value={form.name}
+          onChange={(e) => set("name", e.target.value)}
+          className="text-[14px] font-bold text-[#1E1B4B] outline-none border-b border-transparent focus:border-[#ECE9F7] min-w-0"
+        />
+        <label className="flex items-center gap-1.5 text-[11px] font-semibold text-[#514B67] shrink-0 ml-2">
+          <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
+          Active
+        </label>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2.5 mb-3">
+        {field("Price / month (₦)", <input type="number" min="0" value={form.priceMonthly} onChange={(e) => set("priceMonthly", e.target.value)} className={inputCls} />)}
+        {field("Price / year (₦, blank = none)", <input type="number" min="0" value={form.priceYearly} onChange={(e) => set("priceYearly", e.target.value)} className={inputCls} />)}
+        {plan.kind === "store" && field("Product limit (blank = unlimited)", <input type="number" min="0" value={form.productLimit} onChange={(e) => set("productLimit", e.target.value)} className={inputCls} />)}
+        {plan.kind === "store" && field("Storage limit MB (blank = unlimited)", <input type="number" min="0" value={form.storageLimitMb} onChange={(e) => set("storageLimitMb", e.target.value)} className={inputCls} />)}
+        {field("Trial days", <input type="number" min="0" value={form.trialDays} onChange={(e) => set("trialDays", e.target.value)} className={inputCls} />)}
+        {field("Sort order", <input type="number" value={form.sortOrder} onChange={(e) => set("sortOrder", e.target.value)} className={inputCls} />)}
+        {field("Analytics level", (
+          <select value={form.analyticsLevel} onChange={(e) => set("analyticsLevel", e.target.value)} className={inputCls}>
+            {LEVEL_OPTIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        ))}
+        {field("Customization level", (
+          <select value={form.customizationLevel} onChange={(e) => set("customizationLevel", e.target.value)} className={inputCls}>
+            {LEVEL_OPTIONS.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-3 mb-3">
+        <label className="flex items-center gap-1.5 text-[11.5px] text-[#514B67]">
+          <input type="checkbox" checked={form.featuredListingAccess} onChange={(e) => set("featuredListingAccess", e.target.checked)} /> Featured placement
+        </label>
+        <label className="flex items-center gap-1.5 text-[11.5px] text-[#514B67]">
+          <input type="checkbox" checked={form.prioritySupport} onChange={(e) => set("prioritySupport", e.target.checked)} /> Priority support
+        </label>
+        <label className="flex items-center gap-1.5 text-[11.5px] text-[#514B67]">
+          <input type="checkbox" checked={form.proBadge} onChange={(e) => set("proBadge", e.target.checked)} /> Pro badge
+        </label>
+      </div>
+
+      <button
+        onClick={save}
+        disabled={saving}
+        className="text-[12px] font-semibold text-white px-4 py-2 rounded-xl disabled:opacity-60"
+        style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+      >
+        {saving ? "Saving…" : "Save"}
+      </button>
+    </div>
+  );
+}
+
+function PlansAdmin({ onLoadPlans, onUpdatePlan, showToast }) {
+  const [plans, setPlans] = useState(null);
+
+  useEffect(() => {
+    onLoadPlans().then(setPlans).catch(() => setPlans([]));
+  }, []);
+
+  const save = async (id, patch) => {
+    try {
+      const updated = await onUpdatePlan(id, patch);
+      setPlans((ps) => ps.map((p) => (p.id === id ? updated : p)));
+      showToast?.(`${updated.name} updated.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that plan.", "error");
+    }
+  };
+
+  if (!plans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
+
+  const storePlans = plans.filter((p) => p.kind === "store");
+  const platformPlans = plans.filter((p) => p.kind === "platform");
+
+  return (
+    <div>
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2">Store plans</p>
+      {storePlans.map((p) => <PlanEditorCard key={p.id} plan={p} onSave={save} />)}
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 mt-5">FindIt Pro</p>
+      {platformPlans.map((p) => <PlanEditorCard key={p.id} plan={p} onSave={save} />)}
+    </div>
+  );
+}
+
 export default function AdminQueue({
   sellers,
   requests,
@@ -1044,6 +1193,8 @@ export default function AdminQueue({
   onSetFeeConfig,
   onLoadPayouts,
   onMarkPayoutPaid,
+  onLoadPlans,
+  onUpdatePlan,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -1060,6 +1211,7 @@ export default function AdminQueue({
     can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
     can("users") && { key: "users", label: "Users", icon: Users },
     can("finance") && { key: "payments", label: "Payments", icon: CreditCard },
+    can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
     { key: "requests", label: "Requests", icon: AlertTriangle },
     isSuperAdmin && { key: "admin", label: "Admin tools", icon: UserPlus },
     { key: "activity", label: "Activity", icon: ShieldCheck },
@@ -1162,6 +1314,19 @@ export default function AdminQueue({
             onMarkPayoutPaid={onMarkPayoutPaid}
             showToast={showToast}
           />
+        </>
+      )}
+
+      {activeTab === "plans" && can("finance") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Settings2 size={13} className="text-[#7C3AED]" /> Plan editor
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Price/limit changes apply going forward — an already-active subscription keeps whatever
+            it's currently on until it renews or is changed.
+          </p>
+          <PlansAdmin onLoadPlans={onLoadPlans} onUpdatePlan={onUpdatePlan} showToast={showToast} />
         </>
       )}
 

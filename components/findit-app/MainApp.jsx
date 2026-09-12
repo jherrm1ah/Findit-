@@ -623,6 +623,18 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const handleMarkPayoutPaid = (id) => api.markPayoutPaid(id);
 
+  const handleLoadPlans = () => api.getAdminSubscriptionPlans();
+
+  const handleUpdatePlan = async (id, patch) => {
+    const updated = await api.updateSubscriptionPlan(id, patch);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    // MRR and the paid/free subscription counts on the Overview tab are
+    // computed from live plan prices — refresh so a price edit shows up
+    // there immediately.
+    api.getAdminOverview().then(setAdminOverview).catch(() => {});
+    return updated;
+  };
+
   const handlePromoteToAdmin = async (phone, adminRole) => {
     const promoted = await api.promoteToAdmin(phone, adminRole);
     api.getAdminActions().then(setAdminActions).catch(() => {});
@@ -906,6 +918,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onSetFeeConfig={handleSetFeeConfig}
               onLoadPayouts={handleLoadPayouts}
               onMarkPayoutPaid={handleMarkPayoutPaid}
+              onLoadPlans={handleLoadPlans}
+              onUpdatePlan={handleUpdatePlan}
             />
           ) : (
             <RoleGate

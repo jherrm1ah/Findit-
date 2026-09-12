@@ -3,7 +3,7 @@ import { getSessionUser, getUserCounts } from "@/lib/auth";
 import { hasAdminPermission } from "@/lib/adminRolesLevels";
 import { getSellerStatusCounts, countDisputedOrders } from "@/lib/repo";
 import { getVerificationQueueCounts } from "@/lib/sellerVerification";
-import { getSubscriptionOverviewCounts } from "@/lib/subscriptions";
+import { getSubscriptionOverviewCounts, getRevenueOverview } from "@/lib/subscriptions";
 import { errorResponse } from "@/lib/errors";
 
 // Real, permission-scoped stats for the admin Overview tab — every number
@@ -34,7 +34,8 @@ export async function GET(req: NextRequest) {
       overview.moderation = { openDisputes: await countDisputedOrders() };
     }
     if (can("finance")) {
-      overview.finance = await getSubscriptionOverviewCounts();
+      const [counts, revenue] = await Promise.all([getSubscriptionOverviewCounts(), getRevenueOverview()]);
+      overview.finance = { ...counts, ...revenue };
     }
 
     return NextResponse.json({ overview });

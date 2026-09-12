@@ -142,6 +142,13 @@ export const api = {
     }),
   getPayouts: (status) => request(`/api/admin/payouts${status ? `?status=${status}` : ""}`).then((d) => d.payouts),
   markPayoutPaid: (id) => request(`/api/admin/payouts/${id}`, { method: "PATCH" }),
+  getAdminSubscriptionPlans: () => request("/api/admin/subscription-plans").then((d) => d.plans),
+  updateSubscriptionPlan: (id, patch) =>
+    request(`/api/admin/subscription-plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.plan),
   getTransactions: ({ kind, page } = {}) => {
     const params = new URLSearchParams();
     if (kind) params.set("kind", kind);
