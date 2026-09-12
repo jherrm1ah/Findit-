@@ -784,6 +784,19 @@ export async function isAdminSessionUnlocked(req: NextRequest): Promise<boolean>
     .select("admin_unlocked_at")
     .eq("token", token)
     .maybeSingle();
+
+  // 42703 = undefined_column: migration 020 hasn't been applied to this
+  // database. Fail CLOSED (no admin access) but say so plainly — migrations
+  // here are applied by hand, and the failure this produced otherwise was a
+  // generic 500 on every admin route with nothing pointing at the cause.
+  // See scripts/check-schema.mjs, which catches this before a deploy.
+  if (result.error?.code === "42703") {
+    console.error(
+      "[admin-session] sessions.admin_unlocked_at is missing — apply supabase/migrations/020_admin_session_unlock.sql. Admin access stays closed until then."
+    );
+    return false;
+  }
+
   const row = assertNoError(result, "checking admin session") as Row | null;
   if (!row) return false;
 
