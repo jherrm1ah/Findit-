@@ -701,6 +701,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const handleLoadAlerts = () => api.getAdminAlerts();
 
+  const handleSendBroadcast = (title, body, audience) => api.sendAdminBroadcast(title, body, audience);
+
   const handleLoadCategories = () => api.getAdminCategories();
 
   const handleCreateCategory = async (label, iconKey, sortOrder) => {
@@ -1066,6 +1068,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onResolveTicket={handleResolveTicket}
               onLoadAnalytics={handleLoadAnalytics}
               onLoadAlerts={handleLoadAlerts}
+              onSendBroadcast={handleSendBroadcast}
             />
           ) : (
             <RoleGate

@@ -187,6 +187,12 @@ export const api = {
     }).then((d) => d.ticket),
   getAdminAnalytics: (days) => request(`/api/admin/analytics${days ? `?days=${days}` : ""}`).then((d) => d.analytics),
   getAdminAlerts: () => request("/api/admin/alerts").then((d) => d.alerts),
+  sendAdminBroadcast: (title, body, audience) =>
+    request("/api/admin/broadcast", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body, audience }),
+    }).then((d) => d.result),
   getCategories: () => request("/api/categories").then((d) => d.categories),
   getAdminCategories: () => request("/api/admin/categories").then((d) => d.categories),
   createCategory: (label, iconKey, sortOrder) =>

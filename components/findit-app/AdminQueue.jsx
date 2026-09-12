@@ -159,6 +159,78 @@ function TeamAccess({ onLookupUser, onPromoteToAdmin, onDemoteFromAdmin, current
   );
 }
 
+const BROADCAST_AUDIENCES = [
+  { value: "all", label: "All users" },
+  { value: "buyers", label: "Buyers only" },
+  { value: "sellers", label: "Sellers only" },
+];
+
+// Fans out a real notification via the exact same notifications
+// table/preference every other notification in this app already writes to
+// (see lib/broadcast.ts) — no new delivery mechanism, and a recipient who
+// turned notifications off never gets one. Super-admin only, same as
+// promoting/demoting an admin above: reaching every user at once is
+// categorically more sensitive than any single permission domain.
+function BroadcastForm({ onSendBroadcast, showToast }) {
+  const [title, setTitle] = useState("");
+  const [body, setBody] = useState("");
+  const [audience, setAudience] = useState("all");
+  const [sending, setSending] = useState(false);
+
+  const send = async (e) => {
+    e.preventDefault();
+    if (!title.trim() || !body.trim() || sending) return;
+    setSending(true);
+    try {
+      const result = await onSendBroadcast(title.trim(), body.trim(), audience);
+      showToast?.(`Sent to ${result.recipientCount} recipient${result.recipientCount === 1 ? "" : "s"}.`);
+      setTitle("");
+      setBody("");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't send that announcement.", "error");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <form onSubmit={send} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 space-y-2.5">
+      <input
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        placeholder="Announcement title"
+        className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none"
+      />
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        placeholder="What do you want to tell them?"
+        rows={3}
+        className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none resize-none"
+      />
+      <div className="flex items-center gap-2">
+        <select
+          value={audience}
+          onChange={(e) => setAudience(e.target.value)}
+          className="flex-1 border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+        >
+          {BROADCAST_AUDIENCES.map((a) => (
+            <option key={a.value} value={a.value}>{a.label}</option>
+          ))}
+        </select>
+        <button
+          type="submit"
+          disabled={!title.trim() || !body.trim() || sending}
+          className="text-white text-[12.5px] font-semibold px-4 py-2 rounded-xl disabled:opacity-40 shrink-0"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {sending ? "Sending…" : "Send"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 // Orders where a buyer said something went wrong. FindIt is holding their
 // money until someone here decides, so this sits above everything else.
 function ReportedProblems({ orders, onResolve }) {
@@ -1807,6 +1879,7 @@ export default function AdminQueue({
   onResolveTicket,
   onLoadAnalytics,
   onLoadAlerts,
+  onSendBroadcast,
 }) {
   const unmatched = requests.filter((r) => r.offerCount === 0);
   const can = (permission) => hasAdminPermission(currentAdminRole, permission);
@@ -2075,6 +2148,15 @@ export default function AdminQueue({
             onApply={onApplySellerIdentityBackfill}
             showToast={showToast}
           />
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 mt-7 flex items-center gap-1.5">
+            <Bell size={13} className="text-[#7C3AED]" /> Broadcast announcement
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Sends a real notification to every matching account right now — rate-limited, and it
+            respects each recipient's own notification preference.
+          </p>
+          <BroadcastForm onSendBroadcast={onSendBroadcast} showToast={showToast} />
         </>
       )}
 
