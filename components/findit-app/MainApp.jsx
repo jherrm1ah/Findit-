@@ -80,6 +80,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   const [adminOverview, setAdminOverview] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  // How many items are in the admin Alert Center right now — shown as a nav
+  // badge (see the bottom nav below) so an admin sees something needs
+  // attention without having to open the Admin tab and click into Alerts.
+  const [adminAlertCount, setAdminAlertCount] = useState(0);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
   // { subscription, plan, usage: { activeProducts, label }, plans } | null —
   // see GET /api/sellers/me/subscription. null until the first fetch, or
@@ -190,6 +194,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       api.getReportedOrders().then(setReportedOrders).catch(() => {});
       api.getSellerVerifications().then(setSellerVerifications).catch(() => {});
       api.getAdminOverview().then(setAdminOverview).catch(() => {});
+      api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
     }
     if (user) {
       api.getFindItPro().then(setFindItPro).catch(() => {});
@@ -832,6 +837,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     return () => clearInterval(interval);
   }, [activeTicket?.id]);
 
+  // Refresh the Alert Center nav badge whenever an admin actually opens the
+  // Admin tab — resolving an alert (marking a ticket resolved, paying out a
+  // seller manually, etc.) happens inside that tab, so leaving and coming
+  // back is the natural point to recheck rather than polling constantly.
+  useEffect(() => {
+    if (screen !== "admin" || !isAdmin) return;
+    api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
+  }, [screen, isAdmin]);
+
   // The seller side of contacting the other party — scoped to a real order
   // of theirs (enforced server-side too), not a free-form "message any
   // buyer" search.
@@ -1209,10 +1223,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
                 key={t.key}
                 onClick={() => go(t.key)}
                 aria-label={t.label}
-                className="w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all"
+                className="relative w-11 h-11 rounded-full flex items-center justify-center shrink-0 transition-all"
                 style={active ? { background: "linear-gradient(135deg,#FCD34D,#F59E0B)" } : {}}
               >
                 <t.icon size={18} className={active ? "text-[#3B1874]" : "text-white/70"} strokeWidth={active ? 2.3 : 1.8} />
+                {t.key === "admin" && adminAlertCount > 0 && (
+                  <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-[#E64980] text-white text-[9px] font-bold flex items-center justify-center">
+                    {adminAlertCount > 9 ? "9+" : adminAlertCount}
+                  </span>
+                )}
               </button>
             );
           })}
