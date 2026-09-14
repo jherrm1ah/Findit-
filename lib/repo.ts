@@ -9,6 +9,7 @@ import { ValidationError } from "./errors";
 import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
 import { isValidCategoryKey } from "./categoryCatalog";
+import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./requestMatching";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -1569,6 +1570,99 @@ export async function listMyRequests(userId: string): Promise<(RequestRow & { of
   return withOffers;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Telling sellers a matching request exists                            */
+/*                                                                        */
+/*  Before this, nothing told a seller a buyer had posted something they  */
+/*  sell — the only way to find out was opening the dashboard and         */
+/*  scrolling the open-requests queue yourself. For a request-first       */
+/*  marketplace, that is the one part of the loop that had no machinery   */
+/*  behind it at all.                                                     */
+/* ------------------------------------------------------------------ */
+
+// Who is even a candidate, before sellersToNotifyForNewRequest (pure, in
+// requestMatching.ts) decides who among them actually gets told.
+//
+// A request WITH a category matches sellers who have an ACTIVE listing in
+// that category — real selling evidence, not a self-declared label a
+// seller may never have updated. Only products with a real seller_id are
+// considered: a pre-migration-009 listing with none has no reliably
+// identifiable owner, and lib/sellerIdentityMatch.ts's whole principle is
+// to refuse rather than guess at that — a notification is exactly the kind
+// of thing that must never go to the wrong account.
+//
+// A request with NO category ("Not sure — leave it to sellers", the
+// buyer's own explicit choice on the form) matches every approved seller —
+// the buyer said any seller is fair game, so narrowing that ourselves
+// would work against what they asked for.
+async function candidateSellersForRequest(category: string | null): Promise<RequestNotifyCandidate[]> {
+  const db = getDb();
+
+  if (category) {
+    // Two flat queries stitched in JS, the same shape as getSellerStatsMap
+    // and listPublicProductsForSeller elsewhere in this file, rather than an
+    // embedded-resource select — keeps this on the one join style the rest
+    // of the codebase (and its test fakes) already understand.
+    const productsResult = await db
+      .from("products")
+      .select("seller_id")
+      .eq("category", category)
+      .eq("active", true);
+    const productRows = assertNoError(productsResult, "finding listings for a new request's category") as Row[];
+    const sellerIds = [...new Set(productRows.map((r) => r.seller_id as string | null).filter((id): id is string => id !== null))];
+    if (sellerIds.length === 0) return [];
+
+    const sellersResult = await db
+      .from("sellers")
+      .select("id, user_id, name")
+      .in("id", sellerIds)
+      .eq("status", "approved");
+    const sellerRows = assertNoError(sellersResult, "loading sellers for a new request") as Row[];
+    return sellerRows.map((row) => ({
+      sellerUserId: row.user_id as string,
+      sellerId: row.id as string,
+      sellerName: row.name as string,
+    }));
+  }
+
+  const result = await db.from("sellers").select("user_id, id, name").eq("status", "approved");
+  const rows = assertNoError(result, "finding sellers for a new request") as Row[];
+  return rows.map((row) => ({
+    sellerUserId: row.user_id as string,
+    sellerId: row.id as string,
+    sellerName: row.name as string,
+  }));
+}
+
+// Best-effort, exactly like notifyBestEffort itself: a request has already
+// been created successfully by the time this runs, so a notification
+// failure must never surface as a failure of posting the request.
+async function notifySellersOfNewRequest(request: RequestRow): Promise<void> {
+  try {
+    const candidates = await candidateSellersForRequest(request.category);
+    const recipients = sellersToNotifyForNewRequest(candidates, request.userId);
+    if (recipients.length === 0) return;
+
+    const budget =
+      request.budgetMin != null && request.budgetMax != null
+        ? ` Budget: ₦${request.budgetMin.toLocaleString("en-NG")}–₦${request.budgetMax.toLocaleString("en-NG")}.`
+        : "";
+
+    await Promise.all(
+      recipients.map((r) =>
+        notifyBestEffort({
+          userId: r.sellerUserId,
+          type: "request",
+          title: "New request matching what you sell",
+          body: `A buyer is looking for "${request.title}".${budget} Open your dashboard to send an offer.`,
+        })
+      )
+    );
+  } catch (err) {
+    console.error("[notify] failed to notify sellers of new request:", err);
+  }
+}
+
 export async function createRequest(input: {
   title: string;
   description: string | null;
@@ -1607,7 +1701,13 @@ export async function createRequest(input: {
     .select()
     .single();
   const row = assertNoError(result, "creating request") as Row;
-  return rowToRequest(row, 0);
+  const request = rowToRequest(row, 0);
+
+  // The request already exists by this point — a failure below must never
+  // read back as "posting the request failed". See notifySellersOfNewRequest.
+  await notifySellersOfNewRequest(request);
+
+  return request;
 }
 
 /* ------------------------------------------------------------------ */

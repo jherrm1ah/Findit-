@@ -1,7 +1,7 @@
 import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
-  Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus,
+  Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus, PackageSearch,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -71,6 +71,9 @@ export const NOTIFICATION_ICONS = {
   review: Star,
   seller: BadgeCheck,
   admin: ShieldPlus,
+  // A new buyer request matched what this seller sells (or the buyer left
+  // it open to any seller) — see lib/repo.ts#notifySellersOfNewRequest.
+  request: PackageSearch,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
