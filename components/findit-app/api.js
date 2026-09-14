@@ -348,6 +348,13 @@ export const api = {
       body: JSON.stringify({ description }),
     }).then((d) => d.result),
 
+  generateProductDescription: (payload) =>
+    request("/api/ai/generate-description", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).then((d) => d.description),
+
   getOpenRequests: () => request("/api/requests").then((d) => d.requests),
   getMyRequests: () => request("/api/requests/mine").then((d) => d.requests),
   createRequest: (payload) =>

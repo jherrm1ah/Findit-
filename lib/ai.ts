@@ -110,3 +110,57 @@ export async function classifyRequest(description: string): Promise<RequestClass
     estimatedBudgetMax: typeof parsed.estimatedBudgetMax === "number" ? parsed.estimatedBudgetMax : null,
   };
 }
+
+// A seller's "Generate with AI" button on the listing form's Description
+// field — a suggestion the seller edits or discards, never auto-submitted
+// (same trust boundary as classifyRequest above: AI drafts, the seller
+// decides). Given only what the seller has already entered, not invented
+// details — the prompt is explicit about not claiming a condition, color
+// or feature that wasn't supplied.
+export async function generateProductDescription(input: {
+  name: string;
+  categoryLabel: string;
+  condition?: string | null;
+  color?: string | null;
+  variation?: string | null;
+}): Promise<string> {
+  if (!input.name.trim()) {
+    throw new ValidationError("Add a product name first.");
+  }
+
+  const ai = getClient();
+  const knownFacts = [
+    `Category: ${input.categoryLabel}`,
+    input.condition ? `Condition: ${input.condition}` : null,
+    input.color ? `Color: ${input.color}` : null,
+    input.variation ? `Size/variation: ${input.variation}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents:
+        "Write a short, honest product description (2-4 sentences) for a listing on a Nigerian " +
+        "marketplace app, in a plain, trustworthy tone — no hype, no emoji, no claims the seller " +
+        "didn't provide (never invent a brand, feature, condition, or specification not given " +
+        "below).\n\n" +
+        `Product name: "${input.name.trim()}"\n${knownFacts}`,
+      config: { responseMimeType: "text/plain" },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(message)) {
+      throw new ValidationError("AI generation is rate-limited right now — try again in a moment.");
+    }
+    throw new ValidationError("Couldn't reach the AI generator — try again.");
+  }
+
+  const text = response.text?.trim();
+  if (!text) {
+    throw new ValidationError("The AI generator didn't return anything usable — try again.");
+  }
+  return text;
+}

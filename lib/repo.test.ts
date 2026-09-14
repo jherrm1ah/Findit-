@@ -7,6 +7,7 @@ import {
   SELLER_SETTABLE_STATUSES,
   computeSellerStatsMap,
   isValidProductImageUrl,
+  MAX_PRODUCT_IMAGES,
   ORDER_STATUSES,
   ValidationError,
   assertSellerCanTransact,
@@ -45,6 +46,57 @@ describe("validateProductInput", () => {
     expect(() => validateProductInput({ category: "reading", name: "Reading light", price: 3000 })).not.toThrow();
     expect(() => validateProductInput({ price: 5000 })).not.toThrow();
     expect(() => validateProductInput({})).not.toThrow();
+  });
+
+  // Migration 026 — description/condition/qty/location/deliveryOption/
+  // color/variation/images. Every one of these is only checked when
+  // provided (same "also covers a partial patch" reasoning as name/price
+  // above), and null is always accepted as "not specified" — see the
+  // migration for why these stay nullable rather than defaulted.
+  it("accepts null for every new optional field", () => {
+    expect(() =>
+      validateProductInput({
+        description: null,
+        condition: null,
+        location: null,
+        deliveryOption: null,
+        color: null,
+        variation: null,
+      })
+    ).not.toThrow();
+  });
+
+  it("rejects a condition that isn't New or Used", () => {
+    expect(() => validateProductInput({ condition: "Refurbished" })).toThrow(ValidationError);
+    expect(() => validateProductInput({ condition: "New" })).not.toThrow();
+    expect(() => validateProductInput({ condition: "Used" })).not.toThrow();
+  });
+
+  it("rejects a delivery option outside the fixed set", () => {
+    expect(() => validateProductInput({ deliveryOption: "Teleport" })).toThrow(ValidationError);
+    for (const o of ["Delivery", "Pickup", "Both"]) {
+      expect(() => validateProductInput({ deliveryOption: o })).not.toThrow();
+    }
+  });
+
+  it("rejects a negative or non-integer quantity, accepts zero", () => {
+    expect(() => validateProductInput({ qty: -1 })).toThrow(ValidationError);
+    expect(() => validateProductInput({ qty: 1.5 })).toThrow(ValidationError);
+    expect(() => validateProductInput({ qty: 0 })).not.toThrow();
+    expect(() => validateProductInput({ qty: 5 })).not.toThrow();
+  });
+
+  it("rejects a description over the length cap", () => {
+    expect(() => validateProductInput({ description: "x".repeat(2001) })).toThrow(ValidationError);
+    expect(() => validateProductInput({ description: "x".repeat(2000) })).not.toThrow();
+  });
+
+  it("rejects more than MAX_PRODUCT_IMAGES photos", () => {
+    const tooMany = Array.from({ length: MAX_PRODUCT_IMAGES + 1 }, (_, i) => `https://x.test/${i}.jpg`);
+    const justRight = tooMany.slice(0, MAX_PRODUCT_IMAGES);
+    expect(() => validateProductInput({ images: tooMany })).toThrow(ValidationError);
+    expect(() => validateProductInput({ images: justRight })).not.toThrow();
+    expect(() => validateProductInput({ images: [] })).not.toThrow();
   });
 });
 

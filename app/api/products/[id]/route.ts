@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, getSellerIdForUser, getSellerStatusForUser, assertSellerCanTransact, Product } from "@/lib/repo";
+import { getProduct, updateProduct, deleteProduct, isValidProductImageUrl, getSellerIdForUser, getSellerStatusForUser, assertSellerCanTransact, Product, MAX_PRODUCT_IMAGES } from "@/lib/repo";
 import { getSessionUser, User } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { sellerOwnsItem } from "@/lib/sellerIdentityMatch";
@@ -38,21 +38,36 @@ export async function PATCH(
     name?: string;
     category?: string;
     price?: number;
-    imageUrl?: string | null;
+    images?: string[];
     lat?: number | null;
     lng?: number | null;
     active?: boolean;
+    description?: string | null;
+    condition?: "New" | "Used" | null;
+    qty?: number;
+    location?: string | null;
+    deliveryOption?: "Delivery" | "Pickup" | "Both" | null;
+    color?: string | null;
+    variation?: string | null;
   };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  if (body.imageUrl && !isValidProductImageUrl(body.imageUrl, storagePrefix())) {
-    return NextResponse.json(
-      { error: "imageUrl must be an image uploaded through FindIt." },
-      { status: 400 }
-    );
+  if (body.images !== undefined) {
+    if (!Array.isArray(body.images) || body.images.some((u) => typeof u !== "string")) {
+      return NextResponse.json({ error: "images must be an array of strings" }, { status: 400 });
+    }
+    if (body.images.length > MAX_PRODUCT_IMAGES) {
+      return NextResponse.json({ error: `You can add up to ${MAX_PRODUCT_IMAGES} photos.` }, { status: 400 });
+    }
+    if (body.images.some((u) => !isValidProductImageUrl(u, storagePrefix()))) {
+      return NextResponse.json(
+        { error: "Every photo must be an image uploaded through FindIt." },
+        { status: 400 }
+      );
+    }
   }
 
   // Taking a listing down yourself (active: false, nothing else) is always

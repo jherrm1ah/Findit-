@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
-  Minus, Plus, MapPin,
+  Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
@@ -14,6 +14,7 @@ const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation }) {
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
+  const [photoIndex, setPhotoIndex] = useState(0);
   const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
   if (!product) return null;
@@ -22,6 +23,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
   const km = myLocation && product.lat != null && product.lng != null
     ? haversineKm(myLocation.lat, myLocation.lng, product.lat, product.lng)
     : null;
+  // Falls back to the single cover photo for a product object that hasn't
+  // gone through the real bulk-image load (see lib/repo.ts#productImagesForIds)
+  // — never actually empty when a listing has any photo at all.
+  const photos = product.images?.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
+  const activePhoto = photos[photoIndex] ?? null;
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28">
@@ -32,14 +38,38 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
       </div>
 
       <div className="px-5">
-        <div className="relative rounded-[20px] overflow-hidden mb-3">
-          <ArtBlock icon={Icon} art={product.art} imageUrl={product.imageUrl} className="h-64 w-full" />
+        <div className={`relative rounded-[20px] overflow-hidden ${photos.length > 1 ? "mb-3" : "mb-5"}`}>
+          <ArtBlock icon={Icon} art={product.art} imageUrl={activePhoto} className="h-64 w-full" />
+          {/* Tap the left/right third of the photo to step through the
+              gallery — no swipe library, just two transparent hit zones. */}
+          {photos.length > 1 && (
+            <>
+              <button
+                onClick={() => setPhotoIndex((i) => (i - 1 + photos.length) % photos.length)}
+                aria-label="Previous photo"
+                className="absolute left-0 top-0 bottom-0 w-1/3"
+              />
+              <button
+                onClick={() => setPhotoIndex((i) => (i + 1) % photos.length)}
+                aria-label="Next photo"
+                className="absolute right-0 top-0 bottom-0 w-1/3"
+              />
+            </>
+          )}
         </div>
-        <div className="flex justify-center gap-1.5 mb-5">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#D9D2EF]" />
-          <span className="w-5 h-1.5 rounded-full bg-[#7C3AED]" />
-          <span className="w-1.5 h-1.5 rounded-full bg-[#D9D2EF]" />
-        </div>
+        {photos.length > 1 && (
+          <div className="flex justify-center gap-1.5 mb-5">
+            {photos.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setPhotoIndex(i)}
+                aria-label={`Photo ${i + 1} of ${photos.length}`}
+                aria-current={i === photoIndex}
+                className={`h-1.5 rounded-full transition-all ${i === photoIndex ? "w-5 bg-[#7C3AED]" : "w-1.5 bg-[#D9D2EF]"}`}
+              />
+            ))}
+          </div>
+        )}
 
         <div className="flex items-start justify-between mb-1">
           <p className="text-[12px] text-[#8A8372]">{GROUPS[product.category].label}</p>
@@ -99,9 +129,29 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
           </button>
         </div>
 
+        {/* What the seller actually declared about THIS specific listing —
+            distinct from the "condition you want" picker below, which is
+            what the buyer asks for at purchase time. Only rendered when the
+            seller actually set it (see migration 026: nullable, no
+            default, an old unedited listing has no honest answer here). */}
+        {(product.condition || product.deliveryOption || product.color || product.variation || product.location || product.qty != null) && (
+          <div className="flex gap-1.5 flex-wrap mb-4">
+            {product.condition && <Pill tone={product.condition === "New" ? "green" : "gold"}>{product.condition}</Pill>}
+            {product.qty != null && (
+              <Pill tone={product.qty > 0 ? "stone" : "red"}>
+                <PackageIcon size={11} /> {product.qty > 0 ? `${product.qty} available` : "Out of stock"}
+              </Pill>
+            )}
+            {product.deliveryOption && <Pill tone="stone"><Truck size={11} /> {product.deliveryOption}</Pill>}
+            {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}
+            {product.variation && <Pill tone="stone">{product.variation}</Pill>}
+            {product.location && <Pill tone="stone"><MapPin size={11} /> {product.location}</Pill>}
+          </div>
+        )}
+
         <div className="flex items-center justify-between mb-6">
           <div>
-            <p className="text-[12px] text-[#8A8372] mb-2">Condition</p>
+            <p className="text-[12px] text-[#8A8372] mb-2">Condition you want</p>
             <div className="flex gap-2">
               {CONDITIONS.map((c, i) => (
                 <button
@@ -131,8 +181,9 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
 
         <p className="text-[12px] font-semibold text-[#1E1B4B] mb-2">Description</p>
         <p className="text-[13px] leading-relaxed text-[#514B67] mb-4">
-          Ships from your nearest seller, with pickup available. Payment is held by FindIt until you confirm delivery, so you never
-          pay a seller directly. Condition and specifications are confirmed before dispatch.
+          {product.description
+            ? product.description
+            : "The seller hasn't added a description yet. Payment is held by FindIt until you confirm delivery, so you never pay a seller directly."}
         </p>
 
         <div className="flex gap-1.5 flex-wrap mb-2">
@@ -154,11 +205,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
               setBuying(false);
             }
           }}
-          disabled={buying}
-          className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying ? "opacity-60" : ""}`}
+          disabled={buying || product.qty === 0}
+          className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
-          <ShoppingBag size={15} /> {buying ? "Placing order…" : "Buy now"}
+          <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
         </button>
       </div>
     </div>

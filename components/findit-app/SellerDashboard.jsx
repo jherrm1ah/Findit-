@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
@@ -90,20 +90,38 @@ function OfferForm({ onSend, onCancel, sending }) {
   );
 }
 
-const EMPTY_FORM = { name: "", category: Object.keys(GROUPS)[0], price: "", imageUrl: null };
+// Keep in sync with lib/repo.ts#MAX_PRODUCT_IMAGES — this just decides when
+// to hide the "add photo" slot, the server is what actually enforces it.
+const MAX_PRODUCT_IMAGES = 4;
+const DELIVERY_OPTIONS = ["Delivery", "Pickup", "Both"];
+
+const EMPTY_FORM = {
+  name: "",
+  category: Object.keys(GROUPS)[0],
+  price: "",
+  images: [],
+  description: "",
+  condition: "New",
+  qty: "1",
+  location: "",
+  deliveryOption: "Delivery",
+  color: "",
+  variation: "",
+};
 
 function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
   const [form, setForm] = useState(initial);
   const [uploading, setUploading] = useState(false);
+  const [generatingDescription, setGeneratingDescription] = useState(false);
 
-  const handleFileChange = async (e) => {
+  const addPhoto = async (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setUploading(true);
     try {
       const url = await onUploadImage(file);
-      setForm((f) => ({ ...f, imageUrl: url }));
+      setForm((f) => ({ ...f, images: [...f.images, url] }));
     } catch {
       // onUploadImage already surfaces a toast on failure
     } finally {
@@ -111,21 +129,56 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
     }
   };
 
+  const removePhoto = (url) => setForm((f) => ({ ...f, images: f.images.filter((u) => u !== url) }));
+
+  const generateDescription = async () => {
+    setGeneratingDescription(true);
+    try {
+      const description = await api.generateProductDescription({
+        name: form.name,
+        categoryLabel: GROUPS[form.category]?.label ?? form.category,
+        condition: form.condition || null,
+        color: form.color || null,
+        variation: form.variation || null,
+      });
+      setForm((f) => ({ ...f, description }));
+    } catch {
+      // MainApp already surfaces a toast on the underlying request; nothing
+      // else to do here but leave the field as the seller left it.
+    } finally {
+      setGeneratingDescription(false);
+    }
+  };
+
+  const valid = form.name.trim() && Number(form.price) > 0 && form.condition && form.deliveryOption;
+
   return (
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
-      <Field label="Photo">
-        <div className="flex items-center gap-3">
-          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#ECE9F7] flex items-center justify-center shrink-0">
-            {form.imageUrl ? (
-              <NextImage src={form.imageUrl} alt="" fill sizes="64px" className="object-cover" />
-            ) : (
-              <ImageIcon size={18} className="text-[#B7AFD6]" />
-            )}
-          </div>
-          <label className={`text-[11.5px] font-semibold text-[#7C3AED] px-3 py-2 rounded-lg border border-[#7C3AED]/30 bg-white cursor-pointer ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
-            {uploading ? "Uploading…" : form.imageUrl ? "Change photo" : "Add photo"}
-            <input type="file" accept="image/*" className="hidden" onChange={handleFileChange} disabled={uploading} />
-          </label>
+      <Field label={`Photos (${form.images.length}/${MAX_PRODUCT_IMAGES})`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          {form.images.map((url) => (
+            <div key={url} className="relative w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#ECE9F7]">
+              <NextImage src={url} alt="" fill sizes="64px" className="object-cover" />
+              <button
+                type="button"
+                onClick={() => removePhoto(url)}
+                aria-label="Remove photo"
+                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 flex items-center justify-center"
+              >
+                <X size={10} className="text-white" />
+              </button>
+            </div>
+          ))}
+          {form.images.length < MAX_PRODUCT_IMAGES && (
+            <label className={`w-16 h-16 rounded-lg border border-dashed border-[#7C3AED]/40 bg-white flex items-center justify-center cursor-pointer shrink-0 ${uploading ? "opacity-50 pointer-events-none" : ""}`}>
+              {uploading ? (
+                <span className="text-[9px] text-[#7C3AED] font-semibold">Uploading…</span>
+              ) : (
+                <Plus size={18} className="text-[#7C3AED]" />
+              )}
+              <input type="file" accept="image/*" className="hidden" onChange={addPhoto} disabled={uploading} />
+            </label>
+          )}
         </div>
       </Field>
       <Field label="Product name">
@@ -146,6 +199,26 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           ))}
         </select>
       </Field>
+      <div>
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="block text-[11.5px] font-medium text-[#514B67]">Description</span>
+          <button
+            type="button"
+            onClick={generateDescription}
+            disabled={generatingDescription || !form.name.trim()}
+            className={`flex items-center gap-1 text-[10.5px] font-semibold text-[#7C3AED] ${generatingDescription || !form.name.trim() ? "opacity-40" : ""}`}
+          >
+            <Sparkles size={11} /> {generatingDescription ? "Generating…" : "Generate with AI"}
+          </button>
+        </div>
+        <textarea
+          value={form.description}
+          onChange={(e) => setForm({ ...form, description: e.target.value })}
+          rows={3}
+          placeholder="What is it, what condition, anything a buyer should know?"
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none"
+        />
+      </div>
       <Field label="Price (₦)">
         <input
           type="number"
@@ -155,11 +228,69 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
         />
       </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Condition">
+          <select
+            value={form.condition}
+            onChange={(e) => setForm({ ...form, condition: e.target.value })}
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          >
+            <option value="New">New</option>
+            <option value="Used">Used</option>
+          </select>
+        </Field>
+        <Field label="Quantity available">
+          <input
+            type="number"
+            min={0}
+            value={form.qty}
+            onChange={(e) => setForm({ ...form, qty: e.target.value })}
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
+      </div>
+      <Field label="Location">
+        <input
+          value={form.location}
+          onChange={(e) => setForm({ ...form, location: e.target.value })}
+          placeholder="e.g. Yaba, Lagos"
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+        />
+      </Field>
+      <Field label="Delivery option">
+        <select
+          value={form.deliveryOption}
+          onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+        >
+          {DELIVERY_OPTIONS.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      </Field>
+      <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Color">
+          <input
+            value={form.color}
+            onChange={(e) => setForm({ ...form, color: e.target.value })}
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
+        <Field label="Size / variation">
+          <input
+            value={form.variation}
+            onChange={(e) => setForm({ ...form, variation: e.target.value })}
+            placeholder="only when relevant"
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
+      </div>
       <div className="flex gap-2 pt-1">
         <button
           onClick={() => onSave(form)}
-          disabled={saving || uploading || !form.name.trim() || !Number(form.price)}
-          className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-lg ${saving || uploading || !form.name.trim() || !Number(form.price) ? "opacity-50" : ""}`}
+          disabled={saving || uploading || !valid}
+          className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-lg ${saving || uploading || !valid ? "opacity-50" : ""}`}
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           {saving ? "Saving…" : "Save"}
@@ -669,10 +800,24 @@ export default function SellerDashboard({
     }
   };
 
+  const listingPayload = (form) => ({
+    name: form.name,
+    category: form.category,
+    price: Number(form.price),
+    images: form.images,
+    description: form.description.trim() || null,
+    condition: form.condition,
+    qty: form.qty === "" ? undefined : Number(form.qty),
+    location: form.location.trim() || null,
+    deliveryOption: form.deliveryOption,
+    color: form.color.trim() || null,
+    variation: form.variation.trim() || null,
+  });
+
   const saveNew = async (form) => {
     setSavingListing(true);
     try {
-      await onCreateProduct({ name: form.name, category: form.category, price: Number(form.price), imageUrl: form.imageUrl });
+      await onCreateProduct(listingPayload(form));
       setAdding(false);
     } finally {
       setSavingListing(false);
@@ -682,7 +827,7 @@ export default function SellerDashboard({
   const saveEdit = async (id, form) => {
     setSavingListing(true);
     try {
-      await onUpdateProduct(id, { name: form.name, category: form.category, price: Number(form.price), imageUrl: form.imageUrl });
+      await onUpdateProduct(id, listingPayload(form));
       setEditingId(null);
     } finally {
       setSavingListing(false);
@@ -887,7 +1032,19 @@ export default function SellerDashboard({
           <div key={p.id} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false ? "opacity-60" : ""}`}>
             {editingId === p.id ? (
               <ListingForm
-                initial={{ name: p.name, category: p.category, price: String(p.price), imageUrl: p.imageUrl || null }}
+                initial={{
+                  name: p.name,
+                  category: p.category,
+                  price: String(p.price),
+                  images: p.images ?? (p.imageUrl ? [p.imageUrl] : []),
+                  description: p.description ?? "",
+                  condition: p.condition ?? "New",
+                  qty: String(p.qty ?? 1),
+                  location: p.location ?? "",
+                  deliveryOption: p.deliveryOption ?? "Delivery",
+                  color: p.color ?? "",
+                  variation: p.variation ?? "",
+                }}
                 onSave={(form) => saveEdit(p.id, form)}
                 onCancel={() => setEditingId(null)}
                 saving={savingListing}

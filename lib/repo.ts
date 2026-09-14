@@ -72,6 +72,25 @@ export type Product = {
   // lib/boosts.ts) — see isBoostActive/sortForDisplay below for how this
   // affects display order.
   boostedUntil: string | null;
+
+  // ---- Migration 026: a real listing, not just name/category/price ----
+  description: string | null;
+  condition: "New" | "Used" | null;
+  qty: number;
+  // Free-text pickup/delivery-area note — see the migration for why this is
+  // distinct from lat/lng above (the seller ACCOUNT's location).
+  location: string | null;
+  deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+  color: string | null;
+  variation: string | null;
+  // Every photo, cover first — imageUrl above always equals images[0] and
+  // is kept for every existing single-photo reader (ArtBlock and everything
+  // built on it). listProducts()/listPublicProductsForSeller() bulk-load
+  // this the same way getSellerStatsMap bulk-loads seller stats — one extra
+  // query for the whole page, not one per product — because ProductDetail
+  // is opened from whichever already-loaded list the buyer tapped, not a
+  // fresh per-product fetch; see productImagesForIds below.
+  images: string[];
 };
 
 export type Order = {
@@ -352,7 +371,8 @@ function statsFor(map: Map<string, SellerStats>, seller: string): SellerStats {
 /*  Products                                                            */
 /* ------------------------------------------------------------------ */
 
-function rowToProduct(row: Row, stats: SellerStats): Product {
+function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product {
+  const imageUrl = (row.image_url as string | null) ?? null;
   return {
     id: row.id as string,
     category: row.category as string,
@@ -360,7 +380,7 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     price: row.price as number,
     seller: row.seller as string,
     sellerId: (row.seller_id as string | null) ?? null,
-    imageUrl: (row.image_url as string | null) ?? null,
+    imageUrl,
     art: row.art as number,
     createdAt: row.created_at as string,
     lat: (row.lat as number | null) ?? null,
@@ -376,7 +396,42 @@ function rowToProduct(row: Row, stats: SellerStats): Product {
     sellerLocation: stats.publicLocation,
     sellerMemberSince: stats.memberSince,
     boostedUntil: (row.boosted_until as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
+    condition: (row.condition as Product["condition"]) ?? null,
+    qty: (row.qty as number | undefined) ?? 1,
+    location: (row.location as string | null) ?? null,
+    deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
+    color: (row.color as string | null) ?? null,
+    variation: (row.variation as string | null) ?? null,
+    // Falls back to just the cover when a caller didn't bulk-load the rest
+    // (nothing today calls rowToProduct without images loaded, but this
+    // keeps the field honest — never claiming zero photos when a cover
+    // exists — if a future caller does).
+    images: images ?? (imageUrl ? [imageUrl] : []),
   };
+}
+
+// One extra query for a whole page of products, not one per product — same
+// shape as getSellerStatsMap/activeProductCountsBySeller. Every product's
+// full, ordered photo list in a single Map, so listProducts() and
+// listPublicProductsForSeller() can populate a real gallery without an N+1.
+async function productImagesForIds(productIds: string[]): Promise<Map<string, string[]>> {
+  const map = new Map<string, string[]>();
+  if (productIds.length === 0) return map;
+  const db = getDb();
+  const result = await db
+    .from("product_images")
+    .select("product_id, url, sort_order")
+    .in("product_id", productIds)
+    .order("sort_order", { ascending: true });
+  const rows = assertNoError(result, "loading product images") as Row[];
+  for (const row of rows) {
+    const productId = row.product_id as string;
+    const list = map.get(productId) ?? [];
+    list.push(row.url as string);
+    map.set(productId, list);
+  }
+  return map;
 }
 
 // Pure — is this listing's boost still in its paid-for window right now?
@@ -414,8 +469,13 @@ export async function listProducts(): Promise<Product[]> {
   const db = getDb();
   const result = await db.from("products").select("*").order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing products") as Row[];
-  const stats = await getSellerStatsMap();
-  return sortForDisplay(rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string))));
+  const [stats, imagesById] = await Promise.all([
+    getSellerStatsMap(),
+    productImagesForIds(rows.map((row) => row.id as string)),
+  ]);
+  return sortForDisplay(
+    rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(row.id as string)))
+  );
 }
 
 // The listings shown on a seller's PUBLIC storefront. Two things make this
@@ -446,10 +506,13 @@ export async function listPublicProductsForSeller(seller: { id: string | null; n
   const byId = new Map<string, Row>();
   for (const row of rows) byId.set(row.id as string, row);
 
-  const stats = await getSellerStatsMap();
+  const [stats, imagesById] = await Promise.all([
+    getSellerStatsMap(),
+    productImagesForIds([...byId.keys()]),
+  ]);
   return sortForDisplay(
     [...byId.values()]
-      .map((row) => rowToProduct(row, statsFor(stats, row.seller as string)))
+      .map((row) => rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(row.id as string)))
       .filter((p) => p.active !== false)
   );
 }
@@ -459,28 +522,71 @@ export async function getProduct(id: string): Promise<Product | null> {
   const result = await db.from("products").select("*").eq("id", id).maybeSingle();
   const row = assertNoError(result, "loading product") as Row | null;
   if (!row) return null;
-  const stats = await getSellerStatsMap();
-  return rowToProduct(row, statsFor(stats, row.seller as string));
+  const [stats, imagesById] = await Promise.all([getSellerStatsMap(), productImagesForIds([id])]);
+  return rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(id));
 }
 
 let productSeq = 0;
 
+export const MAX_PRODUCT_IMAGES = 4;
+const MAX_DESCRIPTION_LENGTH = 2000;
+const MAX_LOCATION_LENGTH = 120;
+const MAX_COLOR_LENGTH = 60;
+const MAX_VARIATION_LENGTH = 60;
+const PRODUCT_CONDITIONS = ["New", "Used"] as const;
+const DELIVERY_OPTIONS = ["Delivery", "Pickup", "Both"] as const;
+
 // Pure — the actual listing-validity rules, unit-testable without a
-// database. name/price are only checked when provided, so this also covers
-// a partial update patch. Category validity is NOT checked here — unlike
-// name/price it depends on live DB state (an admin-editable table, see
+// database. Every field is only checked when provided, so this also covers
+// a partial update patch — createProduct separately requires condition and
+// deliveryOption in its own input type, the same way it already requires
+// name/price/category via TypeScript rather than a runtime check here.
+// Category validity is NOT checked here — unlike everything else it
+// depends on live DB state (an admin-editable table, see
 // lib/categories.ts), so createProduct/updateProduct check it separately
 // with an explicit await right where they already talk to the database.
 export function validateProductInput(input: {
   category?: string;
   name?: string;
   price?: number;
+  description?: string | null;
+  condition?: string | null;
+  qty?: number;
+  location?: string | null;
+  deliveryOption?: string | null;
+  color?: string | null;
+  variation?: string | null;
+  images?: string[];
 }): void {
   if (input.name !== undefined && !input.name.trim()) {
     throw new ValidationError("Name is required.");
   }
   if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
     throw new ValidationError("Price must be a positive number.");
+  }
+  if (input.description != null && input.description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new ValidationError(`Description must be under ${MAX_DESCRIPTION_LENGTH} characters.`);
+  }
+  if (input.condition != null && !(PRODUCT_CONDITIONS as readonly string[]).includes(input.condition)) {
+    throw new ValidationError("Condition must be New or Used.");
+  }
+  if (input.qty !== undefined && (!Number.isInteger(input.qty) || input.qty < 0)) {
+    throw new ValidationError("Quantity available must be a whole number, 0 or more.");
+  }
+  if (input.location != null && input.location.length > MAX_LOCATION_LENGTH) {
+    throw new ValidationError(`Location must be under ${MAX_LOCATION_LENGTH} characters.`);
+  }
+  if (input.deliveryOption != null && !(DELIVERY_OPTIONS as readonly string[]).includes(input.deliveryOption)) {
+    throw new ValidationError("Delivery option must be Delivery, Pickup, or Both.");
+  }
+  if (input.color != null && input.color.length > MAX_COLOR_LENGTH) {
+    throw new ValidationError(`Color must be under ${MAX_COLOR_LENGTH} characters.`);
+  }
+  if (input.variation != null && input.variation.length > MAX_VARIATION_LENGTH) {
+    throw new ValidationError(`Size/variation must be under ${MAX_VARIATION_LENGTH} characters.`);
+  }
+  if (input.images !== undefined && input.images.length > MAX_PRODUCT_IMAGES) {
+    throw new ValidationError(`You can add up to ${MAX_PRODUCT_IMAGES} photos.`);
   }
 }
 
@@ -490,6 +596,19 @@ export function validateProductInput(input: {
 // Pure given the prefix, so it's unit-testable without env vars.
 export function isValidProductImageUrl(url: string, storagePrefix: string): boolean {
   return url.startsWith(storagePrefix);
+}
+
+// Replaces a listing's ENTIRE photo set. Simplest correct option for at
+// most MAX_PRODUCT_IMAGES rows on an infrequent action (a seller editing a
+// listing, not a hot path) — no per-row diffing needed.
+async function replaceProductImages(db: ReturnType<typeof getDb>, productId: string, images: string[]): Promise<void> {
+  const deleteResult = await db.from("product_images").delete().eq("product_id", productId);
+  assertNoError(deleteResult, "clearing product photos");
+  if (images.length === 0) return;
+  const insertResult = await db.from("product_images").insert(
+    images.map((url, sortOrder) => ({ id: randomId("pimg_"), product_id: productId, url, sort_order: sortOrder }))
+  );
+  assertNoError(insertResult, "saving product photos");
 }
 
 export async function createProduct(input: {
@@ -502,9 +621,24 @@ export async function createProduct(input: {
   // for every NEW listing, without changing anything about how listings are
   // read or displayed today.
   sellerId?: string | null;
-  imageUrl?: string | null;
+  // Ordered, cover photo first — image_url on the row is always images[0],
+  // kept in sync here so every existing single-photo reader (ArtBlock and
+  // everything built on it) needs no changes at all.
+  images?: string[];
   lat?: number | null;
   lng?: number | null;
+  description?: string | null;
+  // Required, unlike every optional field below: a buyer deciding whether
+  // to buy something deserves to know upfront whether it's new or used,
+  // not "not specified" on every listing going forward. See migration 026
+  // for why this stays nullable at the DB level regardless (an EXISTING
+  // listing has no honest answer until its seller edits it).
+  condition: "New" | "Used";
+  qty?: number;
+  location?: string | null;
+  deliveryOption: "Delivery" | "Pickup" | "Both";
+  color?: string | null;
+  variation?: string | null;
 }): Promise<Product> {
   validateProductInput(input);
   if (!(await isValidCategoryKey(input.category))) {
@@ -523,6 +657,7 @@ export async function createProduct(input: {
 
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
+  const images = input.images ?? [];
   const result = await db
     .from("products")
     .insert({
@@ -532,14 +667,22 @@ export async function createProduct(input: {
       price: Math.round(input.price),
       seller: input.seller,
       seller_id: input.sellerId ?? null,
-      image_url: input.imageUrl ?? null,
+      image_url: images[0] ?? null,
       lat: input.lat ?? null,
       lng: input.lng ?? null,
       art: Math.floor(Math.random() * 5),
+      description: input.description?.trim() || null,
+      condition: input.condition,
+      qty: input.qty ?? 1,
+      location: input.location?.trim() || null,
+      delivery_option: input.deliveryOption,
+      color: input.color?.trim() || null,
+      variation: input.variation?.trim() || null,
     })
     .select()
     .single();
   assertNoError(result, "creating product");
+  await replaceProductImages(db, id, images);
   return getProduct(id) as Promise<Product>;
 }
 
@@ -549,7 +692,7 @@ export async function updateProduct(
     name: string;
     category: string;
     price: number;
-    imageUrl: string | null;
+    images: string[];
     lat: number | null;
     lng: number | null;
     // Reactivating a listing a plan downgrade hid goes through the same
@@ -557,6 +700,13 @@ export async function updateProduct(
     // plan's cap by flipping an existing listing back on instead of making
     // a new one.
     active: boolean;
+    description: string | null;
+    condition: "New" | "Used" | null;
+    qty: number;
+    location: string | null;
+    deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+    color: string | null;
+    variation: string | null;
   }>
 ): Promise<Product | null> {
   const existing = await getProduct(id);
@@ -574,19 +724,30 @@ export async function updateProduct(
   }
 
   const db = getDb();
+  const images = patch.images !== undefined ? patch.images : existing.images;
   const result = await db
     .from("products")
     .update({
       name: (patch.name ?? existing.name).trim(),
       category: patch.category ?? existing.category,
       price: Math.round(patch.price ?? existing.price),
-      image_url: patch.imageUrl !== undefined ? patch.imageUrl : existing.imageUrl,
+      image_url: images[0] ?? null,
       lat: patch.lat !== undefined ? patch.lat : existing.lat,
       lng: patch.lng !== undefined ? patch.lng : existing.lng,
       active: patch.active !== undefined ? patch.active : existing.active,
+      description: patch.description !== undefined ? (patch.description?.trim() || null) : existing.description,
+      condition: patch.condition !== undefined ? patch.condition : existing.condition,
+      qty: patch.qty !== undefined ? patch.qty : existing.qty,
+      location: patch.location !== undefined ? (patch.location?.trim() || null) : existing.location,
+      delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
+      color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
+      variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
     })
     .eq("id", id);
   assertNoError(result, "updating product");
+  if (patch.images !== undefined) {
+    await replaceProductImages(db, id, images);
+  }
   return getProduct(id);
 }
 
@@ -732,6 +893,12 @@ export async function createOrderFromProduct(
   const product = await getProduct(productId);
   if (!product) {
     throw new ValidationError("That product is no longer available.");
+  }
+  // A seller-declared 0 is a real, deliberate "nothing left to sell" — not
+  // real inventory tracking (nothing decrements qty as orders are placed
+  // today), just refusing the one case that's unambiguous.
+  if (product.qty === 0) {
+    throw new ValidationError("This item is out of stock.");
   }
   const order = await insertOrder({
     item: product.name,
