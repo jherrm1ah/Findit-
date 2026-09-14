@@ -125,6 +125,13 @@ Copy `.env.example` to `.env.local` and fill in:
   trial-eligible Store plan changes still work (no payment involved), and a plan that genuinely
   needs payment reports "not configured" instead of pretending to charge anyone — see "Store
   subscriptions" below.
+- `APP_URL` — the public origin used to build shareable store links (`lib/store.ts#appBaseUrl`,
+  behind every seller's `/store/<slug>` page) and their Open Graph metadata. Optional in
+  development: it falls back to Vercel's own deployment URL
+  (`VERCEL_PROJECT_PRODUCTION_URL`/`VERCEL_URL`), or a site-relative path if neither is set. The
+  production deployment runs on the custom domain **shopwithfindit.com**, so its `APP_URL` is set
+  to `https://shopwithfindit.com` in Vercel's project environment variables — set this once you
+  point your own domain at Vercel, so shared links survive a change of deployment.
 
 ### 3. Install and run
 
@@ -707,9 +714,11 @@ missing `SUPABASE_URL` only ever matters once a route actually runs, not while i
 
 ## Next steps toward a real product
 
-Real hosting/deployment (see the note in "Testing" — this repo has never been deployed to a live
-host), and a real seller ID/document verification system (currently admin approval is a judgment
-call, not a document check). Phone verification (OTP) at signup and password reset is fully built
+The app is live in production on Vercel at **[shopwithfindit.com](https://shopwithfindit.com)**
+(auto-deployed from `main`; see `APP_URL` above) — the note in "Testing" about limited network
+access is about this *development* environment/CI, not the deployed app itself. Still open: a real
+seller ID/document verification system (currently admin approval is a judgment call, not a document
+check). Phone verification (OTP) at signup and password reset is fully built
 (see "Security" above) but needs a real `TERMII_API_KEY` to turn on, and the actual SMS send/deliver
 path has not been tested against Termii's live API from this environment (no network access here to
 termii.com — the integration in `lib/sms.ts` is built from Termii's current published v4 API
