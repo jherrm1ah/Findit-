@@ -146,6 +146,9 @@ export const api = {
   // a name maps to two accounts rather than guessing which store to show.
   getSellerProfile: (idOrName) =>
     request(`/api/sellers/${encodeURIComponent(idOrName)}`).then((d) => d.seller),
+  // The public seller directory — every approved seller a buyer can browse.
+  // No session needed, same as getSellerProfile above.
+  getSellerDirectory: () => request("/api/sellers/directory").then((d) => d.sellers),
   // Staff sign-in. Being logged in as an admin isn't enough to reach any of
   // the admin calls below — the server requires a per-session unlock that
   // ages out, and answers ADMIN_UNLOCK_REQUIRED until it's granted.

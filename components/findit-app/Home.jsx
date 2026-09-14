@@ -5,7 +5,7 @@ import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
-  LayoutDashboard, MapPin,
+  LayoutDashboard, MapPin, Store,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
@@ -48,6 +48,7 @@ export default function Home({
   const MENU_LINKS = [
     { label: "Home", screen: "home", icon: HomeIcon },
     { label: "Browse catalogue", screen: "browse", icon: Search },
+    { label: "Browse sellers", screen: "sellers", icon: Store },
     { label: "Request an item", screen: "request", icon: PackageSearch },
     { label: "My orders & saved items", screen: "account", icon: ListOrdered },
     { label: "Notifications", screen: "notifications", icon: Bell },
@@ -202,10 +203,18 @@ export default function Home({
         )}
       </div>
 
-      <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-7">
+      <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-3">
         <div>
           <p className="text-[13px] font-semibold text-[#1E1B4B]">See the full catalogue</p>
           <p className="text-[11px] text-[#6B6483]">All {products.length} products across {Object.keys(GROUPS).length} categories</p>
+        </div>
+        <ChevronRight size={18} className="text-[#7C3AED]" />
+      </button>
+
+      <button onClick={() => go("sellers")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-7">
+        <div>
+          <p className="text-[13px] font-semibold text-[#1E1B4B]">Browse sellers</p>
+          <p className="text-[11px] text-[#6B6483]">Every approved store on FindIt, not just their listings</p>
         </div>
         <ChevronRight size={18} className="text-[#7C3AED]" />
       </button>

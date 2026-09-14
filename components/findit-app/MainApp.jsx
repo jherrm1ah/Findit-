@@ -30,6 +30,7 @@ import ProductDetail from "./ProductDetail";
 import Messages from "./Messages";
 import Thread from "./Thread";
 import SellerProfile from "./SellerProfile";
+import SellerDirectory from "./SellerDirectory";
 import MyRequests from "./MyRequests";
 
 function tabsFor(role) {
@@ -1097,6 +1098,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             onToggleSaved={handleToggleSaved}
             myLocation={myLocation}
           />
+        )}
+        {screen === "sellers" && (
+          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} />
         )}
         {screen === "storePlans" && (
           isSeller ? (
