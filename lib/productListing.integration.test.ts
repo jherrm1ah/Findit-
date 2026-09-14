@@ -71,7 +71,9 @@ describe("createProduct — migration 026 fields", () => {
   });
 
   it("refuses a condition outside New/Used even if TypeScript is bypassed", async () => {
-    // @ts-expect-error deliberately invalid at the boundary, same as a route forwarding a bad body
+    // baseInput's overrides are untyped (Record<string, unknown>), same as a
+    // route forwarding a JSON body straight through — this is exactly the
+    // boundary validateProductInput's runtime check exists to guard.
     await expect(createProduct(baseInput({ condition: "Refurbished" }))).rejects.toThrow(/condition/i);
   });
 });

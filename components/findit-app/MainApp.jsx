@@ -236,6 +236,25 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   }, [user?.id]);
 
+  // Notifications otherwise only ever loaded once, in the effect above —
+  // someone sitting in the app never saw a new order/reply/resolution
+  // arrive, no matter how long they stayed, since nothing refetched the
+  // list or the bell badge. Same "no websocket, just poll" approach already
+  // used for an open message thread/support ticket in this file, but slower
+  // (60s, not 4s): a notification isn't as time-sensitive as a live chat,
+  // and this one runs for the whole session rather than only while one
+  // screen is open. Replacing state wholesale on every tick is safe because
+  // handleMarkNotificationRead/handleMarkAllNotificationsRead below already
+  // await the server call before touching local state — by the time a tick
+  // fires, the server has long since caught up with anything the user did.
+  useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(() => {
+      api.getNotifications().then(setNotifications).catch(() => {});
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [user?.id]);
+
   // Real back-navigation, not just "tap the logo to jump to Home": every
   // screen the user actually visited gets pushed here, so the header's back
   // arrow returns to wherever they came from — Profile -> Account details ->
@@ -292,6 +311,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
     if (s === "myRequests" && user) {
       api.getMyRequests().then(setMyRequests).catch(() => {});
+    }
+    if (s === "notifications" && user) {
+      api.getNotifications().then(setNotifications).catch(() => {});
     }
   };
 
