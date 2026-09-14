@@ -87,6 +87,17 @@ export default function Account({ openProduct, orders, products, onReview, onCon
     o.escrowStatus !== "refunded" &&
     (o.status === "Dispatched" || o.status === "Out for delivery");
 
+  // Confirming delivery isn't the end of a buyer's recourse — a problem can
+  // surface a day or two after the payment's already released. Mirrors the
+  // server's own window (lib/repo.ts#POST_CONFIRMATION_REPORT_WINDOW_MS);
+  // this is just what decides whether to show the button, the server side
+  // is what actually enforces it.
+  const POST_CONFIRMATION_REPORT_WINDOW_DAYS = 7;
+  const canReportAfterConfirmation = (o) =>
+    Boolean(o.buyerConfirmedAt) &&
+    o.escrowStatus === "released" &&
+    Date.now() - new Date(o.buyerConfirmedAt).getTime() <= POST_CONFIRMATION_REPORT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
   return (
     <div className="px-5 pt-6 pb-10">
       <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>My orders</h1>
@@ -171,6 +182,15 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 </div>
               );
             })()}
+
+            {canReportAfterConfirmation(o) && reporting !== o.id && (
+              <button
+                onClick={() => { setReporting(o.id); setIssueNote(""); }}
+                className="text-[11px] font-semibold text-[#6B6483] underline mb-2.5"
+              >
+                Report a problem with this order
+              </button>
+            )}
 
             {/* An order created straight from "Buy now" already went through
                 Checkout's own "Pay now" — this covers the other path, an

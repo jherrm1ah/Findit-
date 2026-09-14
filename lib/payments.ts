@@ -234,6 +234,23 @@ async function recordManualPayout(order: Order, reason: string): Promise<void> {
 // Paystack error.
 export async function refundOrderPayment(orderId: string): Promise<{ refunded: boolean; reason?: string }> {
   const db = getDb();
+
+  // A dispute reported AFTER the buyer already confirmed delivery (see
+  // lib/repo.ts's post-confirmation report window) can land here after a
+  // payout to the seller has already been initiated or paid — refunding the
+  // buyer's charge on top of that would cost FindIt the money twice. Refuse
+  // rather than guess: surface it so an admin recovers the payout first
+  // (or resolves the dispute as "released" instead).
+  const payoutResult = await db.from("payouts").select("status").eq("order_id", orderId).maybeSingle();
+  const payout = assertNoError(payoutResult, "checking payout status before refund") as Row | null;
+  const payoutStatus = (payout?.status as string | null) ?? null;
+  if (payoutStatus === "paid" || payoutStatus === "processing") {
+    return {
+      refunded: false,
+      reason: `The seller has already been paid out for this order (payout status: ${payoutStatus}) — refunding the buyer now would pay out twice. Recover the payout first, then resolve this manually.`,
+    };
+  }
+
   const paymentResult = await db
     .from("payments")
     .select("provider_reference")

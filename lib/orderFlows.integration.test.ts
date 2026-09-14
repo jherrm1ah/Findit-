@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createFakeSupabase, type FakeSupabase } from "./testing/fakeSupabase";
-import { acceptOffer, confirmDelivery, listOrders, resolveOrderIssue } from "./repo";
-import { confirmOrderPayment } from "./payments";
+import { acceptOffer, confirmDelivery, listOrders, resolveOrderIssue, reportOrderIssue } from "./repo";
+import { confirmOrderPayment, refundOrderPayment } from "./payments";
 
 // These exercise the ACTUAL lib/repo.ts / lib/payments.ts functions against
 // an in-memory fake Supabase client (lib/testing/fakeSupabase.ts) — not
@@ -258,5 +258,92 @@ describe("releasing escrow on an order nobody paid for", () => {
     const order = await resolveOrderIssue("ORD-1", "refunded");
 
     expect(order?.escrowStatus).toBe("refunded");
+  });
+});
+
+describe("reportOrderIssue — post-confirmation window", () => {
+  function seedConfirmedOrder(buyerConfirmedAt: string) {
+    fakeDb.reset({
+      orders: [
+        {
+          id: "ORD-1",
+          user_id: "buyer_1",
+          item: "Blender",
+          seller: "Kemi's Kitchen",
+          seller_id: "seller_1",
+          price: 15000,
+          status: "Delivered",
+          escrow_status: "released",
+          payment_status: "paid",
+          buyer_confirmed_at: buyerConfirmedAt,
+          issue_reported_at: null,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      users: [{ id: "seller_user_1", role: "seller", business_name: "Kemi's Kitchen", name: "Kemi", notifications_enabled: true }],
+      notifications: [],
+    });
+  }
+
+  it("lets a buyer report a problem a couple of days after confirming delivery", async () => {
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString();
+    seedConfirmedOrder(twoDaysAgo);
+
+    const order = await reportOrderIssue("ORD-1", "buyer_1", "It arrived broken and doesn't turn on.");
+
+    expect(order?.escrowStatus).toBe("disputed");
+    const [row] = fakeDb.dump("orders");
+    expect(row.escrow_status).toBe("disputed");
+    expect(row.issue_reported_at).not.toBeNull();
+  });
+
+  it("refuses a report filed more than the window after confirming delivery", async () => {
+    const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+    seedConfirmedOrder(twoWeeksAgo);
+
+    await expect(reportOrderIssue("ORD-1", "buyer_1", "It arrived broken and doesn't turn on.")).rejects.toThrow(/window .* has passed/i);
+
+    const [row] = fakeDb.dump("orders");
+    expect(row.escrow_status).toBe("released"); // untouched
+  });
+
+  it("still refuses a report on an order with no confirmation timestamp at all", async () => {
+    // Defensive: a released order should always carry buyer_confirmed_at,
+    // but a missing one must fail closed, not open the window forever.
+    seedConfirmedOrder(null as unknown as string);
+
+    await expect(reportOrderIssue("ORD-1", "buyer_1", "It arrived broken and doesn't turn on.")).rejects.toThrow(/window .* has passed/i);
+  });
+});
+
+describe("refundOrderPayment — guards against paying twice", () => {
+  it("refuses to refund the buyer when the seller has already been paid out", async () => {
+    fakeDb.reset({
+      payments: [
+        {
+          id: "pay_1",
+          order_id: "ORD-1",
+          kind: "order",
+          status: "success",
+          provider_reference: "ref_123",
+          paid_at: new Date().toISOString(),
+        },
+      ],
+      payouts: [{ id: "payout_1", order_id: "ORD-1", seller_id: "seller_1", amount: 14250, status: "paid" }],
+    });
+
+    const result = await refundOrderPayment("ORD-1");
+
+    expect(result.refunded).toBe(false);
+    expect(result.reason).toMatch(/already been paid out/i);
+  });
+
+  it("still refuses when there's no payment on file at all, unaffected by the payout guard", async () => {
+    fakeDb.reset({ payments: [], payouts: [] });
+
+    const result = await refundOrderPayment("ORD-1");
+
+    expect(result.refunded).toBe(false);
+    expect(result.reason).toMatch(/no successful payment/i);
   });
 });

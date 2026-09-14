@@ -960,6 +960,16 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   return order;
 }
 
+// How long after confirming delivery a buyer may still report a problem.
+// Confirming isn't the end of a buyer's recourse — a dead-on-arrival item or
+// a wrong item can surface days later — but it can't stay open forever, both
+// so a stale claim can't reopen an old order and because the seller may
+// already have been paid out by then (initiateSellerPayout fires right after
+// confirmation). refundOrderPayment is what actually guards against a
+// double-loss if that's already happened; this window just bounds how often
+// that situation can even come up.
+const POST_CONFIRMATION_REPORT_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
 // The buyer says something is wrong. This deliberately does NOT complete the
 // order or release anything — it parks the money and puts the order in front
 // of an admin, which is the whole point of holding it in the first place.
@@ -979,7 +989,11 @@ export async function reportOrderIssue(
   const existing = await getOrder(id);
   if (!existing || existing.userId !== userId) return null;
   if (existing.escrowStatus === "released") {
-    throw new ValidationError("You've already confirmed this order as delivered — message the seller or contact support.");
+    const confirmedAt = existing.buyerConfirmedAt ? new Date(existing.buyerConfirmedAt).getTime() : NaN;
+    const withinWindow = !Number.isNaN(confirmedAt) && Date.now() - confirmedAt <= POST_CONFIRMATION_REPORT_WINDOW_MS;
+    if (!withinWindow) {
+      throw new ValidationError("The window to report a problem after confirming delivery has passed — message the seller or contact support.");
+    }
   }
   if (existing.escrowStatus === "refunded") {
     throw new ValidationError("This order has already been refunded.");
@@ -1004,10 +1018,11 @@ export async function reportOrderIssue(
   const row = assertNoError(result, "reporting an order problem") as Row | null;
   if (!row) throw new ValidationError("You've already reported a problem with this order.");
 
-  // No-op today: reportOrderIssue refuses an order whose escrow is already
-  // 'released', and a record only exists once it is, so a dispute always
-  // precedes the record. Wired anyway so the history stays correct the day a
-  // post-completion dispute path exists.
+  // A post-confirmation report (see the window check above) disputes a
+  // transaction record that already exists and reads 'completed' — this is
+  // what moves it to 'disputed' and appends the event, same as any other
+  // dispute. A pre-confirmation report has no record yet, so this is a no-op
+  // (transitionStatus finds nothing to update), exactly as before.
   await markTransactionDisputed(id, userId, trimmed);
   const order = rowToOrder(row);
 
