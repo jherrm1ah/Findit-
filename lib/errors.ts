@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 
 // Thrown for real, user-facing validation problems (bad input, business-rule
 // violations) — safe to show verbatim to the client. Anything else that
@@ -26,6 +27,11 @@ export function toClientError(err: unknown, fallback = "Something went wrong —
     return { status: 400, body: { error: err.message } };
   }
   console.error("[api]", err);
+  // A no-op without NEXT_PUBLIC_SENTRY_DSN configured (see
+  // instrumentation.ts) — every route that goes through errorResponse
+  // reports here, so this is the one place that needs to know about Sentry
+  // at all, not every individual route's catch block.
+  Sentry.captureException(err);
   return { status: 500, body: { error: fallback } };
 }
 

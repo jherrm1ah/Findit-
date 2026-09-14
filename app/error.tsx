@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import * as Sentry from "@sentry/nextjs";
 
 // Catches any error thrown while rendering the app tree (a bug in a screen
 // component, an unexpected response shape, etc.) and shows something
@@ -16,6 +17,7 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error("[unhandled error]", error);
+    Sentry.captureException(error);
   }, [error]);
 
   return (

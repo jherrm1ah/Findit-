@@ -132,6 +132,13 @@ Copy `.env.example` to `.env.local` and fill in:
   production deployment runs on the custom domain **shopwithfindit.com**, so its `APP_URL` is set
   to `https://shopwithfindit.com` in Vercel's project environment variables — set this once you
   point your own domain at Vercel, so shared links survive a change of deployment.
+- `NEXT_PUBLIC_SENTRY_DSN` — error monitoring via [Sentry](https://sentry.io) (`@sentry/nextjs`,
+  free tier). Create a project there (platform: Next.js) and paste its DSN here. Optional: without
+  it, every `Sentry.init` call in `instrumentation.ts`/`instrumentation-client.ts` runs with
+  `enabled: false`, and the app behaves exactly as before — errors still land in the server console
+  (visible in Vercel's own logs), they just aren't collected anywhere searchable or alerted on. See
+  `lib/errors.ts#toClientError` (every API route's error path) and `app/error.tsx` (client-side
+  render errors) for where reporting is actually wired in.
 
 ### 3. Install and run
 

@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
 // Content-Security-Policy tuned to what this app actually loads:
 // - Next.js App Router's own hydration payload is inlined as a <script>
 //   tag with no nonce support wired up here, so script-src needs
@@ -6,9 +8,10 @@
 //   script host can be loaded even with an XSS injection point.
 // - style-src needs 'unsafe-inline' because the UI uses React inline
 //   `style={{...}}` throughout, plus Google Fonts' stylesheet.
-// - connect-src is 'self' only: the browser never talks to Supabase or
-//   Gemini directly — both are server-side only (see lib/db.ts, lib/ai.ts)
-//   — so there's nothing else for the client to legitimately fetch.
+// - connect-src is 'self' plus Sentry's ingest endpoint (error monitoring,
+//   see instrumentation-client.ts) — the browser still never talks to
+//   Supabase or Gemini directly, both are server-side only (see lib/db.ts,
+//   lib/ai.ts).
 // - img-src allows Supabase's own domain for product photos
 //   (lib/storage.ts), plus data: for any inline/generated images.
 const CSP = [
@@ -17,7 +20,11 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com data:",
   "img-src 'self' data: https://*.supabase.co",
-  "connect-src 'self'",
+  // 'self' plus Sentry's error-report ingest endpoint (see
+  // instrumentation-client.ts) — everything else the browser talks to is
+  // still this origin only. A no-op wildcard when NEXT_PUBLIC_SENTRY_DSN
+  // isn't set, since instrumentation-client.ts never opens a connection.
+  "connect-src 'self' https://*.ingest.sentry.io https://*.ingest.us.sentry.io https://*.ingest.de.sentry.io",
   "object-src 'none'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -30,6 +37,13 @@ const nextConfig = {
   // its own, but free to remove and it's one less thing telling an
   // attacker what to target.
   poweredByHeader: false,
+
+  // Next 14 doesn't run instrumentation.ts (Sentry's server/edge init,
+  // see that file) without this — stable by default from Next 15 on, but
+  // this app is still on 14.2.
+  experimental: {
+    instrumentationHook: true,
+  },
 
   async headers() {
     return [
@@ -66,4 +80,12 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Wraps the build with Sentry's own webpack plugin (source maps, release
+// tagging) — a no-op at request time when NEXT_PUBLIC_SENTRY_DSN isn't set,
+// same as every Sentry.init call in this app. silent: true keeps a DSN-less
+// build (e.g. this sandbox, or a fork without Sentry configured) quiet
+// instead of logging upload-skipped noise on every build.
+export default withSentryConfig(nextConfig, {
+  silent: true,
+  disableLogger: true,
+});
