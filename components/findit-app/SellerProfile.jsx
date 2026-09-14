@@ -203,6 +203,37 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
             <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">No active listings right now.</p>
           )}
         </div>
+
+        {profile.reviews.length > 0 && (
+          <div className="mt-8">
+            <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+              <Star size={13} className="text-[#7C3AED]" /> Reviews
+            </p>
+            <div className="space-y-3">
+              {profile.reviews.map((r) => (
+                <div key={r.id} className="bg-white border border-[#ECE9F7] rounded-[16px] p-3.5">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="flex items-center gap-0.5">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <Star key={n} size={12} className={n <= r.rating ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#E4DFF5]"} />
+                      ))}
+                    </span>
+                    <span className="text-[10.5px] text-[#8A8372]">
+                      {new Date(r.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </div>
+                  {r.comment && <p className="text-[12.5px] text-[#514B67] leading-relaxed">{r.comment}</p>}
+                  {r.sellerReply && (
+                    <div className="mt-2.5 pl-3 border-l-2 border-[#ECE9F7]">
+                      <p className="text-[10.5px] font-semibold text-[#7C3AED] mb-0.5">Seller reply</p>
+                      <p className="text-[12px] text-[#514B67] leading-relaxed">{r.sellerReply}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

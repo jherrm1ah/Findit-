@@ -149,6 +149,15 @@ export const api = {
   // The public seller directory — every approved seller a buyer can browse.
   // No session needed, same as getSellerProfile above.
   getSellerDirectory: () => request("/api/sellers/directory").then((d) => d.sellers),
+
+  // A seller's own reviews (with reply capability) — see lib/reviews.ts.
+  getMyReviews: () => request("/api/sellers/me/reviews").then((d) => d.reviews),
+  replyToReview: (reviewId, reply) =>
+    request(`/api/sellers/me/reviews/${reviewId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reply }),
+    }).then((d) => d.review),
   // Staff sign-in. Being logged in as an admin isn't enough to reach any of
   // the admin calls below — the server requires a per-session unlock that
   // ages out, and answers ADMIN_UNLOCK_REQUIRED until it's granted.

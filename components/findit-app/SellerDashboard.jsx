@@ -1,9 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
+import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
 function budgetLabel(r) {
@@ -352,6 +353,126 @@ function StoreAnalytics({ plan, orders, go }) {
       )}
 
       <p className="text-[9.5px] text-[#8A8372] mt-2">Average order value: {naira(data.avgOrderValue)}</p>
+    </div>
+  );
+}
+
+// A single review, with a reply box the seller can open once. Self-contained
+// so ReviewsCard below stays a plain list — the reply mutation and its
+// pending/error state live here, per-row, rather than one shared "which row
+// am I editing" id threaded through the parent.
+function ReviewRow({ review, onReply }) {
+  const [replying, setReplying] = useState(false);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const send = async () => {
+    setSending(true);
+    try {
+      await onReply(review.id, text);
+      setReplying(false);
+      setText("");
+    } catch {
+      // MainApp already surfaced a toast; keep the box open so they can retry
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[16px] p-3.5">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map((n) => (
+            <Star key={n} size={12} className={n <= review.rating ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#E4DFF5]"} />
+          ))}
+        </span>
+        <span className="text-[10.5px] text-[#8A8372]">
+          {new Date(review.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+        </span>
+      </div>
+      {review.comment && <p className="text-[12.5px] text-[#514B67] leading-relaxed mb-2">{review.comment}</p>}
+
+      {review.sellerReply ? (
+        <div className="pl-3 border-l-2 border-[#ECE9F7]">
+          <p className="text-[10.5px] font-semibold text-[#7C3AED] mb-0.5">Your reply</p>
+          <p className="text-[12px] text-[#514B67] leading-relaxed">{review.sellerReply}</p>
+        </div>
+      ) : replying ? (
+        <div>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            rows={2}
+            placeholder="Thank them or address what they said…"
+            className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-2"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={send}
+              disabled={sending || text.trim().length < 2}
+              className={`text-[11.5px] font-semibold text-white px-3.5 py-1.5 rounded-lg ${sending || text.trim().length < 2 ? "opacity-40" : ""}`}
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              {sending ? "Sending…" : "Send reply"}
+            </button>
+            <button onClick={() => setReplying(false)} disabled={sending} className="text-[11.5px] font-semibold text-[#6B6483] px-3.5 py-1.5">
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setReplying(true)} className="text-[11.5px] font-semibold text-[#7C3AED]">
+          Reply
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Reviews previously lived only as two columns on the buyer's own order row
+// (my_rating/review_comment) — a seller had no list of what people actually
+// wrote and no way to answer any of it. This reads and replies to the real
+// lib/reviews.ts table (GET/PATCH /api/sellers/me/reviews). Self-fetching,
+// same pattern as SellerDirectory.jsx, since nothing else on this screen
+// needs a seller's reviews.
+function ReviewsCard() {
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getMyReviews()
+      .then((data) => {
+        if (!cancelled) setReviews(data ?? []);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reply = async (reviewId, text) => {
+    const updated = await api.replyToReview(reviewId, text);
+    setReviews((rs) => rs.map((r) => (r.id === reviewId ? updated : r)));
+  };
+
+  if (loading || reviews.length === 0) return null;
+
+  return (
+    <div className="mb-7">
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+        <Star size={13} className="text-[#7C3AED]" /> Reviews
+      </p>
+      <div className="space-y-3">
+        {reviews.map((r) => (
+          <ReviewRow key={r.id} review={r} onReply={reply} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -726,6 +847,7 @@ export default function SellerDashboard({
       </div>
 
       <StoreAnalytics plan={plan} orders={myOrders} go={go} />
+      <ReviewsCard />
       <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
 
       <div className="flex items-center justify-between mb-3">

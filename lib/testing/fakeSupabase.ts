@@ -33,6 +33,7 @@ const UNIQUE_COLUMNS: Record<string, string[]> = {
   users: ["id", "phone"],
   orders: ["id"],
   products: ["id"],
+  reviews: ["id", "order_id"],
 };
 
 // Mirrors Postgres: a null never conflicts with another null.

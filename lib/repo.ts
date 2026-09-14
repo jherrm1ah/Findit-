@@ -10,6 +10,7 @@ import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayM
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
 import { isValidCategoryKey } from "./categoryCatalog";
 import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./requestMatching";
+import { recordReview } from "./reviews";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -773,6 +774,9 @@ export async function submitOrderReview(
   if (!existing.canReview) {
     throw new ValidationError("You can review this order once you confirm it arrived.");
   }
+  if (existing.reviewed) {
+    throw new ValidationError("You've already reviewed this order.");
+  }
 
   const db = getDb();
   const result = await db
@@ -780,11 +784,19 @@ export async function submitOrderReview(
     .update({ reviewed: true, my_rating: review.rating, review_comment: review.comment })
     .eq("id", id)
     .eq("user_id", userId)
+    .eq("reviewed", false)
     .select()
     .maybeSingle();
   const row = assertNoError(result, "submitting review") as Row | null;
-  if (!row) return null;
+  if (!row) throw new ValidationError("You've already reviewed this order.");
   const order = rowToOrder(row);
+
+  // Same purely-additive, best-effort contract as recordCompletedTransaction
+  // (lib/transactionRecord.ts): the order above is the review as far as the
+  // buyer is concerned, already saved and already the source every rating
+  // computation reads — this just makes its text findable and answerable
+  // afterward, and never undoes what just succeeded if it fails.
+  await recordReview(order, userId, review);
 
   const seller = await findUserByBusinessName(order.seller);
   if (seller) {

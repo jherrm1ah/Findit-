@@ -2,6 +2,7 @@ import { getDb, assertNoError } from "./db";
 import { computeVerificationLevel, type VerificationLevel, type VerificationStatus } from "./sellerVerificationLevels";
 import { buildSellerNameIndex, matchSellerIdByName } from "./sellerIdentityMatch";
 import { getStorePlanDisplayMap, FREE_STORE_PLAN_ID } from "./subscriptions";
+import { listPublicReviewsForSeller, type PublicReview } from "./reviews";
 import type { Product } from "./repo";
 
 /* -------------------------------------------------------------------------- */
@@ -52,6 +53,12 @@ export type PublicSellerProfile = {
   reviewCount: number;
   completedOrderCount: number;
   listings: Product[];
+  // Actual review text a buyer left, not just the aggregate rating above —
+  // see lib/reviews.ts. Strict seller_id match, so a review from before the
+  // seller_id backfill won't appear here even though it still counts toward
+  // `rating`/`reviewCount` — the same under-showing trade-off
+  // lib/sellerDirectory.ts makes, for the same reason.
+  reviews: PublicReview[];
 };
 
 export type PublicSellerProfileResult =
@@ -134,10 +141,11 @@ export async function getPublicSellerProfile(
   // buyer actually reviewed; the completed count comes from escrow outcomes,
   // because most buyers never leave a review and rating-based counts would
   // badly undercount a seller's real track record.
-  const [reviewedResult, outcomeResult, planMap] = await Promise.all([
+  const [reviewedResult, outcomeResult, planMap, reviews] = await Promise.all([
     db.from("orders").select("my_rating").eq("seller", name).eq("reviewed", true),
     db.from("orders").select("escrow_status").eq("seller", name).in("escrow_status", ["released", "disputed"]),
     getStorePlanDisplayMap(),
+    listPublicReviewsForSeller(resolved.id),
   ]);
   const reviewed = assertNoError(reviewedResult, "loading seller reviews") as Row[];
   const outcomes = assertNoError(outcomeResult, "loading seller order outcomes") as Row[];
@@ -183,6 +191,7 @@ export async function getPublicSellerProfile(
       reviewCount: ratings.length,
       completedOrderCount,
       listings: await listSellerProducts({ id: resolved.id, name }),
+      reviews,
     },
   };
 }

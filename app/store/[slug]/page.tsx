@@ -221,6 +221,34 @@ export default async function StorePage({ params }: { params: { slug: string } }
           </ul>
         )}
 
+        {profile.reviews.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Reviews</h2>
+            <div className="space-y-3 max-w-prose">
+              {profile.reviews.map((r) => (
+                <div key={r.id} className="bg-white border border-[#ECE9F7] rounded-2xl p-4">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span aria-label={`${r.rating} out of 5 stars`}>
+                      <span className="text-[#F59E0B]">{"★".repeat(r.rating)}</span>
+                      <span className="text-[#E4DFF5]">{"★".repeat(5 - r.rating)}</span>
+                    </span>
+                    <span className="text-[11px] text-[#8A8372]">
+                      {new Date(r.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}
+                    </span>
+                  </div>
+                  {r.comment && <p className="text-[13px] text-[#514B67] leading-relaxed">{r.comment}</p>}
+                  {r.sellerReply && (
+                    <div className="mt-2.5 pl-3 border-l-2 border-[#ECE9F7]">
+                      <p className="text-[11px] font-semibold text-[#7C3AED] mb-0.5">Seller reply</p>
+                      <p className="text-[12.5px] text-[#514B67] leading-relaxed">{r.sellerReply}</p>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="mt-10 pt-6 border-t border-[#ECE9F7] flex items-center justify-between gap-4 flex-wrap">
           <p className="text-[11.5px] text-[#8A8372]">A FindIt store</p>
           <Link
