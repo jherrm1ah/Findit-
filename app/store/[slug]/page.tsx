@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { getPublicStoreBySlug, appBaseUrl } from "@/lib/store";
 
@@ -108,9 +109,8 @@ export default async function StorePage({ params }: { params: { slug: string } }
   return (
     <main className="min-h-screen bg-[#FAFAFF] pb-16">
       {profile.bannerUrl ? (
-        <div className="h-36 sm:h-48 w-full overflow-hidden bg-[#EDE9FB]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={profile.bannerUrl} alt="" className="w-full h-full object-cover" />
+        <div className="relative h-36 sm:h-48 w-full overflow-hidden bg-[#EDE9FB]">
+          <Image src={profile.bannerUrl} alt="" fill sizes="100vw" priority className="object-cover" />
         </div>
       ) : (
         <div className="h-24 w-full" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }} />
@@ -119,12 +119,11 @@ export default async function StorePage({ params }: { params: { slug: string } }
       <div className="max-w-3xl mx-auto px-5">
         <header className={`flex items-start gap-4 ${profile.bannerUrl ? "-mt-10" : "-mt-8"} mb-5`}>
           <div
-            className="w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-4 border-[#FAFAFF] flex items-center justify-center text-white text-[26px] font-bold"
+            className="relative w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-4 border-[#FAFAFF] flex items-center justify-center text-white text-[26px] font-bold"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
             {profile.logoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={profile.logoUrl} alt="" className="w-full h-full object-cover" />
+              <Image src={profile.logoUrl} alt="" fill sizes="80px" className="object-cover" />
             ) : (
               profile.name.charAt(0).toUpperCase()
             )}
@@ -207,10 +206,9 @@ export default async function StorePage({ params }: { params: { slug: string } }
             {profile.listings.map((product) => (
               <li key={product.id}>
                 <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group">
-                  <div className="rounded-2xl overflow-hidden bg-[#EDE9FB] h-32 mb-2">
+                  <div className="relative rounded-2xl overflow-hidden bg-[#EDE9FB] h-32 mb-2">
                     {product.imageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={product.imageUrl} alt="" className="w-full h-full object-cover" />
+                      <Image src={product.imageUrl} alt="" fill sizes="(max-width: 640px) 50vw, 33vw" className="object-cover" />
                     )}
                   </div>
                   <p className="text-[12.5px] font-medium text-[#1E1B4B] leading-tight line-clamp-2">{product.name}</p>

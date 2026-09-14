@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle, Crown } from "lucide-react";
 import { Pill } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
@@ -94,7 +95,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           {user.avatarUrl ? (
-            <img src={user.avatarUrl} alt="" className="w-full h-full object-cover" />
+            <Image src={user.avatarUrl} alt="" fill sizes="56px" className="object-cover" />
           ) : (
             <User size={24} className="text-white" />
           )}

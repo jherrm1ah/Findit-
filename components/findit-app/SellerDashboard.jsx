@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import NextImage from "next/image";
 import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
@@ -114,9 +115,9 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
       <Field label="Photo">
         <div className="flex items-center gap-3">
-          <div className="w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#ECE9F7] flex items-center justify-center shrink-0">
+          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#ECE9F7] flex items-center justify-center shrink-0">
             {form.imageUrl ? (
-              <img src={form.imageUrl} alt="" className="w-full h-full object-cover" />
+              <NextImage src={form.imageUrl} alt="" fill sizes="64px" className="object-cover" />
             ) : (
               <ImageIcon size={18} className="text-[#B7AFD6]" />
             )}
@@ -224,8 +225,8 @@ function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage,
           ].map(({ key, label, url, uploading, className }) => (
             <div key={key}>
               <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide mb-1.5">{label}</p>
-              <div className={`bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
-                {url ? <img src={url} alt="" className="w-full h-full object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
+              <div className={`relative bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
+                {url ? <NextImage src={url} alt="" fill sizes="120px" className="object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
               </div>
               <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || uploading ? "opacity-50 pointer-events-none" : ""}`}>
                 {uploading ? "Uploading…" : url ? "Change" : "Upload"}

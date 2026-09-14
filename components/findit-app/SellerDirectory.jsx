@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown, ChevronLeft } from "lucide-react";
 import { IconButton } from "./shared";
 import { api } from "./api";
@@ -108,12 +109,11 @@ export default function SellerDirectory({ onBack, onViewSeller }) {
                 className="w-full flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3.5 text-left shadow-sm shadow-[#4C1D95]/5"
               >
                 <div
-                  className="w-14 h-14 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-[19px] font-bold"
+                  className="relative w-14 h-14 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-white text-[19px] font-bold"
                   style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                 >
                   {s.logoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={s.logoUrl} alt="" className="w-full h-full object-cover" />
+                    <Image src={s.logoUrl} alt="" fill sizes="56px" className="object-cover" />
                   ) : (
                     s.name.charAt(0).toUpperCase()
                   )}

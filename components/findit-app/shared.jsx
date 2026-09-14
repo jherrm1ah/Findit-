@@ -1,3 +1,4 @@
+import Image from "next/image";
 import { Search, Lock, LogOut } from "lucide-react";
 import { ART } from "./data";
 
@@ -12,11 +13,24 @@ export function Pill({ children, tone = "stone" }) {
   return <span className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-full ${tones[tone]}`}>{children}</span>;
 }
 
+// Every product/seller photo card in the app (Home, Browse, ProductDetail,
+// seller storefronts, order history) renders through here — the single
+// place converting to next/image (resized, re-encoded to a modern format,
+// lazy-loaded below the fold) covers all of them at once. `fill` requires
+// the wrapping div to stay `relative` with real dimensions, which is what
+// every caller's own `className` (h-32, aspect-square, etc.) already gives
+// it — this component only ever renders inside a sized container.
 export function ArtBlock({ icon: Icon, art = 0, imageUrl, className = "" }) {
   if (imageUrl) {
     return (
       <div className={`relative overflow-hidden ${className}`}>
-        <img src={imageUrl} alt="" className="w-full h-full object-cover" />
+        <Image
+          src={imageUrl}
+          alt=""
+          fill
+          sizes="(max-width: 640px) 45vw, 220px"
+          className="object-cover"
+        />
       </div>
     );
   }

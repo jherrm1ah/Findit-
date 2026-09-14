@@ -66,6 +66,11 @@ function PhotoPicker({ label, files, onChange, hint }) {
       <div className="flex flex-wrap gap-2">
         {files.map((f, i) => (
           <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
+            {/* Deliberately a plain <img>, not next/image: this is a local
+                blob: URL preview of a file the browser already has in
+                memory before upload — there is no network fetch for
+                next/image to intercept or optimize, and a blob: URL isn't
+                a remote pattern it could route through anyway. */}
             <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
             <button
               type="button"

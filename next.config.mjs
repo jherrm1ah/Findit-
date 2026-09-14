@@ -45,6 +45,16 @@ const nextConfig = {
     instrumentationHook: true,
   },
 
+  // Every product/seller photo this app serves is uploaded to Supabase
+  // Storage (lib/storage.ts) as a public URL — this is what lets
+  // next/image (see components/findit-app/shared.jsx#ArtBlock and every
+  // other Image usage) fetch, resize and re-encode them at build/request
+  // time instead of shipping the seller's original upload verbatim. Same
+  // host pattern the CSP's img-src already trusts above.
+  images: {
+    remotePatterns: [{ protocol: "https", hostname: "*.supabase.co" }],
+  },
+
   async headers() {
     return [
       {

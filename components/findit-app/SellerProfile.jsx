@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
@@ -88,18 +89,18 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
       </div>
 
       {bannerUrl && (
-        <div className="h-28 w-full mb-[-2.5rem] overflow-hidden">
-          <img src={bannerUrl} alt="" className="w-full h-full object-cover" />
+        <div className="relative h-28 w-full mb-[-2.5rem] overflow-hidden">
+          <Image src={bannerUrl} alt="" fill sizes="100vw" className="object-cover" />
         </div>
       )}
 
       <div className="px-5">
         <div className="flex items-center gap-3 mb-4">
           <div
-            className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-white text-[20px] font-bold overflow-hidden border-2 border-white shadow-md"
+            className="relative w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-white text-[20px] font-bold overflow-hidden border-2 border-white shadow-md"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            {logoUrl ? <img src={logoUrl} alt="" className="w-full h-full object-cover" /> : sellerName?.[0]?.toUpperCase() || "?"}
+            {logoUrl ? <Image src={logoUrl} alt="" fill sizes="56px" className="object-cover" /> : sellerName?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
             <p className="text-[17px] font-bold text-[#1E1B4B] truncate flex items-center gap-1.5" style={{ fontFamily: "Fraunces, serif" }}>

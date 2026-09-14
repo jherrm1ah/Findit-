@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
@@ -482,8 +483,8 @@ function VerificationSubmissions({ submissions, onReview, showToast }) {
               <div className="flex flex-wrap gap-2">
                 {overview.evidence.map((ev, i) =>
                   ev.url ? (
-                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
-                      <img src={ev.url} alt={ev.kind} className="w-full h-full object-cover" />
+                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
+                      <Image src={ev.url} alt={ev.kind} fill sizes="64px" className="object-cover" />
                     </a>
                   ) : (
                     <a
