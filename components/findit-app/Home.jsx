@@ -23,6 +23,7 @@ export default function Home({
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [sellerSearch, setSellerSearch] = useState("");
 
   // With a real location, show the newest listings sorted nearest-first;
   // without one, fall back to plain recency (the API's default order) —
@@ -211,13 +212,44 @@ export default function Home({
         <ChevronRight size={18} className="text-[#7C3AED]" />
       </button>
 
-      <button onClick={() => go("sellers")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-7">
-        <div>
-          <p className="text-[13px] font-semibold text-[#1E1B4B]">Browse sellers</p>
-          <p className="text-[11px] text-[#6B6483]">Every approved store on FindIt, not just their listings</p>
+      {/* A buyer used to have to open "Browse sellers" first and search a
+          second time inside it — go("sellers", query) below sends the term
+          typed here straight into SellerDirectory's own results (see its
+          initialQuery prop), so this one field actually finds a store. */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          go("sellers", sellerSearch.trim());
+        }}
+        className="w-full rounded-[20px] p-4 border border-[#ECE9F7] bg-white mb-7"
+      >
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-[13px] font-semibold text-[#1E1B4B]">Search stores</p>
+            <p className="text-[11px] text-[#6B6483]">Every approved seller on FindIt, not just their listings</p>
+          </div>
+          <button type="button" onClick={() => go("sellers")} aria-label="Browse all sellers" className="shrink-0">
+            <ChevronRight size={18} className="text-[#7C3AED]" />
+          </button>
         </div>
-        <ChevronRight size={18} className="text-[#7C3AED]" />
-      </button>
+        <div className="flex items-center gap-2 bg-[#F5F2FC] rounded-full px-3.5 py-2">
+          <Store size={15} className="text-[#7C3AED] shrink-0" />
+          <input
+            value={sellerSearch}
+            onChange={(e) => setSellerSearch(e.target.value)}
+            placeholder="Search a seller's store…"
+            className="flex-1 min-w-0 text-[13px] outline-none bg-transparent text-[#1E1B4B] placeholder:text-[#8A8372]"
+          />
+          <button
+            type="submit"
+            aria-label="Search sellers"
+            className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            <Search size={13} className="text-white" />
+          </button>
+        </div>
+      </form>
 
       <h2 className="text-[15px] font-bold mb-4 text-[#1E1B4B]">How FindIt works</h2>
       <div className="space-y-3">

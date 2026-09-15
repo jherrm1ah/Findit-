@@ -54,6 +54,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
+  const [sellerQuery, setSellerQuery] = useState("");
   const [product, setProduct] = useState(null);
   // The seller storefront being viewed. `key` is what the profile was opened
   // by (a seller id where the listing has one, otherwise the business name);
@@ -276,6 +277,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     const s = target === "admin" && isAdmin && !adminUnlocked ? "adminLogin" : target;
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
+    if (s === "sellers") setSellerQuery(group || ""); // same convention: reset unless a search term was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
     // Clear the whole storefront overlay, not just its key — leaving the
     // fetched profile behind would flash the previous seller's store the
@@ -1197,7 +1199,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           />
         )}
         {screen === "sellers" && (
-          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} />
+          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} initialQuery={sellerQuery} />
         )}
         {screen === "storePlans" && (
           isSeller ? (

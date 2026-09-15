@@ -15,12 +15,20 @@ const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldChec
 // FROM a specific product or order) and /store/[slug] (opened from a shared
 // URL). Filtering here is a client-side pass over one already-loaded list,
 // the same pattern Browse.jsx uses for products.
-export default function SellerDirectory({ onBack, onViewSeller }) {
+export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) {
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery || "");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
+
+  // Lets Home's own search bar send a buyer straight to results instead of
+  // an empty directory they then have to search within a second time — same
+  // "initial* prop synced on every navigation" convention as Browse.jsx's
+  // initialGroup.
+  useEffect(() => {
+    setQuery(initialQuery || "");
+  }, [initialQuery]);
 
   useEffect(() => {
     let cancelled = false;
