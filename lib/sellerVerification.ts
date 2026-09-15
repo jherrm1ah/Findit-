@@ -168,6 +168,11 @@ export async function submitVerification(sellerId: string, input: SubmitVerifica
   assertWithinLength(input.publicArea, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Area");
   assertWithinLength(input.shopAddress, MAX_VERIFICATION_TEXT_LENGTH, "Shop address");
   assertWithinLength(input.website, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Website");
+  if (input.socialLinks) {
+    for (const value of Object.values(input.socialLinks)) {
+      assertWithinLength(value, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Social link");
+    }
+  }
   for (const link of input.linkEvidence) {
     assertWithinLength(link.textValue, MAX_EVIDENCE_TEXT_LENGTH, "Evidence link");
     assertWithinLength(link.note, MAX_EVIDENCE_NOTE_LENGTH, "Evidence note");

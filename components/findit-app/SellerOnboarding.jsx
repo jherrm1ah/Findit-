@@ -307,10 +307,10 @@ export default function SellerOnboarding({ go, showToast }) {
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Instagram (optional)">
-              <input value={form.instagram} onChange={(e) => set({ instagram: e.target.value })} placeholder="@yourstore" className={inputCls()} />
+              <input value={form.instagram} onChange={(e) => set({ instagram: e.target.value })} placeholder="@yourstore" maxLength={200} className={inputCls()} />
             </Field>
             <Field label="WhatsApp (optional)">
-              <input value={form.whatsapp} onChange={(e) => set({ whatsapp: e.target.value })} placeholder="0801…" className={inputCls()} />
+              <input value={form.whatsapp} onChange={(e) => set({ whatsapp: e.target.value })} placeholder="0801…" maxLength={200} className={inputCls()} />
             </Field>
           </div>
         </div>
