@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
+import { checkRateLimit } from "./rateLimit";
 
 export type OtpPurpose = "signup" | "reset";
 
@@ -194,7 +195,23 @@ export async function verifyOtp(input: {
 
   if (!row) return { ok: false, reason: "not_found" };
   if (new Date(row.expires_at as string) <= now) return { ok: false, reason: "expired" };
-  if ((row.attempts as number) >= (row.max_attempts as number)) {
+
+  // The real attempt cap — atomic and shared across every serverless
+  // instance (see lib/rateLimit.ts#checkRateLimit, backed by migration
+  // 022's check_rate_limit(), a single INSERT ... ON CONFLICT statement).
+  // Keyed to this specific OTP row, so a fresh code always gets a fresh
+  // budget, and windowed to the code's own expiry so the cap can't reset
+  // mid-lifetime. This used to be a plain `row.attempts >= row.max_attempts`
+  // check followed by a read-then-write increment below — NOT atomic:
+  // concurrent guesses all read the same stale `attempts` value and each
+  // wrote back stale+1, so N simultaneous wrong guesses only ever cost the
+  // counter "+1" total, letting a 6-digit code (1,000,000 values) be
+  // brute-forced past the 5-attempt cap with enough concurrency. A
+  // password-reset OTP guessed this way is a real account takeover.
+  const maxAttempts = row.max_attempts as number;
+  const expiryMs = new Date(row.expires_at as string).getTime() - new Date(row.created_at as string).getTime();
+  const { allowed } = await checkRateLimit(`otp-attempt:${row.id}`, maxAttempts, Math.max(expiryMs, 60_000));
+  if (!allowed) {
     return { ok: false, reason: "too_many_attempts" };
   }
 
@@ -202,6 +219,10 @@ export async function verifyOtp(input: {
   const matches = timingSafeEqualHex(candidateHash, row.otp_hash as string);
 
   if (!matches) {
+    // Best-effort visibility only now (e.g. for an admin looking at a
+    // support case) — checkRateLimit above is what actually decides
+    // whether a guess is allowed through, so a lost update here changes
+    // nothing security-relevant.
     const incrementResult = await db
       .from("otp_verifications")
       .update({ attempts: (row.attempts as number) + 1 })
