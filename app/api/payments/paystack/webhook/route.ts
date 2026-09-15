@@ -44,6 +44,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   }
   if (payment.status === "success") {
+    // Already recorded as paid — but the order-confirmation step below can
+    // fail independently of the payment itself (a transient DB error, the
+    // platform fee config missing a row, etc.), and used to just get logged
+    // and swallowed, leaving the payment permanently 'success' while the
+    // order stayed 'pending' forever with no way to repair it. confirmOrderPayment
+    // is a safe no-op once it has actually applied (see lib/payments.ts —
+    // it checks payment_status === 'paid' first), so retrying it here on a
+    // redelivery is what actually lets Paystack's own retry mechanism heal
+    // that. Returning non-2xx keeps it retrying until this succeeds.
+    if (payment.order_id) {
+      try {
+        await confirmOrderPayment(payment.order_id as string);
+      } catch (err) {
+        console.error("[paystack-webhook] retry: order confirmation still failing", err);
+        return NextResponse.json({ error: "order confirmation failed" }, { status: 500 });
+      }
+    }
     return NextResponse.json({ received: true }); // already processed — webhooks can be delivered more than once
   }
 
@@ -80,7 +97,14 @@ export async function POST(req: NextRequest) {
       try {
         await confirmOrderPayment(payment.order_id as string);
       } catch (err) {
+        // Non-2xx (rather than swallowing this like the boost/subscription
+        // branches below do) so Paystack redelivers the webhook — see the
+        // `payment.status === "success"` branch above, which is what
+        // actually retries confirmOrderPayment on that redelivery. The
+        // payment itself is already correctly recorded as collected either
+        // way; only the order side needs another attempt.
         console.error("[paystack-webhook] payment succeeded but order confirmation failed", err);
+        return NextResponse.json({ error: "order confirmation failed" }, { status: 500 });
       }
     } else if (payment.kind === "boost") {
       const metadata = (payment.metadata as { productId?: string; sellerId?: string; boostPlanId?: string } | null) ?? null;
