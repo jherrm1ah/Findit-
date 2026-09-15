@@ -87,6 +87,7 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             placeholder={'Subject — e.g. "Order hasn\'t arrived"'}
+            maxLength={200}
             className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none"
           />
           <textarea
@@ -94,6 +95,7 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
             onChange={(e) => setBody(e.target.value)}
             placeholder="Describe what's going on…"
             rows={3}
+            maxLength={2000}
             className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none resize-none"
           />
           <button

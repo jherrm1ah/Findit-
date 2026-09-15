@@ -301,6 +301,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
                   rows={2}
+                  maxLength={1000}
                   placeholder="Optional — how was the product and delivery?"
                   className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
                 />

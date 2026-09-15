@@ -91,10 +91,10 @@ export default function RequestForm({ go, showToast, myLocation }) {
       {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
       <form onSubmit={submit} className="space-y-4">
         <Field label="What are you looking for?">
-          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Mini UPS for my router" className="input" required />
+          <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. Mini UPS for my router" maxLength={150} className="input" required />
         </Field>
         <Field label="Describe it in more detail">
-          <textarea value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} rows={3} placeholder="Brand, model, part number, or just the problem it should solve…" className="input resize-none" />
+          <textarea value={form.desc} onChange={(e) => setForm({ ...form, desc: e.target.value })} rows={3} placeholder="Brand, model, part number, or just the problem it should solve…" maxLength={2000} className="input resize-none" />
         </Field>
         <button
           type="button"
@@ -124,7 +124,7 @@ export default function RequestForm({ go, showToast, myLocation }) {
             </select>
           </Field>
         </div>
-        <Field label="Delivery note (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. nearest landmark or drop-off point" className="input" /></Field>
+        <Field label="Delivery note (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. nearest landmark or drop-off point" maxLength={120} className="input" /></Field>
         {myLocation && (
           <p className="text-[11px] text-[#6B6483] -mt-2 flex items-center gap-1"><MapPin size={11} /> Using your current location so nearby sellers see this first.</p>
         )}
