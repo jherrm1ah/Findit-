@@ -1953,6 +1953,46 @@ async function notifySellersOfNewRequest(request: RequestRow): Promise<void> {
   }
 }
 
+const MAX_REQUEST_TITLE_LENGTH = 150;
+
+// Pure — mirrors validateProductInput's shape: the API route already
+// requires a non-empty title before calling in, but every other field
+// (description/location length, budget sanity, qty) had nothing stopping
+// it, the same gap already closed for products.
+export function validateRequestInput(input: {
+  title?: string;
+  description?: string | null;
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+  qty?: number;
+  location?: string | null;
+}): void {
+  if (input.title !== undefined && !input.title.trim()) {
+    throw new ValidationError("Title is required.");
+  }
+  if (input.title != null && input.title.length > MAX_REQUEST_TITLE_LENGTH) {
+    throw new ValidationError(`Title must be under ${MAX_REQUEST_TITLE_LENGTH} characters.`);
+  }
+  if (input.description != null && input.description.length > MAX_DESCRIPTION_LENGTH) {
+    throw new ValidationError(`Description must be under ${MAX_DESCRIPTION_LENGTH} characters.`);
+  }
+  if (input.location != null && input.location.length > MAX_LOCATION_LENGTH) {
+    throw new ValidationError(`Location must be under ${MAX_LOCATION_LENGTH} characters.`);
+  }
+  if (input.budgetMin != null && (!Number.isFinite(input.budgetMin) || input.budgetMin < 0)) {
+    throw new ValidationError("Minimum budget can't be negative.");
+  }
+  if (input.budgetMax != null && (!Number.isFinite(input.budgetMax) || input.budgetMax < 0)) {
+    throw new ValidationError("Maximum budget can't be negative.");
+  }
+  if (input.budgetMin != null && input.budgetMax != null && input.budgetMin > input.budgetMax) {
+    throw new ValidationError("Minimum budget can't be more than the maximum.");
+  }
+  if (input.qty !== undefined && (!Number.isInteger(input.qty) || input.qty <= 0)) {
+    throw new ValidationError("Quantity must be a positive whole number.");
+  }
+}
+
 export async function createRequest(input: {
   title: string;
   description: string | null;
@@ -1966,6 +2006,7 @@ export async function createRequest(input: {
   condition: string;
   userId: string;
 }): Promise<RequestRow> {
+  validateRequestInput(input);
   if (input.category && !(await isValidCategoryKey(input.category))) {
     throw new ValidationError("Unknown category.");
   }

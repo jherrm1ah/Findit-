@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   validateProductInput,
+  validateRequestInput,
   validateOfferInput,
   validateStatusTransition,
   assertSellerCanSetStatus,
@@ -97,6 +98,50 @@ describe("validateProductInput", () => {
     expect(() => validateProductInput({ images: tooMany })).toThrow(ValidationError);
     expect(() => validateProductInput({ images: justRight })).not.toThrow();
     expect(() => validateProductInput({ images: [] })).not.toThrow();
+  });
+});
+
+describe("validateRequestInput", () => {
+  // The API route already requires a non-empty title before calling in —
+  // this covers the rest, which had nothing stopping it: unbounded
+  // title/description/location, a negative budget, minBudget > maxBudget,
+  // and a zero/negative/fractional qty.
+  it("rejects an empty or whitespace-only title", () => {
+    expect(() => validateRequestInput({ title: "" })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ title: "   " })).toThrow(ValidationError);
+  });
+
+  it("rejects a title over the length cap", () => {
+    expect(() => validateRequestInput({ title: "x".repeat(151) })).toThrow(/under 150/i);
+    expect(() => validateRequestInput({ title: "x".repeat(150) })).not.toThrow();
+  });
+
+  it("rejects a description or location over their length caps", () => {
+    expect(() => validateRequestInput({ description: "x".repeat(2001) })).toThrow(/under 2000/i);
+    expect(() => validateRequestInput({ location: "x".repeat(121) })).toThrow(/under 120/i);
+  });
+
+  it("rejects a negative budget", () => {
+    expect(() => validateRequestInput({ budgetMin: -1 })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ budgetMax: -1 })).toThrow(ValidationError);
+  });
+
+  it("rejects a minimum budget above the maximum", () => {
+    expect(() => validateRequestInput({ budgetMin: 5000, budgetMax: 1000 })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ budgetMin: 1000, budgetMax: 5000 })).not.toThrow();
+    expect(() => validateRequestInput({ budgetMin: 1000, budgetMax: 1000 })).not.toThrow();
+  });
+
+  it("rejects a non-positive or non-integer qty", () => {
+    expect(() => validateRequestInput({ qty: 0 })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ qty: -1 })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ qty: 1.5 })).toThrow(ValidationError);
+    expect(() => validateRequestInput({ qty: 1 })).not.toThrow();
+  });
+
+  it("accepts a fully empty patch and null fields", () => {
+    expect(() => validateRequestInput({})).not.toThrow();
+    expect(() => validateRequestInput({ description: null, location: null, budgetMin: null, budgetMax: null })).not.toThrow();
   });
 });
 
