@@ -14,6 +14,7 @@ import {
   refundTransaction,
   resolveAccountNumber,
   createTransferRecipient,
+  PaystackNetworkError,
 } from "./paystack";
 
 type Row = Record<string, unknown>;
@@ -195,9 +196,25 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
       })
       .eq("id", id);
   } catch (err) {
+    // A PaystackNetworkError means we never got a response at all — the
+    // transfer may have actually gone through on Paystack's side before the
+    // connection dropped. Treating that the same as a confirmed rejection
+    // (status 'failed') is how this used to risk a real double payout: an
+    // admin trusting "failed" and settling it manually, on top of a
+    // transfer that had genuinely succeeded. 'manual_required' with an
+    // explicit warning instead — the failure_reason IS the instruction an
+    // admin reads before touching this row (see the AdminQueue payouts UI).
+    const unconfirmed = err instanceof PaystackNetworkError;
     await db
       .from("payouts")
-      .update({ status: "failed", failure_reason: err instanceof Error ? err.message : String(err) })
+      .update({
+        status: unconfirmed ? "manual_required" : "failed",
+        failure_reason: unconfirmed
+          ? `Couldn't confirm this transfer's outcome (connection issue) — it may have actually gone through. Check the Paystack dashboard's transfer history for this order before paying manually, to avoid a double payment. (${err.message})`
+          : err instanceof Error
+            ? err.message
+            : String(err),
+      })
       .eq("id", id);
   }
 }

@@ -284,7 +284,7 @@ async function expirePlatformSubscription(sub: Subscription, reason: "trial_ende
     .select()
     .single();
   const row = assertNoError(updateResult, "expiring platform subscription") as Row;
-  await logEvent(sub.id, reason, { fromPlanId: sub.planId });
+  await logEvent(sub.id, reason, { fromPlanId: sub.planId, wasTrial: sub.status === "trialing" });
   return rowToSubscription(row);
 }
 
@@ -307,7 +307,7 @@ async function downgradeToFree(sub: Subscription, reason: "trial_ended" | "expir
     .select()
     .single();
   const row = assertNoError(updateResult, "reverting subscription to Free") as Row;
-  await logEvent(sub.id, reason, { fromPlanId: sub.planId });
+  await logEvent(sub.id, reason, { fromPlanId: sub.planId, wasTrial: sub.status === "trialing" });
   if (sub.ownerType === "store") {
     const freePlan = await getPlan(FREE_STORE_PLAN_ID);
     await enforceProductLimit(sub.ownerId, freePlan?.productLimit ?? null);
@@ -353,18 +353,34 @@ export async function getPlatformPlanOverview(userId: string): Promise<{
   return { subscription: current?.subscription ?? null, plan: current?.plan ?? null, plans };
 }
 
+// Pure — unit-testable without a database. A 'cancelled' event only counts
+// as "already used this plan's trial" when the subscription was still
+// trialing at the moment it was cancelled (see downgradeToFree/
+// expirePlatformSubscription's `wasTrial` detail) — cancelling out of a
+// fully-paid period never should. Without this distinction, cancel-then-
+// resubscribe granted a fresh trial every time: cancelStoreSubscription
+// used to always log "cancelled", never "trial_ended", so
+// hasUsedTrialBefore's old `type === 'trial_ended'`-only check never saw a
+// trial someone cut short instead of letting lapse naturally.
+export function hasConsumedTrial(events: { type: string; detail: Record<string, unknown> | null }[], planId: string): boolean {
+  return events.some((e) => {
+    if (e.detail?.fromPlanId !== planId) return false;
+    if (e.type === "trial_ended") return true;
+    return e.type === "cancelled" && e.detail?.wasTrial === true;
+  });
+}
+
 async function hasUsedPlatformTrialBefore(userId: string, planId: string): Promise<boolean> {
   const sub = await getRawSubscription("platform", userId);
   if (!sub) return false;
   const db = getDb();
   const result = await db
     .from("subscription_events")
-    .select("id", { count: "exact", head: true })
+    .select("type, detail")
     .eq("subscription_id", sub.id)
-    .eq("type", "trial_ended")
-    .contains("detail", { fromPlanId: planId });
+    .in("type", ["trial_ended", "cancelled"]);
   if (result.error) return false; // fail open toward "allow a trial" — never blocks a legitimate first trial
-  return (result.count ?? 0) > 0;
+  return hasConsumedTrial((result.data ?? []) as { type: string; detail: Record<string, unknown> | null }[], planId);
 }
 
 // Same shape as previewStorePlanChange, for the one purchasable platform
@@ -694,12 +710,11 @@ async function hasUsedTrialBefore(sellerId: string, planId: string): Promise<boo
   const db = getDb();
   const result = await db
     .from("subscription_events")
-    .select("id", { count: "exact", head: true })
+    .select("type, detail")
     .eq("subscription_id", subscription.id)
-    .eq("type", "trial_ended")
-    .contains("detail", { fromPlanId: planId });
+    .in("type", ["trial_ended", "cancelled"]);
   if (result.error) return false; // fail open toward "allow a trial" — never blocks a legitimate first trial
-  return (result.count ?? 0) > 0;
+  return hasConsumedTrial((result.data ?? []) as { type: string; detail: Record<string, unknown> | null }[], planId);
 }
 
 // Cancelling takes effect immediately (drops straight to Free) rather than

@@ -25,15 +25,32 @@ function secretKey(): string {
 
 type PaystackResponse<T> = { status: boolean; message: string; data: T };
 
+// Distinct from a plain Error on purpose — see initiateSellerPayout
+// (lib/payments.ts), which treats this differently from an ordinary
+// Paystack-rejected transfer. A request that never got a response at all
+// (this) means Paystack may or may not have actually processed it
+// server-side before the connection dropped; a response Paystack DID send
+// back with a failure status is a confirmed "no." Collapsing both into one
+// generic Error used to make a transfer timeout look identical to a
+// confirmed failure, which is how a genuinely-succeeded-but-unconfirmed
+// payout could end up paid a second time manually by an admin who trusted
+// the "failed" status.
+export class PaystackNetworkError extends Error {}
+
 async function paystackFetch<T>(path: string, init?: RequestInit): Promise<PaystackResponse<T>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${secretKey()}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${secretKey()}`,
+        "Content-Type": "application/json",
+        ...(init?.headers ?? {}),
+      },
+    });
+  } catch (err) {
+    throw new PaystackNetworkError(err instanceof Error ? err.message : String(err));
+  }
   const body = (await res.json().catch(() => null)) as PaystackResponse<T> | null;
   if (!res.ok || !body) {
     throw new Error(body?.message || `Paystack request failed (${res.status})`);
