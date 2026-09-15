@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Search, Lock, LogOut } from "lucide-react";
+import { Search, Lock, LogOut, Home as HomeIcon } from "lucide-react";
 import { ART } from "./data";
 
 export function Pill({ children, tone = "stone" }) {
@@ -75,7 +75,12 @@ export function IconButton({ children, onClick, badge, "aria-label": ariaLabel }
   );
 }
 
-export function RoleGate({ title, message, onLogout, logoutLabel = "Log out" }) {
+// Shown when the signed-in account's role doesn't match the screen they
+// landed on (e.g. a buyer tapped the seller-dashboard nav icon). "Go home"
+// is the primary action — this is almost always an accidental tap, not a
+// buyer deciding they want to sign out — so logging out is a secondary,
+// much less prominent option, not the only button on the screen.
+export function RoleGate({ title, message, onGoHome, onLogout, logoutLabel = "Log out" }) {
   return (
     <div className="px-5 pt-16 pb-10 flex flex-col items-center text-center min-h-[70vh]">
       <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
@@ -83,13 +88,18 @@ export function RoleGate({ title, message, onLogout, logoutLabel = "Log out" }) 
       </div>
       <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>{title}</h1>
       <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">{message}</p>
-      {onLogout && (
+      {onGoHome && (
         <button
-          onClick={onLogout}
-          className="flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl"
+          onClick={onGoHome}
+          className="flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl mb-3"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
-          <LogOut size={14} /> {logoutLabel}
+          <HomeIcon size={14} /> Take me home
+        </button>
+      )}
+      {onLogout && (
+        <button onClick={onLogout} className="flex items-center gap-1.5 text-[#6B6483] text-[12.5px] font-medium px-3 py-2">
+          <LogOut size={13} /> {logoutLabel}
         </button>
       )}
     </div>

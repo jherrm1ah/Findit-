@@ -1272,6 +1272,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Seller access needed"
               message="Store plans belong to seller accounts."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1290,6 +1291,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Sign in needed"
               message="FindIt Pro is a membership for signed-in accounts."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1302,6 +1304,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Seller access needed"
               message="Seller verification belongs to seller accounts."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1349,6 +1352,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Seller access needed"
               message="This dashboard belongs to seller accounts. Sign up with a seller account (or log in with one) to respond to customer requests here."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1413,6 +1417,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Admin access needed"
               message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1433,6 +1438,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
             <RoleGate
               title="Admin access needed"
               message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
+              onGoHome={() => go("home")}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
