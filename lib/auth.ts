@@ -620,10 +620,22 @@ export async function listUsersForAdmin(input: {
 // a seller's own status (which only restricts selling). Takes effect
 // immediately (see getUserForToken above), not just on the account's next
 // login. Self-suspension is blocked so an admin can never lock themselves
-// out this way; that in turn means suspending another admin can never
-// strand the platform with zero usable admins, since the actor always
-// keeps their own access.
-export async function suspendUser(id: string, reason: string, actingAdminId: string): Promise<User> {
+// out this way.
+//
+// The route only requires the "users" AdminPermission domain, which
+// support_admin holds (for legitimate account-help lookups) — but without
+// a second check here, that would let a support_admin suspend a
+// moderation_admin, finance_admin, or even a super_admin, the same
+// unauthorized-takedown risk promoting/demoting an admin is deliberately
+// restricted to super_admin-only for (see demoteFromAdmin above). Suspending
+// another admin's account is at least as sensitive as demoting one — it
+// blocks their login outright — so it gets the same restriction.
+export async function suspendUser(
+  id: string,
+  reason: string,
+  actingAdminId: string,
+  actingAdminRole: AdminRole | null
+): Promise<User> {
   if (!reason?.trim()) {
     throw new ValidationError("Give a reason — never a silent suspension.");
   }
@@ -631,6 +643,13 @@ export async function suspendUser(id: string, reason: string, actingAdminId: str
     throw new ValidationError("You can't suspend your own account.");
   }
   const db = getDb();
+  const targetResult = await db.from("users").select("role").eq("id", id).maybeSingle();
+  const target = assertNoError(targetResult, "loading account to suspend") as Row | null;
+  if (!target) throw new ValidationError("Account not found.");
+  if (target.role === "admin" && actingAdminRole !== "super_admin") {
+    throw new ValidationError("Only a Super Admin can suspend another admin's account.");
+  }
+
   const result = await db
     .from("users")
     .update({ suspended: true, suspended_reason: reason.trim(), suspended_at: new Date().toISOString() })
