@@ -40,9 +40,9 @@ Plans, Analytics, Categories, Risk, Support, Requests, Admin tools, Activity.
 |---|-----|-------|
 | 19 | **Delivery management.** `orders` has no delivery address, method, fee, tracking reference or proof of delivery. | 🔴 |
 | 18 | **Returns workflow.** No return request, reason, evidence, or seller response. Disputes exist but returns do not. | 🔴 |
-| 16 | **Reviews.** Ratings live as `my_rating`/`review_comment` columns on `orders`. No reviews table, no product reviews, no moderation, no reporting, no history. | 🔴 |
+| 16 | **Reviews.** ~~Ratings live as `my_rating`/`review_comment` columns on `orders`. No reviews table, no product reviews, no moderation, no reporting, no history.~~ A real `reviews` table now exists (migration 025) with verified-purchase enforcement and seller replies; see §2 below for the moderation/reporting half. | ✅ |
 | 15 | **Refunds.** Only a full refund triggered by dispute resolution. No partial refunds, no refund records, reasons, or status tracking. | 🟡 |
-| 2 | **Product reports / flagged products.** The overview spec wants these counts; no reports table exists. | 🔴 |
+| 2 | **Product reports / flagged products.** ~~The overview spec wants these counts; no reports table exists.~~ Built: `moderation_rules` (admin-configurable prohibited-item keywords, block/flag), `product_reports` (buyer report queue), and `products.moderation_status/reason/moderated_by/moderated_at` (migration 027). Overview now shows real `flaggedProducts`/`reportedProducts` counts; admin "Moderation" tab covers the review queue and rule editor. | ✅ |
 | 22 | **Advertising.** No advertiser, campaign, placement or budget tables. | 🔴 |
 | 23 | **Enterprise accounts.** No staff users, multi-store ownership, or custom plans. | 🔴 |
 | 1 | **Admin sections.** Missing as first-class areas: Stores, Products, Orders, Transactions, Boosts, Notifications, Settings, Audit Logs. | 🔴 |
@@ -75,9 +75,10 @@ every financial event carries seller, store, order, gross, fees and net. Fee con
 minimum, maximum, buyer fee and promotional rules, all snapshotted per transaction.
 
 ### Phase 3 — Reviews, reports and reputation (§16, §17)
-A real `reviews` table replacing the columns on `orders`, migrating existing ratings.
-Verified-purchase enforcement. Product reports and admin moderation. Reputation inputs
-extended with cancellation rate, dispute rate and account age, thresholds moved into config.
+✅ Reviews (migration 025) and product reports/moderation (migration 027) are both done — see
+§16/§2 in Part 2. Still open: reputation inputs extended with cancellation rate, dispute rate
+and account age, with thresholds moved into config (§17 currently uses completed orders,
+rating and dispute rate only — see `lib/sellerVerificationLevels.ts`).
 
 ### Phase 4 — Returns integrated with disputes (§18)
 Return requests with reason and evidence, seller response, admin review, and refund
