@@ -297,12 +297,13 @@ export default function SellerOnboarding({ go, showToast }) {
               value={form.description}
               onChange={(e) => set({ description: e.target.value })}
               rows={3}
+              maxLength={2000}
               placeholder="Tell buyers what makes your store worth buying from."
               className={inputCls("resize-none")}
             />
           </Field>
           <Field label="How long have you been selling? (optional)">
-            <input value={form.yearsSelling} onChange={(e) => set({ yearsSelling: e.target.value })} placeholder="e.g. 2 years, or Just starting" className={inputCls()} />
+            <input value={form.yearsSelling} onChange={(e) => set({ yearsSelling: e.target.value })} placeholder="e.g. 2 years, or Just starting" maxLength={200} className={inputCls()} />
           </Field>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Instagram (optional)">
@@ -339,9 +340,9 @@ export default function SellerOnboarding({ go, showToast }) {
           </div>
 
           <div className="grid grid-cols-3 gap-2">
-            <Field label="State"><input value={form.publicState} onChange={(e) => set({ publicState: e.target.value })} placeholder="Lagos" className={inputCls()} /></Field>
-            <Field label="City"><input value={form.publicCity} onChange={(e) => set({ publicCity: e.target.value })} placeholder="Ikeja" className={inputCls()} /></Field>
-            <Field label="Area"><input value={form.publicArea} onChange={(e) => set({ publicArea: e.target.value })} placeholder="Allen Ave" className={inputCls()} /></Field>
+            <Field label="State"><input value={form.publicState} onChange={(e) => set({ publicState: e.target.value })} placeholder="Lagos" maxLength={200} className={inputCls()} /></Field>
+            <Field label="City"><input value={form.publicCity} onChange={(e) => set({ publicCity: e.target.value })} placeholder="Ikeja" maxLength={200} className={inputCls()} /></Field>
+            <Field label="Area"><input value={form.publicArea} onChange={(e) => set({ publicArea: e.target.value })} placeholder="Allen Ave" maxLength={200} className={inputCls()} /></Field>
           </div>
           <p className="text-[10.5px] text-[#8A8372] -mt-2">This general area is shown on your public storefront.</p>
 
@@ -351,6 +352,7 @@ export default function SellerOnboarding({ go, showToast }) {
                 value={form.shopAddress}
                 onChange={(e) => set({ shopAddress: e.target.value })}
                 rows={2}
+                maxLength={2000}
                 placeholder="Full address — only used for verification, never shown publicly."
                 className={inputCls("resize-none")}
               />
@@ -358,7 +360,7 @@ export default function SellerOnboarding({ go, showToast }) {
           )}
 
           <Field label="Website (optional)">
-            <input value={form.website} onChange={(e) => set({ website: e.target.value })} placeholder="https://…" className={inputCls()} />
+            <input value={form.website} onChange={(e) => set({ website: e.target.value })} placeholder="https://…" maxLength={200} className={inputCls()} />
           </Field>
 
           <button
