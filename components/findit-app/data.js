@@ -2,6 +2,7 @@ import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
   Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus, PackageSearch,
+  Bell, MessageCircle,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -76,6 +77,14 @@ export const ART = [
   "from-[#C026D3] to-[#5B21B6]", "from-[#6D28D9] to-[#1E1B4B]",
 ];
 
+// Every real notification `type` a route/lib function writes must have an
+// entry here — Notifications.jsx renders `<Icon .../>` straight off this
+// map, and an unmapped type used to render `<undefined .../>`, which React
+// throws on ("Element type is invalid"), crashing the whole screen for
+// every recipient. admin_broadcast (lib/broadcast.ts) and support_reply
+// (lib/support.ts) were both missing this exact way — Notifications.jsx
+// also now falls back to Bell for any type added here late, but keep this
+// map complete rather than leaning on that fallback.
 export const NOTIFICATION_ICONS = {
   offer: Send,
   delivery: Truck,
@@ -86,6 +95,8 @@ export const NOTIFICATION_ICONS = {
   // A new buyer request matched what this seller sells (or the buyer left
   // it open to any seller) — see lib/repo.ts#notifySellersOfNewRequest.
   request: PackageSearch,
+  admin_broadcast: Bell,
+  support_reply: MessageCircle,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];

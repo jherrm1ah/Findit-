@@ -1,5 +1,6 @@
 "use client";
 
+import { Bell } from "lucide-react";
 import { NOTIFICATION_ICONS } from "./data";
 
 export default function Notifications({ notifications, onMarkRead, onMarkAllRead }) {
@@ -14,7 +15,10 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
       <p className="text-[12px] text-[#6B6483] mb-5">Order updates, offers, and account activity.</p>
       <div className="space-y-2.5">
         {notifications.map((n) => {
-          const Icon = NOTIFICATION_ICONS[n.type];
+          // Falls back to Bell rather than crashing the whole screen on a
+          // notification type this map doesn't know yet — see the map's own
+          // comment in data.js for the two real cases this already hit.
+          const Icon = NOTIFICATION_ICONS[n.type] || Bell;
           return (
             <button
               key={n.id}
