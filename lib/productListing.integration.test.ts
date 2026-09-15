@@ -143,6 +143,68 @@ describe("listProducts — bulk photo loading", () => {
   });
 });
 
+// Migration 027 — moderation_rules checked on every create/update. Real
+// rows in the moderation_rules table, exercised through the actual
+// createProduct/updateProduct rather than testing findMatchingModerationRule
+// in isolation again (that's lib/moderationRules.test.ts).
+describe("createProduct/updateProduct — moderation rules (migration 027)", () => {
+  function seedWithRule(rule: Record<string, unknown>) {
+    fakeDb.reset({ categories: categories(), moderation_rules: [{ id: "mr_1", active: true, ...rule }] });
+  }
+
+  it("refuses a listing that matches a 'block' rule", async () => {
+    seedWithRule({ keyword: "firearm", reason: "Weapons aren't allowed on FindIt.", severity: "block" });
+    await expect(createProduct(baseInput({ name: "Replica firearm toy" }))).rejects.toThrow(/weapons/i);
+  });
+
+  it("creates a listing matching a 'flag' rule, but queues it for review", async () => {
+    seedWithRule({ keyword: "replica", reason: "Possible counterfeit.", severity: "flag" });
+    const product = await createProduct(baseInput({ name: "Replica watch" }));
+    expect(product.moderationStatus).toBe("under_review");
+    expect(product.moderationReason).toBe("Possible counterfeit.");
+  });
+
+  it("leaves an ordinary listing active with no moderation rules in play", async () => {
+    seedWithRule({ keyword: "replica", reason: "Possible counterfeit.", severity: "flag" });
+    const product = await createProduct(baseInput({ name: "USB-C cable" }));
+    expect(product.moderationStatus).toBe("active");
+    expect(product.moderationReason).toBeNull();
+  });
+
+  it("checks the description too, not just the name", async () => {
+    seedWithRule({ keyword: "counterfeit", reason: "Flagged for review.", severity: "flag" });
+    const product = await createProduct(baseInput({ name: "Sneakers", description: "definitely not counterfeit, promise" }));
+    expect(product.moderationStatus).toBe("under_review");
+  });
+
+  it("re-checks on update and refuses an edit that introduces a blocked keyword", async () => {
+    seedWithRule({ keyword: "firearm", reason: "Weapons aren't allowed.", severity: "block" });
+    const product = await createProduct(baseInput());
+    await expect(updateProduct(product.id, { name: "USB-C cable firearm adapter" })).rejects.toThrow(/weapons/i);
+  });
+
+  it("never resets a listing an admin already removed just because an unrelated field (price) changes", async () => {
+    seedWithRule({ keyword: "cable", reason: "Flagged for review.", severity: "flag" });
+    const product = await createProduct(baseInput({ name: "Plain charger" })); // active, no rule match
+    // Simulate an admin's own decision (lib/productReports.ts#moderateProduct
+    // writes these same three columns) — updateProduct must never touch
+    // them on a patch that isn't editing name/description.
+    fakeDb.reset({
+      categories: categories(),
+      moderation_rules: [{ id: "mr_1", active: true, keyword: "cable", reason: "Flagged for review.", severity: "flag" }],
+      products: fakeDb.dump("products").map((p) =>
+        p.id === product.id ? { ...p, moderation_status: "removed", moderation_reason: "Prohibited item.", moderated_by: "admin_1" } : p
+      ),
+      product_images: fakeDb.dump("product_images"),
+    });
+
+    const updated = await updateProduct(product.id, { price: 3000 });
+    expect(updated?.moderationStatus).toBe("removed");
+    expect(updated?.moderationReason).toBe("Prohibited item.");
+    expect(updated?.price).toBe(3000);
+  });
+});
+
 describe("createOrderFromProduct — refuses an out-of-stock listing", () => {
   it("refuses to order a listing explicitly marked qty 0", async () => {
     fakeDb.reset({

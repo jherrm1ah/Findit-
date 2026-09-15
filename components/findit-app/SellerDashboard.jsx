@@ -1029,7 +1029,7 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No listings yet — add your first product above.</p>
         )}
         {myListings.map((p) => (
-          <div key={p.id} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false ? "opacity-60" : ""}`}>
+          <div key={p.id} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false || p.moderationStatus === "removed" ? "opacity-60" : ""}`}>
             {editingId === p.id ? (
               <ListingForm
                 initial={{
@@ -1061,6 +1061,16 @@ export default function SellerDashboard({
                           <EyeOff size={9} /> Hidden — over plan limit
                         </span>
                       )}
+                      {p.moderationStatus === "under_review" && (
+                        <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
+                          <ShieldAlert size={9} /> Needs review
+                        </span>
+                      )}
+                      {p.moderationStatus === "removed" && (
+                        <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#C22468] bg-[#E64980]/10 px-1.5 py-0.5 rounded-full shrink-0">
+                          <X size={9} /> Rejected{p.moderationReason ? `: ${p.moderationReason}` : ""}
+                        </span>
+                      )}
                       {p.boostedUntil && new Date(p.boostedUntil).getTime() > Date.now() && (
                         <span className="flex items-center gap-1 text-[9.5px] font-semibold text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
                           <TrendingUp size={9} /> Boosted until {new Date(p.boostedUntil).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
@@ -1070,7 +1080,7 @@ export default function SellerDashboard({
                     <p className="text-[11px] text-[#6B6483]">{GROUPS[p.category]?.label} · {naira(p.price)}</p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    {p.active !== false && (
+                    {p.active !== false && p.moderationStatus !== "removed" && (
                       <button
                         onClick={() => setBoostPickerId(boostPickerId === p.id ? null : p.id)}
                         aria-label={`Boost ${p.name}`}

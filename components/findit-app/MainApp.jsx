@@ -54,6 +54,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   const [screen, setScreen] = useState("home");
   const [browseGroup, setBrowseGroup] = useState("all");
+  const [sellerQuery, setSellerQuery] = useState("");
   const [product, setProduct] = useState(null);
   // The seller storefront being viewed. `key` is what the profile was opened
   // by (a seller id where the listing has one, otherwise the business name);
@@ -276,6 +277,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     const s = target === "admin" && isAdmin && !adminUnlocked ? "adminLogin" : target;
     setScreen(s);
     if (s === "browse") setBrowseGroup(group || "all"); // always reset unless a category was explicitly passed
+    if (s === "sellers") setSellerQuery(group || ""); // same convention: reset unless a search term was explicitly passed
     setProduct(null); // close any open product detail overlay when navigating
     // Clear the whole storefront overlay, not just its key — leaving the
     // fetched profile behind would flash the previous seller's store the
@@ -824,6 +826,46 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     return updated;
   };
 
+  const handleLoadModerationRules = () => api.getModerationRules();
+
+  const handleCreateModerationRule = async (keyword, reason, severity) => {
+    const created = await api.createModerationRule(keyword, reason, severity);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return created;
+  };
+
+  const handleUpdateModerationRule = async (id, patch) => {
+    const updated = await api.updateModerationRule(id, patch);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return updated;
+  };
+
+  const handleLoadFlaggedProducts = () => api.getFlaggedProducts();
+
+  // Patches the already-loaded product locally rather than refetching — the
+  // moderate response only carries the moderation fields, not a full
+  // Product, so replacing the whole row would drop everything else the
+  // client already has (same idea as applyCategoryOverrides above).
+  const handleModerateProduct = async (id, status, reason) => {
+    const result = await api.moderateProduct(id, status, reason);
+    setProducts((ps) =>
+      ps.map((p) => (p.id === id ? { ...p, moderationStatus: result.moderationStatus, moderationReason: result.moderationReason } : p))
+    );
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return result;
+  };
+
+  const handleLoadProductReports = () => api.getProductReports();
+
+  const handleResolveProductReport = async (reportId, outcome, productId, productName) => {
+    const result = await api.resolveProductReport(reportId, outcome, null, productId, productName);
+    if (result.removed && productId) {
+      setProducts((ps) => ps.map((p) => (p.id === productId ? { ...p, moderationStatus: "removed" } : p)));
+    }
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    return result;
+  };
+
   const handlePromoteToAdmin = async (phone, adminRole) => {
     const promoted = await api.promoteToAdmin(phone, adminRole);
     api.getAdminActions().then(setAdminActions).catch(() => {});
@@ -984,6 +1026,25 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [products]);
 
+  // The store page's "Message seller" button points at
+  // /?messageSeller=<name> (see app/store/[slug]/page.tsx) — a buyer with no
+  // session lands on Login first (App.jsx never renders MainApp without one)
+  // and the param survives that detour, so this only needs `user` to be
+  // ready, not `products`. Cleared the same way the product deep link is, so
+  // a refresh doesn't reopen the thread.
+  const messageDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (messageDeepLinkHandled.current || !user) return;
+    const params = new URLSearchParams(window.location.search);
+    const wantedSeller = params.get("messageSeller");
+    messageDeepLinkHandled.current = true;
+    if (!wantedSeller) return;
+    openConversationWithSeller(wantedSeller);
+    params.delete("messageSeller");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [user]);
+
   // An unlock outlives a page reload (it lives on the session row, not in
   // memory), so ask once on load rather than making the admin sign in again
   // for nothing. A non-admin never calls this.
@@ -1046,14 +1107,18 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     return () => clearInterval(interval);
   }, [activeThread?.id]);
 
-  const handleContactSeller = async (product) => {
+  // Split out from handleContactSeller below so the store page's "Message
+  // seller" deep link (?messageSeller=<name>) can open the same thread
+  // without needing a product object — /store/[slug] only has the seller's
+  // public name, never a Product.
+  const openConversationWithSeller = async (sellerName) => {
     if (!user) {
       showToast("Log in to message a seller.", "error");
       return;
     }
     try {
-      const conversationId = await api.startConversation(product.seller);
-      setActiveThread({ id: conversationId, otherParty: { businessName: product.seller, name: product.seller } });
+      const conversationId = await api.startConversation(sellerName);
+      setActiveThread({ id: conversationId, otherParty: { businessName: sellerName, name: sellerName } });
       setThreadLoading(true);
       setProduct(null);
       const messages = await api.getMessages(conversationId);
@@ -1063,6 +1128,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     } finally {
       setThreadLoading(false);
     }
+  };
+
+  const handleContactSeller = (product) => openConversationWithSeller(product.seller);
+
+  const handleReportProduct = async (productId, reason, details) => {
+    if (!user) {
+      throw new Error("Log in to report a listing.");
+    }
+    return api.reportProduct(productId, reason, details);
   };
 
   if (!loaded) {
@@ -1079,8 +1153,11 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
 
   // A listing a plan downgrade deactivated still exists (see
   // lib/subscriptions.ts) but shouldn't show up to buyers — only on the
-  // owning seller's own dashboard, where it's marked as hidden.
-  const buyerVisibleProducts = products.filter((p) => p.active !== false);
+  // owning seller's own dashboard, where it's marked as hidden. Same idea
+  // for a listing an admin removed for a policy violation (migration 027,
+  // moderationStatus) — 'under_review' still shows (it's only a soft flag
+  // for a human to look at), 'removed' doesn't.
+  const buyerVisibleProducts = products.filter((p) => p.active !== false && p.moderationStatus !== "removed");
 
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
@@ -1122,7 +1199,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           />
         )}
         {screen === "sellers" && (
-          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} />
+          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} initialQuery={sellerQuery} />
         )}
         {screen === "storePlans" && (
           isSeller ? (
@@ -1254,6 +1331,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
               onLoadCategories={handleLoadCategories}
               onCreateCategory={handleCreateCategory}
               onUpdateCategory={handleUpdateCategory}
+              onLoadModerationRules={handleLoadModerationRules}
+              onCreateModerationRule={handleCreateModerationRule}
+              onUpdateModerationRule={handleUpdateModerationRule}
+              onLoadFlaggedProducts={handleLoadFlaggedProducts}
+              onModerateProduct={handleModerateProduct}
+              onLoadProductReports={handleLoadProductReports}
+              onResolveProductReport={handleResolveProductReport}
               onLoadRiskSignals={handleLoadRiskSignals}
               onLoadTickets={handleLoadAdminTickets}
               onLoadTicket={handleLoadAdminTicket}
@@ -1376,6 +1460,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           savedIds={savedIds}
           onToggleSaved={handleToggleSaved}
           myLocation={myLocation}
+          onReportProduct={handleReportProduct}
+          showToast={showToast}
         />
       )}
 

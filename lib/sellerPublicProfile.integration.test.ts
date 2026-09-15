@@ -157,6 +157,26 @@ describe("public seller profile — what it returns", () => {
 
     expect(result.profile.listings.map((p) => p.id)).toEqual(["p_1"]);
   });
+
+  // Migration 027 — a listing an admin removed for a policy violation must
+  // never appear on the public storefront, same as an admin-suspended
+  // seller's storefront hides entirely below. 'under_review' is only a soft
+  // flag for a human to look at (see lib/productReports.ts) and still shows.
+  it("hides a listing an admin removed, but still shows one only flagged under_review", async () => {
+    fakeDb.reset({
+      sellers: [seedSeller()],
+      products: [
+        seedProduct(),
+        seedProduct({ id: "p_removed", name: "Removed item", moderation_status: "removed" }),
+        seedProduct({ id: "p_flagged", name: "Flagged item", moderation_status: "under_review" }),
+      ],
+    });
+
+    const result = await getPublicSellerProfile("seller_1", listings);
+    if (result.status !== "ok") throw new Error("expected a profile");
+
+    expect(result.profile.listings.map((p) => p.id).sort()).toEqual(["p_1", "p_flagged"]);
+  });
 });
 
 describe("public seller profile — visibility rules", () => {

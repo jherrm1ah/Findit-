@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star, MapPin } from "lucide-react";
-import { GROUPS, naira } from "./data";
+import { GROUPS, categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
@@ -98,7 +98,7 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
           <div key={p.id} className="relative text-left">
             <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
               <div className="relative rounded-[20px] overflow-hidden mb-2">
-                <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+                <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
                 {p.verified && (
                   <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
                     <BadgeCheck size={12} className="text-[#7C3AED]" />

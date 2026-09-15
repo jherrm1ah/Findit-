@@ -20,6 +20,15 @@ function describeAction(a) {
   if (a.action === "order.payment_released") return `Released payment to ${a.detail?.seller ?? "the seller"} for "${a.detail?.item ?? a.targetId}"`;
   if (a.action === "admin_session_started") return a.detail?.issuedSession ? "Signed in on the staff screen" : "Opened an admin session";
   if (a.action === "admin_session_ended") return "Left admin mode";
+  if (a.action === "moderation_rule.created") return `Added moderation rule "${a.detail?.keyword ?? a.targetId}"`;
+  if (a.action === "moderation_rule.updated") return `Updated moderation rule "${a.detail?.keyword ?? a.targetId}"`;
+  if (a.action === "product.moderated") {
+    const name = a.detail?.name ?? a.targetId;
+    if (a.detail?.status === "removed") return `Removed listing "${name}"${a.detail?.reason ? `: ${a.detail.reason}` : ""}`;
+    if (a.detail?.status === "under_review") return `Flagged listing "${name}" for review${a.detail?.reason ? `: ${a.detail.reason}` : ""}`;
+    return `Restored listing "${name}"`;
+  }
+  if (a.action === "product_report.resolved") return `${a.detail?.outcome === "dismissed" ? "Dismissed" : "Resolved"} a report on "${a.detail?.productName ?? a.targetId}"`;
   return `${a.action} (${a.targetType} ${a.targetId})`;
 }
 
@@ -725,8 +734,10 @@ function AdminOverview({ overview, onNavigate }) {
       )}
 
       {overview.moderation && (
-        <OverviewSection icon={PackageX} title="Disputes">
+        <OverviewSection icon={PackageX} title="Disputes & moderation">
           <StatCard label="Payments held on a reported problem" value={overview.moderation.openDisputes} onClick={() => onNavigate("sellers")} />
+          <StatCard label="Flagged products" value={overview.moderation.flaggedProducts} onClick={() => onNavigate("moderation")} />
+          <StatCard label="Reported products" value={overview.moderation.reportedProducts} onClick={() => onNavigate("moderation")} />
         </OverviewSection>
       )}
 
@@ -1687,6 +1698,285 @@ function CategoriesAdmin({ onLoadCategories, onCreateCategory, onUpdateCategory,
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Product moderation — migration 027                                 */
+/* ------------------------------------------------------------------ */
+
+const REPORT_REASON_LABELS = {
+  prohibited_item: "Prohibited item",
+  counterfeit: "Possible counterfeit",
+  scam: "Possible scam",
+  spam: "Spam",
+  inappropriate: "Inappropriate content",
+  other: "Other",
+};
+
+// One prohibited-item keyword rule's editable fields — same shape as
+// CategoryEditorCard above. Never edits `id`.
+function RuleEditorCard({ rule, onSave }) {
+  const [form, setForm] = useState({ keyword: rule.keyword, reason: rule.reason, severity: rule.severity, active: rule.active });
+  const [saving, setSaving] = useState(false);
+  const set = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onSave(rule.id, form);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-xl p-3.5 mb-2.5 flex items-center gap-2.5 flex-wrap">
+      <input
+        value={form.keyword}
+        onChange={(e) => set("keyword", e.target.value)}
+        placeholder="Keyword"
+        className="flex-1 min-w-[100px] text-[13px] font-semibold text-[#1E1B4B] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 outline-none"
+      />
+      <input
+        value={form.reason}
+        onChange={(e) => set("reason", e.target.value)}
+        placeholder="Reason shown to the seller"
+        className="flex-[2] min-w-[160px] text-[12px] text-[#514B67] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 outline-none"
+      />
+      <select
+        value={form.severity}
+        onChange={(e) => set("severity", e.target.value)}
+        className="text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-1.5 outline-none shrink-0"
+      >
+        <option value="flag">Flag for review</option>
+        <option value="block">Block outright</option>
+      </select>
+      <label className="flex items-center gap-1.5 text-[10.5px] font-semibold text-[#514B67] shrink-0">
+        <input type="checkbox" checked={form.active} onChange={(e) => set("active", e.target.checked)} />
+        Active
+      </label>
+      <button
+        onClick={save}
+        disabled={saving}
+        className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60 shrink-0"
+        style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+      >
+        {saving ? "…" : "Save"}
+      </button>
+    </div>
+  );
+}
+
+function ModerationRulesAdmin({ onLoadRules, onCreateRule, onUpdateRule, showToast }) {
+  const [rules, setRules] = useState(null);
+  const [newKeyword, setNewKeyword] = useState("");
+  const [newReason, setNewReason] = useState("");
+  const [newSeverity, setNewSeverity] = useState("flag");
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    onLoadRules().then(setRules).catch(() => setRules([]));
+  }, []);
+
+  const save = async (id, patch) => {
+    try {
+      const updated = await onUpdateRule(id, patch);
+      setRules((rs) => rs.map((r) => (r.id === id ? updated : r)));
+      showToast?.(`"${updated.keyword}" updated.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that rule.", "error");
+    }
+  };
+
+  const create = async (e) => {
+    e.preventDefault();
+    if (!newKeyword.trim() || !newReason.trim()) return;
+    setCreating(true);
+    try {
+      const created = await onCreateRule(newKeyword, newReason, newSeverity);
+      setRules((rs) => [created, ...(rs || [])]);
+      setNewKeyword("");
+      setNewReason("");
+      showToast?.(`"${created.keyword}" added.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't add that rule.", "error");
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (!rules) return <p className="text-[12px] text-[#6B6483]">Loading moderation rules…</p>;
+
+  return (
+    <div>
+      <form onSubmit={create} className="flex gap-2 mb-4 flex-wrap">
+        <input
+          value={newKeyword}
+          onChange={(e) => setNewKeyword(e.target.value)}
+          placeholder="Keyword"
+          className="flex-1 min-w-[100px] border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+        />
+        <input
+          value={newReason}
+          onChange={(e) => setNewReason(e.target.value)}
+          placeholder="Reason shown to the seller"
+          className="flex-[2] min-w-[160px] border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none"
+        />
+        <select
+          value={newSeverity}
+          onChange={(e) => setNewSeverity(e.target.value)}
+          className="text-[11.5px] border border-[#ECE9F7] rounded-lg px-2 py-2 outline-none"
+        >
+          <option value="flag">Flag for review</option>
+          <option value="block">Block outright</option>
+        </select>
+        <button
+          type="submit"
+          disabled={creating || !newKeyword.trim() || !newReason.trim()}
+          className="flex items-center gap-1 text-[12px] font-semibold text-white px-3.5 rounded-xl disabled:opacity-40"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <Plus size={13} /> {creating ? "Adding…" : "Add"}
+        </button>
+      </form>
+
+      {rules.length === 0 && <p className="text-[12px] text-[#6B6483] mb-4">No rules yet — every listing is only checked by a human.</p>}
+      {rules.map((r) => <RuleEditorCard key={r.id} rule={r} onSave={save} />)}
+    </div>
+  );
+}
+
+// Every listing currently under_review — a moderation rule match or a buyer
+// report, see lib/productReports.ts#listFlaggedProductsForAdmin. Self-loading,
+// same useState(null)-sentinel idiom as CategoriesAdmin/RiskSignals.
+function FlaggedProducts({ onLoadFlaggedProducts, onModerateProduct, showToast }) {
+  const [products, setProducts] = useState(null);
+  const [acting, setActing] = useState(null);
+
+  useEffect(() => {
+    onLoadFlaggedProducts().then(setProducts).catch(() => setProducts([]));
+  }, []);
+
+  const act = async (id, status, reason) => {
+    setActing(id);
+    try {
+      await onModerateProduct(id, status, reason);
+      setProducts((ps) => ps.filter((p) => p.id !== id));
+      showToast?.(status === "removed" ? "Listing removed." : "Flag cleared.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that listing.", "error");
+    } finally {
+      setActing(null);
+    }
+  };
+
+  if (!products) return <p className="text-[12px] text-[#6B6483]">Loading flagged listings…</p>;
+  if (products.length === 0) {
+    return <p className="text-[12px] text-[#6B6483] mb-7">Nothing flagged right now.</p>;
+  }
+  return (
+    <div className="space-y-3 mb-7">
+      {products.map((p) => (
+        <div key={p.id} className="bg-white border border-[#F5D9A8] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{p.name}</p>
+              <p className="text-[11px] text-[#6B6483]">{p.seller}</p>
+            </div>
+            <Pill tone="gold"><ShieldAlert size={11} /> Needs review</Pill>
+          </div>
+          {p.moderationReason && (
+            <p className="text-[12px] text-[#514B67] bg-[#FDF6EC] rounded-xl px-3 py-2 my-2.5">{p.moderationReason}</p>
+          )}
+          {p.openReportCount > 0 && (
+            <p className="text-[11px] text-[#6B6483] mb-3">{p.openReportCount} open report{p.openReportCount === 1 ? "" : "s"}</p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={() => act(p.id, "removed", p.moderationReason || "Removed by an admin.")}
+              disabled={acting !== null}
+              className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+              style={{ background: "linear-gradient(135deg,#E64980,#C22468)" }}
+            >
+              {acting === p.id ? "Working…" : "Remove listing"}
+            </button>
+            <button
+              onClick={() => act(p.id, "active", null)}
+              disabled={acting !== null}
+              className={`flex-1 bg-white border border-[#ECE9F7] text-[#6B6483] text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+            >
+              Clear flag
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// The buyer "report this listing" queue — same shape as ReportedProblems
+// below. Resolving as "resolved" removes the listing in the same call (see
+// app/api/admin/product-reports/route.ts); "dismissed" only closes the report.
+// Self-loading, same idiom as FlaggedProducts above.
+function ProductReportsQueue({ onLoadProductReports, onResolveProductReport, showToast }) {
+  const [reports, setReports] = useState(null);
+  const [acting, setActing] = useState(null);
+
+  useEffect(() => {
+    onLoadProductReports().then(setReports).catch(() => setReports([]));
+  }, []);
+
+  const resolve = async (report, outcome) => {
+    setActing(report.id);
+    try {
+      await onResolveProductReport(report.id, outcome, report.productId, report.productName);
+      setReports((rs) => rs.filter((r) => r.id !== report.id));
+      showToast?.(outcome === "resolved" ? "Listing removed." : "Report dismissed.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't resolve that report.", "error");
+    } finally {
+      setActing(null);
+    }
+  };
+
+  if (!reports) return <p className="text-[12px] text-[#6B6483]">Loading reports…</p>;
+  if (reports.length === 0) {
+    return <p className="text-[12px] text-[#6B6483] mb-7">No open reports — every reported listing has been reviewed.</p>;
+  }
+  return (
+    <div className="space-y-3 mb-7">
+      {reports.map((r) => (
+        <div key={r.id} className="bg-white border border-[#F5D9A8] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-start justify-between mb-1">
+            <div>
+              <p className="text-[13px] font-semibold text-[#1E1B4B]">{r.productName ?? r.productId}</p>
+              <p className="text-[11px] text-[#6B6483]">{r.productSeller} · reported by {r.reporterName ?? "a buyer"}</p>
+            </div>
+            <Pill tone="gold"><AlertTriangle size={11} /> {REPORT_REASON_LABELS[r.reason] ?? r.reason}</Pill>
+          </div>
+          {r.details && <p className="text-[12px] text-[#514B67] bg-[#FDF6EC] rounded-xl px-3 py-2 my-2.5">"{r.details}"</p>}
+          <p className="text-[11px] text-[#6B6483] mb-3">Reported {new Date(r.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => resolve(r, "resolved")}
+              disabled={acting !== null}
+              className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+              style={{ background: "linear-gradient(135deg,#E64980,#C22468)" }}
+            >
+              {acting === r.id ? "Working…" : "Remove listing"}
+            </button>
+            <button
+              onClick={() => resolve(r, "dismissed")}
+              disabled={acting !== null}
+              className={`flex-1 bg-white border border-[#ECE9F7] text-[#6B6483] text-[12px] font-semibold py-2 rounded-xl ${acting !== null ? "opacity-60" : ""}`}
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Real, computed-from-actual-orders signals — never a fabricated "fraud
 // score." See lib/risk.ts for exactly what "risk" means here (a seller's
 // real dispute rate, gated on a minimum order count so one bad order out
@@ -2096,6 +2386,13 @@ export default function AdminQueue({
   onLoadCategories,
   onCreateCategory,
   onUpdateCategory,
+  onLoadModerationRules,
+  onCreateModerationRule,
+  onUpdateModerationRule,
+  onLoadFlaggedProducts,
+  onModerateProduct,
+  onLoadProductReports,
+  onResolveProductReport,
   onLoadRiskSignals,
   onLoadTickets,
   onLoadTicket,
@@ -2130,6 +2427,7 @@ export default function AdminQueue({
     can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
     can("finance") && { key: "analytics", label: "Analytics", icon: BarChart3 },
     can("moderation") && { key: "categories", label: "Categories", icon: Tag },
+    can("moderation") && { key: "moderation", label: "Moderation", icon: Ban },
     can("moderation") && { key: "risk", label: "Risk", icon: ShieldAlert },
     can("support") && { key: "support", label: "Support", icon: MessageCircle },
     { key: "requests", label: "Requests", icon: AlertTriangle },
@@ -2315,6 +2613,42 @@ export default function AdminQueue({
             onLoadCategories={onLoadCategories}
             onCreateCategory={onCreateCategory}
             onUpdateCategory={onUpdateCategory}
+            showToast={showToast}
+          />
+        </>
+      )}
+
+      {activeTab === "moderation" && can("moderation") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <ShieldAlert size={13} className="text-[#D97706]" /> Flagged listings
+          </p>
+          <FlaggedProducts
+            onLoadFlaggedProducts={onLoadFlaggedProducts}
+            onModerateProduct={onModerateProduct}
+            showToast={showToast}
+          />
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <AlertTriangle size={13} className="text-[#D97706]" /> Reported listings
+          </p>
+          <ProductReportsQueue
+            onLoadProductReports={onLoadProductReports}
+            onResolveProductReport={onResolveProductReport}
+            showToast={showToast}
+          />
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Ban size={13} className="text-[#7C3AED]" /> Prohibited-item rules
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            A 'block' rule refuses a matching listing outright; 'flag' lets it through but queues it
+            here for a human look. Matched case-insensitively against a listing's name and description.
+          </p>
+          <ModerationRulesAdmin
+            onLoadRules={onLoadModerationRules}
+            onCreateRule={onCreateModerationRule}
+            onUpdateRule={onUpdateModerationRule}
             showToast={showToast}
           />
         </>

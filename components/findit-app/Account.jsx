@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, CreditCard } from "lucide-react";
-import { GROUPS, naira } from "./data";
+import { categoryGroup, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 
 export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
@@ -326,7 +326,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
         {saved.map((p) => (
           <button key={p.id} onClick={() => openProduct(p)} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
-              <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-28 w-full" />
+              <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-28 w-full" />
               <span className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
                 <Heart size={14} className="fill-[#E64980] text-[#E64980]" />
               </span>

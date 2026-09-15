@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Image from "next/image";
 import { notFound } from "next/navigation";
+import { MessageCircle, ShieldCheck, BadgeCheck } from "lucide-react";
 import { getPublicStoreBySlug, appBaseUrl } from "@/lib/store";
+import { listCategories } from "@/lib/categoryCatalog";
+import StoreListings from "./StoreListings";
 
 // The dedicated public storefront. This is the first real server-rendered
 // route in FindIt — everything else is the client app behind "/" — and it is
@@ -15,8 +18,6 @@ import { getPublicStoreBySlug, appBaseUrl } from "@/lib/store";
 // bank details, admin notes, verification evidence and phone numbers are
 // never read, so they cannot be rendered or leak into metadata.
 export const dynamic = "force-dynamic";
-
-const naira = (amount: number) => `₦${amount.toLocaleString("en-NG")}`;
 
 const LEVEL_LABEL: Record<string, string> = {
   new: "New seller",
@@ -69,7 +70,12 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 }
 
 export default async function StorePage({ params }: { params: { slug: string } }) {
-  const result = await getPublicStoreBySlug(params.slug);
+  // Run alongside the store lookup rather than after it — this server
+  // component can call the same category catalog the admin dashboard edits
+  // directly, so the search/filter UI below shows a seller's real category
+  // labels ("Phone & Tech") instead of the raw internal key ("phonetech").
+  const [result, categories] = await Promise.all([getPublicStoreBySlug(params.slug), listCategories()]);
+  const categoryLabels = Object.fromEntries(categories.map((c) => [c.id, c.label]));
 
   // An unknown or retired-and-reassigned slug, a suspended seller, or a
   // rejected one. All answer identically: a buyer has no business learning
@@ -117,38 +123,55 @@ export default async function StorePage({ params }: { params: { slug: string } }
       )}
 
       <div className="max-w-3xl mx-auto px-5">
-        <header className={`flex items-start gap-4 ${profile.bannerUrl ? "-mt-10" : "-mt-8"} mb-5`}>
-          <div
-            className="relative w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-4 border-[#FAFAFF] flex items-center justify-center text-white text-[26px] font-bold"
-            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-          >
-            {profile.logoUrl ? (
-              <Image src={profile.logoUrl} alt="" fill sizes="80px" className="object-cover" />
-            ) : (
-              profile.name.charAt(0).toUpperCase()
-            )}
+        <header className={`flex items-start justify-between gap-4 flex-wrap ${profile.bannerUrl ? "-mt-10" : "-mt-8"} mb-5`}>
+          <div className="flex items-start gap-4 min-w-0">
+            <div
+              className="relative w-20 h-20 rounded-2xl shrink-0 overflow-hidden border-4 border-[#FAFAFF] flex items-center justify-center text-white text-[26px] font-bold"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              {profile.logoUrl ? (
+                <Image src={profile.logoUrl} alt="" fill sizes="80px" className="object-cover" />
+              ) : (
+                profile.name.charAt(0).toUpperCase()
+              )}
+            </div>
+
+            <div className="min-w-0 pt-11">
+              <h1
+                className="text-[22px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap"
+                style={{ fontFamily: "Fraunces, serif" }}
+              >
+                {profile.name}
+                {profile.proBadge && (
+                  <span
+                    className="text-[10px] font-bold text-white px-2 py-0.5 rounded-full"
+                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                  >
+                    PRO
+                  </span>
+                )}
+              </h1>
+            </div>
           </div>
 
-          <div className="min-w-0 pt-11">
-            <h1
-              className="text-[22px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap"
-              style={{ fontFamily: "Fraunces, serif" }}
-            >
-              {profile.name}
-              {profile.proBadge && (
-                <span
-                  className="text-[10px] font-bold text-white px-2 py-0.5 rounded-full"
-                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-                >
-                  PRO
-                </span>
-              )}
-            </h1>
-          </div>
+          {/* Goes through the SPA's session check, same as the "Open FindIt"
+              link below — a signed-out buyer lands on Login first (App.jsx
+              never renders MainApp without a session) and the param survives
+              that detour, so it still opens the thread once they're in. */}
+          <Link
+            href={`/?messageSeller=${encodeURIComponent(profile.name)}`}
+            className="mt-11 shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
+            style={{ background: "#1E1B4B" }}
+          >
+            <MessageCircle size={14} /> Message seller
+          </Link>
         </header>
 
         <div className="flex items-center gap-2 flex-wrap mb-4 text-[11.5px]">
-          <span className="px-2.5 py-1 rounded-full bg-[#F1ECFD] text-[#7C3AED] font-semibold">
+          <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F1ECFD] text-[#7C3AED] font-semibold">
+            {(profile.verificationLevel === "verified" || profile.verificationLevel === "trusted") && (
+              <BadgeCheck size={12} />
+            )}
             {LEVEL_LABEL[profile.verificationLevel] ?? "New seller"}
           </span>
           {profile.category && (
@@ -193,31 +216,19 @@ export default async function StorePage({ params }: { params: { slug: string } }
           )}
         </dl>
 
-        <h2 className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">
-          {profile.listings.length} listing{profile.listings.length === 1 ? "" : "s"}
-        </h2>
-
-        {profile.listings.length === 0 ? (
-          <p className="text-[13px] text-[#6B6483] py-10 text-center bg-white border border-[#ECE9F7] rounded-2xl">
-            This store has no active listings right now.
+        {/* Same escrow promise ProductDetail.jsx gives a buyer inside the app
+            — repeated here because a store link is often someone's very
+            first touch with FindIt, before they've seen that reassurance
+            anywhere else. */}
+        <div className="flex items-center gap-2.5 bg-[#F1ECFD] rounded-2xl px-4 py-3 mb-7">
+          <ShieldCheck size={16} className="text-[#7C3AED] shrink-0" />
+          <p className="text-[12px] text-[#4C1D95] leading-snug">
+            Every order here is protected by FindIt — your payment is held and only released to{" "}
+            {profile.name} once you confirm delivery.
           </p>
-        ) : (
-          <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-6 list-none p-0 m-0">
-            {profile.listings.map((product) => (
-              <li key={product.id}>
-                <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group">
-                  <div className="relative rounded-2xl overflow-hidden bg-[#EDE9FB] h-32 mb-2">
-                    {product.imageUrl && (
-                      <Image src={product.imageUrl} alt="" fill sizes="(max-width: 640px) 50vw, 33vw" className="object-cover" />
-                    )}
-                  </div>
-                  <p className="text-[12.5px] font-medium text-[#1E1B4B] leading-tight line-clamp-2">{product.name}</p>
-                  <p className="text-[13px] font-bold text-[#1E1B4B] mt-0.5">{naira(product.price)}</p>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
+        </div>
+
+        <StoreListings listings={profile.listings} categoryLabels={categoryLabels} />
 
         {profile.reviews.length > 0 && (
           <div className="mt-8">
