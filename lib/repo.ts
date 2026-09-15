@@ -2107,10 +2107,11 @@ export async function acceptOffer(
 // A buyer's own request had no way to be closed once posted — the status
 // column already models 'cancelled' (see migration/schema), nothing ever
 // wrote it. Only the owning buyer, and only while still 'open' — a
-// 'matched' request already has a real order behind it, cancelling the
-// REQUEST at that point wouldn't touch the order anyway, so it would just
-// be a confusing no-op state; the buyer cancels the order instead if that's
-// what they actually want.
+// 'matched' request already has a real order behind it, and cancelling the
+// REQUEST at that point wouldn't touch that order (ORDER_STATUSES has no
+// 'Cancelled' state at all yet — a genuinely separate, larger gap, not
+// something this function can paper over), so it would just be a confusing
+// no-op that looks like it did something it didn't.
 export async function cancelRequest(requestId: string, userId: string): Promise<RequestRow | null> {
   const db = getDb();
   const result = await db
