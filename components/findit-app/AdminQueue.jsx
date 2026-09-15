@@ -211,6 +211,7 @@ function BroadcastForm({ onSendBroadcast, showToast }) {
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         placeholder="Announcement title"
+        maxLength={200}
         className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none"
       />
       <textarea
@@ -218,6 +219,7 @@ function BroadcastForm({ onSendBroadcast, showToast }) {
         onChange={(e) => setBody(e.target.value)}
         placeholder="What do you want to tell them?"
         rows={3}
+        maxLength={2000}
         className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none resize-none"
       />
       <div className="flex items-center gap-2">

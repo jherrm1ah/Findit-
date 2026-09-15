@@ -64,6 +64,7 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Type a message…"
+          maxLength={2000}
           className="flex-1 bg-[#F5F2FC] rounded-full px-4 py-2.5 text-[13px] outline-none text-[#1E1B4B] placeholder:text-[#8A8372]"
         />
         <button
