@@ -52,6 +52,18 @@ export const GROUPS = Object.fromEntries(
 // being deleted from it — an OLDER listing/request already tagged with that
 // category still needs a label/icon to display, same as a lapsed Store plan
 // never deletes a seller's existing listings.
+// Safe accessor for a product/request's category — GROUPS[key] is undefined
+// until applyCategoryOverrides runs for any category outside the static
+// default 15 (a brand-new admin-created one), and getProducts()/getRequests()
+// resolve independently of, often before, GET /api/categories (see MainApp's
+// bootstrap effect) — so that gap is real, not just theoretical. Every
+// render-time GROUPS[key] lookup should go through this rather than
+// indexing GROUPS directly, the same "never let a database row crash the
+// render" principle applyCategoryOverrides above already applies to iconKey.
+export function categoryGroup(key) {
+  return GROUPS[key] || { label: key || "Uncategorized", icon: Package };
+}
+
 export function applyCategoryOverrides(categories) {
   for (const c of categories) {
     GROUPS[c.id] = { label: c.label, icon: CATEGORY_ICON_COMPONENTS[c.iconKey] || Package };

@@ -8,6 +8,30 @@ import MainApp from "./MainApp";
 import ToastHost from "./Toast";
 import { api, setSessionExpiredHandler } from "./api";
 
+// Whether this browser has ever clicked through (or skipped) the onboarding
+// tutorial — same try/catch-wrapped localStorage pattern as
+// location.js#getStoredLocation. Without this, EVERY page refresh forced a
+// returning, already-logged-in user back through three manual "Next" taps
+// before their session was even checked — indistinguishable, from the
+// outside, from being logged out on every reload.
+const ONBOARDING_SEEN_KEY = "findit_onboarding_seen";
+
+function hasSeenOnboarding() {
+  try {
+    return localStorage.getItem(ONBOARDING_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markOnboardingSeen() {
+  try {
+    localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+  } catch {
+    // best-effort — private browsing / storage blocked, just re-shows once
+  }
+}
+
 export default function App() {
   const [phase, setPhase] = useState("splash"); // splash → onboarding → login → main
   const [user, setUser] = useState(null);
@@ -59,6 +83,22 @@ export default function App() {
     }
   };
 
+  // Only a browser that has never clicked through (or skipped) onboarding
+  // sees it — everyone else goes straight to the session check above, so a
+  // returning user's own session (not the tutorial) decides what they see.
+  const handleSplashDone = () => {
+    if (hasSeenOnboarding()) {
+      goToMainOrLogin();
+    } else {
+      setPhase("onboarding");
+    }
+  };
+
+  const handleOnboardingDone = () => {
+    markOnboardingSeen();
+    goToMainOrLogin();
+  };
+
   const handleLogout = async () => {
     try {
       await api.logout();
@@ -71,9 +111,9 @@ export default function App() {
 
   let content;
   if (phase === "splash") {
-    content = <Splash onDone={() => setPhase("onboarding")} />;
+    content = <Splash onDone={handleSplashDone} />;
   } else if (phase === "onboarding") {
-    content = <Onboarding onDone={goToMainOrLogin} />;
+    content = <Onboarding onDone={handleOnboardingDone} />;
   } else if (phase === "login") {
     content = (
       <Login

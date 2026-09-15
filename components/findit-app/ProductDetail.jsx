@@ -5,7 +5,7 @@ import {
   ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
   Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
-import { GROUPS, naira } from "./data";
+import { categoryGroup, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
@@ -48,7 +48,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
       setReportSubmitting(false);
     }
   };
-  const Icon = GROUPS[product.category].icon;
+  const Icon = categoryGroup(product.category).icon;
   const total = product.price * qty;
   const km = myLocation && product.lat != null && product.lng != null
     ? haversineKm(myLocation.lat, myLocation.lng, product.lat, product.lng)
@@ -102,7 +102,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
         )}
 
         <div className="flex items-start justify-between mb-1">
-          <p className="text-[12px] text-[#8A8372]">{GROUPS[product.category].label}</p>
+          <p className="text-[12px] text-[#8A8372]">{categoryGroup(product.category).label}</p>
           <button
             onClick={() => onToggleSaved(product.id)}
             aria-label={savedIds.includes(product.id) ? "Remove from saved items" : "Save item"}

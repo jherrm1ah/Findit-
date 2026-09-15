@@ -7,7 +7,7 @@ import {
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
   LayoutDashboard, MapPin, Store,
 } from "lucide-react";
-import { GROUPS, naira } from "./data";
+import { GROUPS, categoryGroup, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
 import { haversineKm } from "@/lib/geo";
 
@@ -181,7 +181,7 @@ export default function Home({
           <div key={p.id} className="relative text-left">
             <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
               <div className="relative rounded-[20px] overflow-hidden mb-2">
-                <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+                <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               </div>
               <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
               <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
-import { GROUPS, naira } from "./data";
+import { categoryGroup, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
@@ -194,7 +194,7 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
           {listings.map((p) => (
             <button key={p.id} onClick={() => onOpenProduct(p)} className="text-left">
               <div className="relative rounded-[20px] overflow-hidden mb-2">
-                <ArtBlock icon={GROUPS[p.category].icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+                <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               </div>
               <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
               <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
