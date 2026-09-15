@@ -111,9 +111,42 @@ export default async function StorePage({ params }: { params: { slug: string } }
 
   const { store } = result;
   const { profile } = store;
+  const base = appBaseUrl();
+
+  // Structured data for rich results — a seller's own name/rating/products in
+  // a Google Search card instead of a plain blue link. Built only from
+  // fields already public on this page (see the module comment above on why
+  // that boundary matters); aggregateRating is omitted entirely rather than
+  // faked when there are no reviews yet, since Google's own guidelines
+  // disallow a rating with no real review count behind it.
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Store",
+    name: profile.name,
+    description: profile.description || undefined,
+    image: profile.logoUrl || profile.bannerUrl || undefined,
+    url: base ? `${base}/store/${store.canonicalSlug}` : undefined,
+    address: profile.location ? { "@type": "PostalAddress", addressLocality: profile.location } : undefined,
+    ...(profile.reviewCount > 0 && profile.rating != null
+      ? {
+          aggregateRating: {
+            "@type": "AggregateRating",
+            ratingValue: profile.rating,
+            reviewCount: profile.reviewCount,
+          },
+        }
+      : {}),
+  };
 
   return (
     <main className="min-h-screen bg-[#FAFAFF] pb-16">
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger -- JSON.stringify of our
+        // own server-built object above, not user HTML; this is the
+        // standard Next.js pattern for embedding JSON-LD.
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       {profile.bannerUrl ? (
         <div className="relative h-36 sm:h-48 w-full overflow-hidden bg-[#EDE9FB]">
           <Image src={profile.bannerUrl} alt="" fill sizes="100vw" priority className="object-cover" />
