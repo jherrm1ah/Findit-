@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOpenRequests, createRequest } from "@/lib/repo";
+import { listOpenRequests, createRequest, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
       { status: 403 }
     );
   }
-  return NextResponse.json({ requests: await listOpenRequests() });
+  // Only a seller has offers of their own to distinguish from everyone
+  // else's — see listOpenRequests for why this can't just use offerCount.
+  const sellerId = user.role === "seller" ? await getSellerIdForUser(user.id) : null;
+  return NextResponse.json({ requests: await listOpenRequests(sellerId) });
 }
 
 export async function POST(req: NextRequest) {

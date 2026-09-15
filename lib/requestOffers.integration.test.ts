@@ -16,7 +16,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { addSellerOfferToRequest, sendMessage, cancelRequest, ValidationError } = await import("./repo");
+const { addSellerOfferToRequest, sendMessage, cancelRequest, listOpenRequests, ValidationError } = await import("./repo");
 
 function seedRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -107,5 +107,40 @@ describe("cancelRequest", () => {
 
   it("returns null for a request that doesn't exist", async () => {
     expect(await cancelRequest("nope", "buyer_1")).toBeNull();
+  });
+});
+
+// The actual bug this closes: SellerDashboard.jsx used to gate its own
+// "Send offer" button on offerCount > 0 — every seller's offers combined —
+// so a request with even ONE offer from ANY seller read as "you already
+// responded" for every OTHER seller too, hiding their own button on a
+// request they'd never touched. myOfferSent is the per-seller signal that
+// actually answers "did *I* offer on this."
+describe("listOpenRequests — myOfferSent is per-seller, not the aggregate offerCount", () => {
+  function seedTwoSellerRequest() {
+    fakeDb.reset({
+      requests: [{ id: "req_1", user_id: "buyer_1", title: "Need a blender", status: "open", created_at: new Date().toISOString() }],
+      offers: [{ id: "off_1", request_id: "req_1", seller: "Kemi's Kitchen", seller_id: "seller_a", price: 5000 }],
+    });
+  }
+
+  it("is false for a seller who never sent an offer, even though offerCount is 1", async () => {
+    seedTwoSellerRequest();
+    const [request] = await listOpenRequests("seller_b");
+    expect(request.offerCount).toBe(1);
+    expect(request.myOfferSent).toBe(false);
+  });
+
+  it("is true for the seller who actually sent the offer", async () => {
+    seedTwoSellerRequest();
+    const [request] = await listOpenRequests("seller_a");
+    expect(request.myOfferSent).toBe(true);
+  });
+
+  it("is undefined (not checked at all) when called with no viewer — e.g. an admin", async () => {
+    seedTwoSellerRequest();
+    const [request] = await listOpenRequests();
+    expect(request.myOfferSent).toBeUndefined();
+    expect(request.offerCount).toBe(1);
   });
 });
