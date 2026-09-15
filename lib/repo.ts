@@ -1998,6 +1998,15 @@ export async function addSellerOfferToRequest(
   const request = assertNoError(requestResult, "loading request") as Row | null;
   if (!request) return null;
 
+  // A request already 'matched' (the buyer accepted someone else's offer)
+  // or 'cancelled' can't take a new offer — the buyer will never see it,
+  // since GET /api/requests only ever lists status='open' ones. Without
+  // this a seller could still successfully POST here (a stale page, a
+  // resubmitted form) with no error explaining why nothing happens.
+  if (request.status !== "open") {
+    throw new ValidationError("This request isn't open anymore — the buyer already found what they needed.");
+  }
+
   validateOfferInput(input);
 
   const id = randomId("OFR-");
@@ -2305,6 +2314,8 @@ export async function listMessages(conversationId: string, viewerId: string): Pr
   }));
 }
 
+const MAX_MESSAGE_LENGTH = 2000;
+
 export async function sendMessage(
   conversationId: string,
   senderId: string,
@@ -2312,6 +2323,9 @@ export async function sendMessage(
 ): Promise<Message> {
   if (!body.trim()) {
     throw new ValidationError("Message can't be empty.");
+  }
+  if (body.length > MAX_MESSAGE_LENGTH) {
+    throw new ValidationError(`Message must be under ${MAX_MESSAGE_LENGTH} characters.`);
   }
   const db = getDb();
   const id = "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed, normalizedMonthlyRevenue } from "./subscriptions";
+import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed, normalizedMonthlyRevenue, hasConsumedTrial } from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
 // lib/subscriptions.ts (getSellerSubscription, changeStorePlan, etc.) need a
@@ -118,5 +118,43 @@ describe("normalizedMonthlyRevenue", () => {
   it("Free plans contribute nothing either way", () => {
     expect(normalizedMonthlyRevenue({ priceMonthly: 0, priceYearly: null }, "monthly")).toBe(0);
     expect(normalizedMonthlyRevenue({ priceMonthly: 0, priceYearly: null }, "yearly")).toBe(0);
+  });
+});
+
+// The actual bug this closes: a seller could start a trial, cancel it
+// immediately (which used to log a plain "cancelled" event, never
+// "trial_ended"), and re-subscribe to the same plan for another full free
+// trial — repeatable forever. See downgradeToFree/expirePlatformSubscription
+// in subscriptions.ts for where the `wasTrial` detail gets set.
+describe("hasConsumedTrial", () => {
+  it("is false with no history at all", () => {
+    expect(hasConsumedTrial([], "store_pro")).toBe(false);
+  });
+
+  it("is true when the trial ran its full course", () => {
+    const events = [{ type: "trial_ended", detail: { fromPlanId: "store_pro" } }];
+    expect(hasConsumedTrial(events, "store_pro")).toBe(true);
+  });
+
+  it("is true when the seller cancelled WHILE still trialing — the bug this fixes", () => {
+    const events = [{ type: "cancelled", detail: { fromPlanId: "store_pro", wasTrial: true } }];
+    expect(hasConsumedTrial(events, "store_pro")).toBe(true);
+  });
+
+  it("is false for a plain cancellation out of a fully-paid period — never used that plan's trial", () => {
+    const events = [{ type: "cancelled", detail: { fromPlanId: "store_pro", wasTrial: false } }];
+    expect(hasConsumedTrial(events, "store_pro")).toBe(false);
+  });
+
+  it("never lets a different plan's trial/cancel history count for this plan", () => {
+    const events = [
+      { type: "trial_ended", detail: { fromPlanId: "store_business" } },
+      { type: "cancelled", detail: { fromPlanId: "store_business", wasTrial: true } },
+    ];
+    expect(hasConsumedTrial(events, "store_pro")).toBe(false);
+  });
+
+  it("treats a missing/null detail as no match rather than throwing", () => {
+    expect(hasConsumedTrial([{ type: "cancelled", detail: null }], "store_pro")).toBe(false);
   });
 });
