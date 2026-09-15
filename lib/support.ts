@@ -62,11 +62,19 @@ function rowToMessage(row: Row): SupportTicketMessage {
   };
 }
 
+const MAX_TICKET_SUBJECT_LENGTH = 200;
+
 export async function createTicket(userId: string, subject: string, body: string): Promise<SupportTicket> {
   const cleanSubject = subject.trim();
   const cleanBody = body.trim();
   if (!cleanSubject) throw new ValidationError("Give your ticket a short subject.");
+  if (cleanSubject.length > MAX_TICKET_SUBJECT_LENGTH) {
+    throw new ValidationError(`Subject must be under ${MAX_TICKET_SUBJECT_LENGTH} characters.`);
+  }
   if (!cleanBody) throw new ValidationError("Describe what's going on.");
+  if (cleanBody.length > MAX_TICKET_MESSAGE_LENGTH) {
+    throw new ValidationError(`Message must be under ${MAX_TICKET_MESSAGE_LENGTH} characters.`);
+  }
 
   const db = getDb();
   const id = randomId("tkt_");
@@ -74,6 +82,7 @@ export async function createTicket(userId: string, subject: string, body: string
     id,
     user_id: userId,
     subject: cleanSubject,
+    status: "open",
   });
   assertNoError(insertResult, "creating support ticket");
 
@@ -136,22 +145,36 @@ export async function markReadByAdmin(ticketId: string): Promise<void> {
 // ticket with a new message underneath it staying "resolved" would hide
 // exactly the thing that most needs an admin's attention. An admin's own
 // reply never changes status on its own; they resolve it explicitly.
+const MAX_TICKET_MESSAGE_LENGTH = 2000;
+
 export async function addTicketMessage(ticketId: string, senderId: string, isAdmin: boolean, body: string): Promise<SupportTicketMessage> {
   const cleanBody = body.trim();
   if (!cleanBody) throw new ValidationError("Message can't be empty.");
+  if (cleanBody.length > MAX_TICKET_MESSAGE_LENGTH) {
+    throw new ValidationError(`Message must be under ${MAX_TICKET_MESSAGE_LENGTH} characters.`);
+  }
 
   const ticket = await getTicket(ticketId);
   if (!ticket) throw new ValidationError("That ticket doesn't exist.");
 
   const db = getDb();
-  const insertResult = await db.from("support_ticket_messages").insert({
-    id: randomId("tktmsg_"),
-    ticket_id: ticketId,
-    sender_id: senderId,
-    is_admin: isAdmin,
-    body: cleanBody,
-  });
-  assertNoError(insertResult, "recording ticket message");
+  // Returned directly from the INSERT (.select().single()) rather than a
+  // separate "most recent message" re-query — that used to sort by
+  // created_at, which two messages landing in the same instant (unlikely
+  // but real under load) could tie on, silently returning the wrong one
+  // instead of the message this call actually just added.
+  const insertResult = await db
+    .from("support_ticket_messages")
+    .insert({
+      id: randomId("tktmsg_"),
+      ticket_id: ticketId,
+      sender_id: senderId,
+      is_admin: isAdmin,
+      body: cleanBody,
+    })
+    .select()
+    .single();
+  const row = assertNoError(insertResult, "recording ticket message") as Row;
 
   const updateResult = await db
     .from("support_tickets")
@@ -173,10 +196,6 @@ export async function addTicketMessage(ticketId: string, senderId: string, isAdm
     });
   }
 
-  const row = assertNoError(
-    await db.from("support_ticket_messages").select("*").eq("ticket_id", ticketId).order("created_at", { ascending: false }).limit(1).single(),
-    "loading new message"
-  ) as Row;
   return rowToMessage(row);
 }
 
