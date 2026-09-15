@@ -255,3 +255,24 @@ export function appBaseUrl(): string | null {
   const vercel = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim() || process.env.VERCEL_URL?.trim();
   return vercel ? `https://${vercel.replace(/\/+$/, "")}` : null;
 }
+
+// Every claimed store slug belonging to an approved seller — for app/sitemap.ts.
+// Deliberately a cheaper check than getPublicStoreBySlug's own (status
+// approved + slug set, not a full plan-eligibility lookup per seller): a
+// seller whose trial just lapsed staying in the sitemap for one extra crawl
+// cycle is a non-issue search engines already handle by re-crawling, and
+// doing a getStoreEligibility() DB round trip per seller here would turn
+// this into an O(sellers) query on every crawl.
+export async function listActiveStoreSlugs(): Promise<{ slug: string; updatedAt: string | null }[]> {
+  const db = getDb();
+  const result = await db
+    .from("sellers")
+    .select("store_slug, updated_at")
+    .eq("status", "approved")
+    .not("store_slug", "is", null);
+  const rows = assertNoError(result, "listing store slugs for sitemap") as Row[];
+  return rows.map((r) => ({
+    slug: r.store_slug as string,
+    updatedAt: (r.updated_at as string | null) ?? null,
+  }));
+}
