@@ -203,6 +203,11 @@ export type RequestRow = {
   // Only populated by listOpenRequests (the seller/admin-facing queue) —
   // a buyer viewing their own requests already knows it's them.
   customerName?: string | null;
+  // Whether the CALLING seller specifically has already sent an offer on
+  // this request — distinct from offerCount, which is every seller's
+  // offers combined. Only populated by listOpenRequests when called with a
+  // sellerId; see that function for why the two must never be conflated.
+  myOfferSent?: boolean;
 };
 
 function timeAgo(iso: string): string {
@@ -1739,7 +1744,7 @@ export async function listOffersForRequest(requestId: string): Promise<Offer[]> 
   return rows.map((row) => rowToOffer(row, statsFor(stats, row.seller as string)));
 }
 
-function rowToRequest(row: Row, offerCount: number, customerName?: string | null): RequestRow {
+function rowToRequest(row: Row, offerCount: number, customerName?: string | null, myOfferSent?: boolean): RequestRow {
   return {
     id: row.id as string,
     userId: row.user_id as string,
@@ -1758,6 +1763,7 @@ function rowToRequest(row: Row, offerCount: number, customerName?: string | null
     posted: timeAgo(row.created_at as string),
     offerCount,
     customerName: customerName ?? null,
+    myOfferSent,
   };
 }
 
@@ -1784,7 +1790,28 @@ async function offerCountsFor(requestIds: string[]): Promise<Map<string, number>
   return counts;
 }
 
-export async function listOpenRequests(): Promise<RequestRow[]> {
+// Which of these requests the given seller has ALREADY sent an offer on —
+// deliberately separate from offerCountsFor (every seller's offers
+// combined). See listOpenRequests below for the real bug this exists to
+// fix: a request with ANY offer on it, from ANY seller, used to read as
+// "you already responded" for every OTHER seller too, silently hiding
+// their own "Send offer" button on a request they'd never actually
+// touched — breaking the core competitive-bidding mechanic (see
+// components/findit-app/SellerDashboard.jsx) for every request that got a
+// single response from anyone.
+async function myOfferedRequestIds(requestIds: string[], sellerId: string): Promise<Set<string>> {
+  if (requestIds.length === 0) return new Set();
+  const db = getDb();
+  const result = await db.from("offers").select("request_id").eq("seller_id", sellerId).in("request_id", requestIds);
+  const rows = assertNoError(result, "checking your own offers") as Row[];
+  return new Set(rows.map((r) => r.request_id as string));
+}
+
+// viewerSellerId is optional so an admin (who never sends offers) can still
+// call this without it — myOfferSent is simply left undefined for them,
+// which SellerDashboard.jsx never reads anyway (admins don't get that
+// screen). A seller viewing this list always passes their own id.
+export async function listOpenRequests(viewerSellerId?: string | null): Promise<RequestRow[]> {
   const db = getDb();
   const result = await db
     .from("requests")
@@ -1792,10 +1819,19 @@ export async function listOpenRequests(): Promise<RequestRow[]> {
     .eq("status", "open")
     .order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing open requests") as Row[];
-  const counts = await offerCountsFor(rows.map((r) => r.id as string));
-  const names = await customerNamesFor(rows.map((r) => r.user_id as string));
+  const requestIds = rows.map((r) => r.id as string);
+  const [counts, names, mine] = await Promise.all([
+    offerCountsFor(requestIds),
+    customerNamesFor(rows.map((r) => r.user_id as string)),
+    viewerSellerId ? myOfferedRequestIds(requestIds, viewerSellerId) : Promise.resolve(null),
+  ]);
   return rows.map((row) =>
-    rowToRequest(row, counts.get(row.id as string) ?? 0, names.get(row.user_id as string))
+    rowToRequest(
+      row,
+      counts.get(row.id as string) ?? 0,
+      names.get(row.user_id as string),
+      mine ? mine.has(row.id as string) : undefined
+    )
   );
 }
 

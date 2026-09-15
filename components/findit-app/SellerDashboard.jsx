@@ -1232,18 +1232,30 @@ export default function SellerDashboard({
                 <span className="flex items-center gap-0.5 text-[#7C3AED] font-medium"><MapPin size={10} /> {formatDistanceKm(r._km)}</span>
               )}
             </p>
-            {r.offerCount > 0 ? (
+            {/* myOfferSent — whether THIS seller specifically already sent
+                an offer — not offerCount, which is every seller's offers
+                combined. Gating on offerCount used to hide "Send offer"
+                the moment ANY other seller responded, even for a seller
+                who'd never touched this request themselves. */}
+            {r.myOfferSent ? (
               <Pill tone="green"><CheckCircle2 size={11} /> Offer sent</Pill>
             ) : offeringId === r.id ? (
               <OfferForm onSend={(form) => sendOffer(r.id, form)} onCancel={() => setOfferingId(null)} sending={sendingOffer} />
             ) : (
-              <button
-                onClick={() => setOfferingId(r.id)}
-                className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl"
-                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-              >
-                <Send size={12} /> Send offer
-              </button>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setOfferingId(r.id)}
+                  className="flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl"
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  <Send size={12} /> Send offer
+                </button>
+                {r.offerCount > 0 && (
+                  <span className="text-[10.5px] text-[#8A8372]">
+                    {r.offerCount} other offer{r.offerCount === 1 ? "" : "s"} sent — still open
+                  </span>
+                )}
+              </div>
             )}
           </div>
         ))}
