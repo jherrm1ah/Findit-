@@ -2104,6 +2104,29 @@ export async function acceptOffer(
   return { order };
 }
 
+// A buyer's own request had no way to be closed once posted — the status
+// column already models 'cancelled' (see migration/schema), nothing ever
+// wrote it. Only the owning buyer, and only while still 'open' — a
+// 'matched' request already has a real order behind it, cancelling the
+// REQUEST at that point wouldn't touch the order anyway, so it would just
+// be a confusing no-op state; the buyer cancels the order instead if that's
+// what they actually want.
+export async function cancelRequest(requestId: string, userId: string): Promise<RequestRow | null> {
+  const db = getDb();
+  const result = await db
+    .from("requests")
+    .update({ status: "cancelled" })
+    .eq("id", requestId)
+    .eq("user_id", userId)
+    .eq("status", "open")
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "cancelling request") as Row | null;
+  if (!row) return null;
+  const counts = await offerCountsFor([requestId]);
+  return rowToRequest(row, counts.get(requestId) ?? 0);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Saved items (wishlist)                                              */
 /* ------------------------------------------------------------------ */

@@ -402,6 +402,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ acceptOfferId: offerId }),
     }).then((d) => d.order),
+  cancelRequest: (requestId) =>
+    request(`/api/requests/${requestId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cancel: true }),
+    }).then((d) => d.request),
   sendSellerOffer: (requestId, payload) =>
     request(`/api/requests/${requestId}/offers`, {
       method: "POST",
