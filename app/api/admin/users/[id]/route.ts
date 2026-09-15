@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   try {
     const user = body.suspended
-      ? await suspendUser(params.id, body.reason ?? "", admin.id)
+      ? await suspendUser(params.id, body.reason ?? "", admin.id, admin.adminRole)
       : await reactivateUser(params.id);
 
     await logAdminAction({
