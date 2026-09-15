@@ -2091,7 +2091,7 @@ function AnalyticsAdmin({ onLoadAnalytics, showToast }) {
       {analytics && (
         <>
           <AnalyticsSection title={`Orders placed (last ${analytics.windowDays}d)`} points={analytics.orderVolume} valueKey="count" color="#7C3AED" />
-          <AnalyticsSection title="Revenue from paid orders" points={analytics.revenue} valueKey="amount" color="#F59E0B" formatValue={naira} />
+          <AnalyticsSection title="Platform revenue from orders (commission earned)" points={analytics.revenue} valueKey="amount" color="#F59E0B" formatValue={naira} />
           <AnalyticsSection title="New signups" points={analytics.newUsers} valueKey="count" color="#22C55E" />
           <AnalyticsSection title="New sellers" points={analytics.newSellers} valueKey="count" color="#3B82F6" />
         </>
