@@ -1024,6 +1024,25 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [products]);
 
+  // The store page's "Message seller" button points at
+  // /?messageSeller=<name> (see app/store/[slug]/page.tsx) — a buyer with no
+  // session lands on Login first (App.jsx never renders MainApp without one)
+  // and the param survives that detour, so this only needs `user` to be
+  // ready, not `products`. Cleared the same way the product deep link is, so
+  // a refresh doesn't reopen the thread.
+  const messageDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (messageDeepLinkHandled.current || !user) return;
+    const params = new URLSearchParams(window.location.search);
+    const wantedSeller = params.get("messageSeller");
+    messageDeepLinkHandled.current = true;
+    if (!wantedSeller) return;
+    openConversationWithSeller(wantedSeller);
+    params.delete("messageSeller");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, [user]);
+
   // An unlock outlives a page reload (it lives on the session row, not in
   // memory), so ask once on load rather than making the admin sign in again
   // for nothing. A non-admin never calls this.
@@ -1086,14 +1105,18 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     return () => clearInterval(interval);
   }, [activeThread?.id]);
 
-  const handleContactSeller = async (product) => {
+  // Split out from handleContactSeller below so the store page's "Message
+  // seller" deep link (?messageSeller=<name>) can open the same thread
+  // without needing a product object — /store/[slug] only has the seller's
+  // public name, never a Product.
+  const openConversationWithSeller = async (sellerName) => {
     if (!user) {
       showToast("Log in to message a seller.", "error");
       return;
     }
     try {
-      const conversationId = await api.startConversation(product.seller);
-      setActiveThread({ id: conversationId, otherParty: { businessName: product.seller, name: product.seller } });
+      const conversationId = await api.startConversation(sellerName);
+      setActiveThread({ id: conversationId, otherParty: { businessName: sellerName, name: sellerName } });
       setThreadLoading(true);
       setProduct(null);
       const messages = await api.getMessages(conversationId);
@@ -1104,6 +1127,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       setThreadLoading(false);
     }
   };
+
+  const handleContactSeller = (product) => openConversationWithSeller(product.seller);
 
   const handleReportProduct = async (productId, reason, details) => {
     if (!user) {

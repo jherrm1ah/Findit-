@@ -504,6 +504,11 @@ export async function listProducts(): Promise<Product[]> {
 //   2. It returns only buyer-visible listings. A listing deactivated by a
 //      Store plan downgrade still exists and still belongs to the seller,
 //      but it is not for sale, so it has no place on a public storefront.
+//      Same reasoning covers a listing an admin removed for a policy
+//      violation (migration 027, moderationStatus) — 'under_review' still
+//      shows (it's only a soft flag for a human, see lib/productReports.ts),
+//      'removed' doesn't, same as the buyerVisibleProducts filter in
+//      MainApp.jsx.
 export async function listPublicProductsForSeller(seller: { id: string | null; name: string }): Promise<Product[]> {
   const db = getDb();
 
@@ -526,7 +531,7 @@ export async function listPublicProductsForSeller(seller: { id: string | null; n
   return sortForDisplay(
     [...byId.values()]
       .map((row) => rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(row.id as string)))
-      .filter((p) => p.active !== false)
+      .filter((p) => p.active !== false && p.moderationStatus !== "removed")
   );
 }
 
