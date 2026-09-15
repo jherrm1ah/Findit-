@@ -1045,6 +1045,49 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [user]);
 
+  // Restores whichever screen (or open seller profile) the buyer was
+  // actually on before a hard refresh — a plain in-app navigation, distinct
+  // from the two one-shot shared-link deep links above (?product=,
+  // ?messageSeller=), which this runs after and doesn't interfere with. See
+  // the sync effect right below, which is what keeps the URL matching
+  // real navigation state in the first place.
+  const screenRestored = useRef(false);
+  useEffect(() => {
+    if (screenRestored.current) return;
+    screenRestored.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const wantedSeller = params.get("seller");
+    const wantedScreen = params.get("screen");
+    if (wantedSeller) {
+      handleViewSeller(wantedSeller);
+    } else if (wantedScreen && wantedScreen !== "home") {
+      go(wantedScreen, params.get("q") || undefined);
+    }
+  }, []);
+
+  // Keeps the URL matching in-app navigation (screen, open product, open
+  // seller, and — for browse/sellers — the active category/search term) so
+  // the restore effect above has something real to read on the NEXT hard
+  // refresh. Declared after every restore effect on purpose: on first
+  // mount all of these effects fire in one batch in declaration order, so
+  // this one always runs last, after the URL's original params have
+  // already been read by the effects that needed them.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (screen !== "home") {
+      params.set("screen", screen);
+      if (screen === "browse" && browseGroup !== "all") params.set("q", browseGroup);
+      if (screen === "sellers" && sellerQuery) params.set("q", sellerQuery);
+    }
+    if (product) params.set("product", product.id);
+    else if (viewedSeller) params.set("seller", viewedSeller);
+
+    const nextSearch = params.toString() ? `?${params.toString()}` : "";
+    if (nextSearch !== window.location.search) {
+      window.history.replaceState(null, "", `${window.location.pathname}${nextSearch}`);
+    }
+  }, [screen, product, viewedSeller, browseGroup, sellerQuery]);
+
   // An unlock outlives a page reload (it lives on the session row, not in
   // memory), so ask once on load rather than making the admin sign in again
   // for nothing. A non-admin never calls this.
