@@ -19,8 +19,9 @@ function statusTone(status) {
   return "gold";
 }
 
-export default function MyRequests({ requests, onAcceptOffer }) {
+export default function MyRequests({ requests, onAcceptOffer, onCancelRequest }) {
   const [acceptingId, setAcceptingId] = useState(null);
+  const [cancellingId, setCancellingId] = useState(null);
 
   const accept = async (requestId, offerId) => {
     setAcceptingId(offerId);
@@ -28,6 +29,15 @@ export default function MyRequests({ requests, onAcceptOffer }) {
       await onAcceptOffer(requestId, offerId);
     } finally {
       setAcceptingId(null);
+    }
+  };
+
+  const cancel = async (requestId) => {
+    setCancellingId(requestId);
+    try {
+      await onCancelRequest(requestId);
+    } finally {
+      setCancellingId(null);
     }
   };
 
@@ -55,6 +65,16 @@ export default function MyRequests({ requests, onAcceptOffer }) {
             <p className="text-[11px] text-[#8A8372] flex items-center gap-1 mb-3">
               <Clock size={10} /> {r.posted} · {budgetLabel(r)}{r.category && GROUPS[r.category] ? ` · ${GROUPS[r.category].label}` : ""}
             </p>
+
+            {r.status === "open" && onCancelRequest && (
+              <button
+                onClick={() => cancel(r.id)}
+                disabled={cancellingId !== null}
+                className={`text-[11px] font-medium text-[#8A8372] mb-3 ${cancellingId !== null ? "opacity-60" : ""}`}
+              >
+                {cancellingId === r.id ? "Cancelling…" : "Cancel this request"}
+              </button>
+            )}
 
             {r.offers.length === 0 ? (
               <p className="text-[12px] text-[#6B6483]">No offers yet — check back soon.</p>

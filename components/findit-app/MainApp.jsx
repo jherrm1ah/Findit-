@@ -906,6 +906,16 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
+  const handleCancelRequest = async (requestId) => {
+    try {
+      const updated = await api.cancelRequest(requestId);
+      setMyRequests((rs) => rs.map((r) => (r.id === requestId ? { ...r, status: updated.status } : r)));
+      showToast("Request cancelled.");
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel that request — try again.", "error");
+    }
+  };
+
   const handleOpenThread = async (id, otherParty) => {
     setActiveThread({ id, otherParty });
     setThreadLoading(true);
@@ -1296,7 +1306,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
           <RequestForm go={go} showToast={showToast} myLocation={myLocation} />
         )}
         {screen === "myRequests" && (
-          <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} />
+          <MyRequests requests={myRequests} onAcceptOffer={handleAcceptOffer} onCancelRequest={handleCancelRequest} />
         )}
         {screen === "seller" && (
           isSeller ? (

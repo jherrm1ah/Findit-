@@ -16,7 +16,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { addSellerOfferToRequest, sendMessage, ValidationError } = await import("./repo");
+const { addSellerOfferToRequest, sendMessage, cancelRequest, ValidationError } = await import("./repo");
 
 function seedRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -82,5 +82,30 @@ describe("sendMessage — length cap", () => {
   it("accepts a message right at the length cap", async () => {
     const message = await sendMessage("conv_1", "user_1", "x".repeat(2000));
     expect(message.body).toHaveLength(2000);
+  });
+});
+
+// A buyer previously had no way to close their own open request at all —
+// the status column already modeled 'cancelled', nothing ever wrote it.
+describe("cancelRequest", () => {
+  it("cancels the buyer's own open request", async () => {
+    const cancelled = await cancelRequest("req_1", "buyer_1");
+    expect(cancelled?.status).toBe("cancelled");
+  });
+
+  it("refuses to cancel someone else's request (IDOR check)", async () => {
+    const result = await cancelRequest("req_1", "someone_else");
+    expect(result).toBeNull();
+    expect(fakeDb.dump("requests")[0].status).toBe("open");
+  });
+
+  it("refuses to cancel a request that's already matched", async () => {
+    fakeDb.reset({ requests: [seedRequest({ status: "matched" })] });
+    const result = await cancelRequest("req_1", "buyer_1");
+    expect(result).toBeNull();
+  });
+
+  it("returns null for a request that doesn't exist", async () => {
+    expect(await cancelRequest("nope", "buyer_1")).toBeNull();
   });
 });
