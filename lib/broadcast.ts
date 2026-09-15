@@ -27,11 +27,20 @@ function randomNotificationId(seed: number, index: number): string {
   return "n_" + seed.toString(36) + index.toString(36) + Math.random().toString(36).slice(2, 6);
 }
 
+const MAX_BROADCAST_TITLE_LENGTH = 200;
+const MAX_BROADCAST_BODY_LENGTH = 2000;
+
 export async function sendBroadcast(title: string, body: string, audience: BroadcastAudience): Promise<BroadcastResult> {
   const cleanTitle = title.trim();
   const cleanBody = body.trim();
   if (!cleanTitle) throw new ValidationError("Give the announcement a title.");
+  if (cleanTitle.length > MAX_BROADCAST_TITLE_LENGTH) {
+    throw new ValidationError(`Title must be under ${MAX_BROADCAST_TITLE_LENGTH} characters.`);
+  }
   if (!cleanBody) throw new ValidationError("Write what you want to tell them.");
+  if (cleanBody.length > MAX_BROADCAST_BODY_LENGTH) {
+    throw new ValidationError(`Message must be under ${MAX_BROADCAST_BODY_LENGTH} characters.`);
+  }
 
   const roles = AUDIENCE_ROLES[audience];
   if (!roles) throw new ValidationError("That's not a real audience.");
