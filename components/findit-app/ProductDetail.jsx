@@ -247,6 +247,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
               onChange={(e) => setReportDetails(e.target.value)}
               placeholder="Optional details"
               rows={2}
+              maxLength={1000}
               className="w-full text-[12.5px] border border-[#ECE9F7] rounded-lg px-2.5 py-2 outline-none mb-2 bg-white resize-none"
             />
             <div className="flex gap-2">
