@@ -71,7 +71,7 @@ export async function getPlatformAnalytics(days = 30): Promise<PlatformAnalytics
 
   const [ordersResult, paidResult, usersResult, sellersResult] = await Promise.all([
     db.from("orders").select("created_at").gte("created_at", start),
-    db.from("orders").select("price, paid_at").eq("payment_status", "paid").gte("paid_at", start),
+    db.from("orders").select("platform_fee_amount, paid_at").eq("payment_status", "paid").gte("paid_at", start),
     db.from("users").select("created_at").gte("created_at", start),
     db.from("sellers").select("created_at").gte("created_at", start),
   ]);
@@ -84,8 +84,15 @@ export async function getPlatformAnalytics(days = 30): Promise<PlatformAnalytics
   return {
     windowDays: days,
     orderVolume: bucketCountsByDay(orderRows.map((r) => r.created_at as string), days, now),
+    // Actual platform earnings from orders (the commission FindIt keeps,
+    // snapshotted per order at payment time — see migration 016/021), NOT
+    // the order's full price. That full price is mostly the SELLER's money;
+    // charting it under "revenue" would overstate what FindIt itself earns
+    // by roughly 1/feeRate. platform_fee_amount is null for an order that
+    // predates the fee-snapshot columns, hence the ?? 0 — an old order
+    // genuinely has no recorded fee to show here, not a missing data point.
     revenue: bucketAmountsByDay(
-      paidRows.map((r) => ({ timestamp: r.paid_at as string, amount: r.price as number })),
+      paidRows.map((r) => ({ timestamp: r.paid_at as string, amount: (r.platform_fee_amount as number | null) ?? 0 })),
       days,
       now
     ),
