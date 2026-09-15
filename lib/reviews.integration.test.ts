@@ -67,6 +67,22 @@ describe("submitOrderReview — one review per order", () => {
     expect(row.my_rating).toBe(5);
     expect(fakeDb.dump("reviews")).toHaveLength(1);
   });
+
+  // No length cap existed at all before this — a review comment (unlike
+  // every other user-generated text field checked this session — chat
+  // messages, support tickets, broadcasts) had nothing stopping it. Checked
+  // before the order is even loaded, so it never reaches either copy
+  // (orders.review_comment AND the reviews table recordReview writes).
+  it("refuses a review comment over the length cap, before writing anything", async () => {
+    fakeDb.reset({ orders: [order()], users: [], notifications: [] });
+
+    await expect(
+      submitOrderReview("ORD-1", "buyer_1", { rating: 5, comment: "x".repeat(1001) })
+    ).rejects.toThrow(/under 1000/i);
+
+    expect((await getOrder("ORD-1"))?.reviewed).toBe(false);
+    expect(fakeDb.dump("reviews")).toHaveLength(0);
+  });
 });
 
 describe("recordReview", () => {

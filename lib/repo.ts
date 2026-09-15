@@ -990,11 +990,17 @@ export async function notifySellerOfNewOrder(sellerBusinessName: string, order: 
   });
 }
 
+const MAX_REVIEW_COMMENT_LENGTH = 1000;
+
 export async function submitOrderReview(
   id: string,
   userId: string,
   review: { rating: number; comment: string | null }
 ): Promise<Order | null> {
+  if (review.comment != null && review.comment.length > MAX_REVIEW_COMMENT_LENGTH) {
+    throw new ValidationError(`Review must be under ${MAX_REVIEW_COMMENT_LENGTH} characters.`);
+  }
+
   const existing = await getOrder(id);
   if (!existing || existing.userId !== userId) return null;
   if (!existing.canReview) {
