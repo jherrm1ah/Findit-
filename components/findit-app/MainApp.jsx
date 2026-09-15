@@ -1028,7 +1028,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
       deepLinkHandled.current = true;
       return;
     }
-    const match = products.find((p) => p.id === wanted);
+    // Same buyer-visibility rule as buyerVisibleProducts below — a shared
+    // link to a listing an admin has since removed (the exact case
+    // moderation exists for, e.g. a reported scam) must not still open it.
+    const match = products.find(
+      (p) => p.id === wanted && p.active !== false && p.moderationStatus !== "removed"
+    );
     deepLinkHandled.current = true;
     if (match) setProduct(match);
     params.delete("product");
