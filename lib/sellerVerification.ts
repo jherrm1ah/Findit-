@@ -128,6 +128,22 @@ export type SubmitVerificationInput = {
   photoEvidence: Array<{ kind: EvidenceKind; buffer: Buffer; declaredType: string; note: string | null }>;
 };
 
+const MAX_VERIFICATION_TEXT_LENGTH = 2000;
+const MAX_VERIFICATION_SHORT_FIELD_LENGTH = 200;
+const MAX_EVIDENCE_TEXT_LENGTH = 500;
+const MAX_EVIDENCE_NOTE_LENGTH = 500;
+
+// None of these fields had a length cap before — the same gap already
+// closed this session for chat messages, support tickets, broadcasts, and
+// review comments. Unlike those, this one writes straight to `sellers`
+// (a row every buyer sees on the storefront) and to per-evidence rows an
+// admin has to actually read one at a time in the review queue.
+function assertWithinLength(value: string | null | undefined, max: number, label: string): void {
+  if (value != null && value.length > max) {
+    throw new ValidationError(`${label} must be under ${max} characters.`);
+  }
+}
+
 // Replaces the seller's entire verification submission (profile fields,
 // private details, and evidence) and moves status to 'pending' — this is
 // the single write the wizard's final "Submit for verification" step makes.
@@ -143,6 +159,22 @@ export async function submitVerification(sellerId: string, input: SubmitVerifica
     evidenceCount: input.linkEvidence.length + input.photoEvidence.length,
   });
   if (!check.ok) throw new ValidationError(check.reason);
+
+  assertWithinLength(input.category, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Category");
+  assertWithinLength(input.description, MAX_VERIFICATION_TEXT_LENGTH, "Description");
+  assertWithinLength(input.yearsSelling, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Years selling");
+  assertWithinLength(input.publicState, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "State");
+  assertWithinLength(input.publicCity, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "City");
+  assertWithinLength(input.publicArea, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Area");
+  assertWithinLength(input.shopAddress, MAX_VERIFICATION_TEXT_LENGTH, "Shop address");
+  assertWithinLength(input.website, MAX_VERIFICATION_SHORT_FIELD_LENGTH, "Website");
+  for (const link of input.linkEvidence) {
+    assertWithinLength(link.textValue, MAX_EVIDENCE_TEXT_LENGTH, "Evidence link");
+    assertWithinLength(link.note, MAX_EVIDENCE_NOTE_LENGTH, "Evidence note");
+  }
+  for (const photo of input.photoEvidence) {
+    assertWithinLength(photo.note, MAX_EVIDENCE_NOTE_LENGTH, "Evidence note");
+  }
 
   const db = getDb();
 
