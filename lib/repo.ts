@@ -11,6 +11,7 @@ import { computeVerificationLevel, VerificationLevel, VerificationStatus } from 
 import { isValidCategoryKey } from "./categoryCatalog";
 import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./requestMatching";
 import { recordReview } from "./reviews";
+import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -91,6 +92,16 @@ export type Product = {
   // is opened from whichever already-loaded list the buyer tapped, not a
   // fresh per-product fetch; see productImagesForIds below.
   images: string[];
+
+  // ---- Migration 027: product moderation ----
+  // Deliberately separate from `active` above, which means something else
+  // entirely (a Store-plan downgrade hiding excess listings) — see the
+  // migration for why collapsing the two would make "why is this hidden?"
+  // ambiguous. 'under_review' is a soft flag (a buyer report or a 'flag'
+  // moderation rule) that does not hide the listing; 'removed' is an
+  // admin's own decision and does. See lib/productReports.ts.
+  moderationStatus: "active" | "under_review" | "removed";
+  moderationReason: string | null;
 };
 
 export type Order = {
@@ -403,6 +414,8 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
+    moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
+    moderationReason: (row.moderation_reason as string | null) ?? null,
     // Falls back to just the cover when a caller didn't bulk-load the rest
     // (nothing today calls rowToProduct without images loaded, but this
     // keeps the field honest — never claiming zero photos when a cover
@@ -655,6 +668,18 @@ export async function createProduct(input: {
     await assertCanActivateProduct(input.sellerId);
   }
 
+  // Admin-configurable prohibited-item check (migration 027) — a 'block'
+  // rule refuses the listing outright, the same way an invalid category
+  // does; a 'flag' rule lets it through but queues it for a human look
+  // rather than showing it as an ordinary, fully-trusted listing.
+  const matchedRule = findMatchingModerationRule(
+    `${input.name} ${input.description ?? ""}`,
+    await listActiveModerationRules()
+  );
+  if (matchedRule?.severity === "block") {
+    throw new ValidationError(`This listing can't be posted: ${matchedRule.reason}`);
+  }
+
   const db = getDb();
   const id = "p_" + Date.now().toString(36) + (productSeq++).toString(36);
   const images = input.images ?? [];
@@ -678,6 +703,8 @@ export async function createProduct(input: {
       delivery_option: input.deliveryOption,
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
+      moderation_status: matchedRule ? "under_review" : "active",
+      moderation_reason: matchedRule ? matchedRule.reason : null,
     })
     .select()
     .single();
@@ -723,6 +750,25 @@ export async function updateProduct(
     await assertCanActivateProduct(existing.sellerId);
   }
 
+  // Only re-run the prohibited-item check when the text that could contain
+  // a match is actually changing — an unrelated edit (price, qty…) must
+  // never silently clobber an admin's own 'removed' decision by re-deriving
+  // moderationStatus from scratch every time. A 'block' match refuses the
+  // edit; a 'flag' match only ever escalates a currently-clean listing,
+  // never overwrites an existing flagged/removed state.
+  let moderationEscalation: { status: "under_review"; reason: string } | null = null;
+  if (patch.name !== undefined || patch.description !== undefined) {
+    const name = patch.name ?? existing.name;
+    const description = patch.description !== undefined ? patch.description : existing.description;
+    const matchedRule = findMatchingModerationRule(`${name} ${description ?? ""}`, await listActiveModerationRules());
+    if (matchedRule?.severity === "block") {
+      throw new ValidationError(`This edit can't be saved: ${matchedRule.reason}`);
+    }
+    if (matchedRule && existing.moderationStatus === "active") {
+      moderationEscalation = { status: "under_review", reason: matchedRule.reason };
+    }
+  }
+
   const db = getDb();
   const images = patch.images !== undefined ? patch.images : existing.images;
   const result = await db
@@ -742,6 +788,9 @@ export async function updateProduct(
       delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
+      ...(moderationEscalation
+        ? { moderation_status: moderationEscalation.status, moderation_reason: moderationEscalation.reason }
+        : {}),
     })
     .eq("id", id);
   assertNoError(result, "updating product");

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import {
   ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
-  Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette,
+  Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
 import { GROUPS, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
@@ -11,13 +11,43 @@ import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
 const CONDITIONS = ["New", "Used", "Refurb", "Any"];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation }) {
+// Matches lib/productReports.ts#REPORT_REASON_LABELS (migration 027) — kept
+// as a small duplicated client-side list the same way CONDITIONS above is,
+// rather than a network round trip just to populate a reason picker.
+const REPORT_REASONS = [
+  { value: "prohibited_item", label: "Prohibited item" },
+  { value: "counterfeit", label: "Possible counterfeit" },
+  { value: "scam", label: "Possible scam" },
+  { value: "spam", label: "Spam" },
+  { value: "inappropriate", label: "Inappropriate content" },
+  { value: "other", label: "Other" },
+];
+
+export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation, onReportProduct, showToast }) {
   const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0].value);
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportSubmitted, setReportSubmitted] = useState(false);
   if (!product) return null;
+
+  const submitReport = async () => {
+    setReportSubmitting(true);
+    try {
+      await onReportProduct(product.id, reportReason, reportDetails);
+      setReportSubmitted(true);
+      setReportOpen(false);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't submit that report.", "error");
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
   const Icon = GROUPS[product.category].icon;
   const total = product.price * qty;
   const km = myLocation && product.lat != null && product.lng != null
@@ -186,9 +216,58 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
             : "The seller hasn't added a description yet. Payment is held by FindIt until you confirm delivery, so you never pay a seller directly."}
         </p>
 
-        <div className="flex gap-1.5 flex-wrap mb-2">
-          {product.verified ? <Pill tone="green"><BadgeCheck size={11} /> Verified seller</Pill> : <Pill tone="stone">Unverified seller</Pill>}
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <div className="flex gap-1.5 flex-wrap">
+            {product.verified ? <Pill tone="green"><BadgeCheck size={11} /> Verified seller</Pill> : <Pill tone="stone">Unverified seller</Pill>}
+          </div>
+          {reportSubmitted ? (
+            <p className="text-[11px] text-[#6B6483] flex items-center gap-1"><Flag size={11} /> Reported — we're reviewing it.</p>
+          ) : (
+            <button
+              onClick={() => setReportOpen((v) => !v)}
+              className="text-[11px] text-[#8A8372] flex items-center gap-1"
+            >
+              <Flag size={11} /> Report this listing
+            </button>
+          )}
         </div>
+
+        {reportOpen && !reportSubmitted && (
+          <div className="bg-[#FDF6EC] border border-[#F5D9A8] rounded-2xl p-3.5 mb-4">
+            <p className="text-[11.5px] font-semibold text-[#1E1B4B] mb-2">What's wrong with this listing?</p>
+            <select
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              className="w-full text-[12.5px] border border-[#ECE9F7] rounded-lg px-2.5 py-2 outline-none mb-2 bg-white"
+            >
+              {REPORT_REASONS.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+            </select>
+            <textarea
+              value={reportDetails}
+              onChange={(e) => setReportDetails(e.target.value)}
+              placeholder="Optional details"
+              rows={2}
+              className="w-full text-[12.5px] border border-[#ECE9F7] rounded-lg px-2.5 py-2 outline-none mb-2 bg-white resize-none"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={submitReport}
+                disabled={reportSubmitting}
+                className={`flex-1 text-white text-[12px] font-semibold py-2 rounded-xl ${reportSubmitting ? "opacity-60" : ""}`}
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                {reportSubmitting ? "Submitting…" : "Submit report"}
+              </button>
+              <button
+                onClick={() => setReportOpen(false)}
+                disabled={reportSubmitting}
+                className="flex-1 bg-white border border-[#ECE9F7] text-[#6B6483] text-[12px] font-semibold py-2 rounded-xl"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ECE9F7] px-5 py-4 flex items-center justify-between z-50">

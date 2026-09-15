@@ -73,6 +73,12 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.product),
   deleteProduct: (id) => request(`/api/products/${id}`, { method: "DELETE" }),
+  reportProduct: (id, reason, details) =>
+    request(`/api/products/${id}/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason, details }),
+    }).then((d) => d.report),
   uploadImage: (file) => {
     const fd = new FormData();
     fd.append("file", file);
@@ -285,6 +291,33 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then((d) => d.category),
+  getModerationRules: () => request("/api/admin/moderation-rules").then((d) => d.rules),
+  createModerationRule: (keyword, reason, severity) =>
+    request("/api/admin/moderation-rules", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ keyword, reason, severity }),
+    }).then((d) => d.rule),
+  updateModerationRule: (id, patch) =>
+    request(`/api/admin/moderation-rules/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.rule),
+  getFlaggedProducts: () => request("/api/admin/flagged-products").then((d) => d.products),
+  moderateProduct: (id, status, reason) =>
+    request(`/api/admin/products/${id}/moderate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, reason }),
+    }).then((d) => d.product),
+  getProductReports: () => request("/api/admin/product-reports").then((d) => d.reports),
+  resolveProductReport: (reportId, outcome, note, productId, productName) =>
+    request("/api/admin/product-reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reportId, outcome, note, productId, productName }),
+    }),
   getAdminSubscriptionPlans: () => request("/api/admin/subscription-plans").then((d) => d.plans),
   updateSubscriptionPlan: (id, patch) =>
     request(`/api/admin/subscription-plans/${id}`, {
