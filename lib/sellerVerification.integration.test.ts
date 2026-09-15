@@ -101,4 +101,10 @@ describe("submitVerification — length caps", () => {
       )
     ).rejects.toThrow(/shop address.*under 2000/i);
   });
+
+  it("rejects an over-length social link value", async () => {
+    await expect(
+      submitVerification("seller_1", validInput({ socialLinks: { instagram: "x".repeat(201) } }))
+    ).rejects.toThrow(/social link.*under 200/i);
+  });
 });
