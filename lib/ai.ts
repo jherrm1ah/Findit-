@@ -32,9 +32,20 @@ export type RequestClassification = {
   estimatedBudgetMax: number | null;
 };
 
+const MAX_DESCRIPTION_INPUT_LENGTH = 2000;
+const MAX_NAME_INPUT_LENGTH = 200;
+const MAX_SHORT_FIELD_INPUT_LENGTH = 60;
+
 export async function classifyRequest(description: string): Promise<RequestClassification> {
   if (!description.trim()) {
     throw new ValidationError("Describe what you're looking for first.");
+  }
+  // No length cap existed before this — every field sent to the AI API
+  // gets billed per token, and the rate limiter above caps call COUNT, not
+  // payload size, so an uncapped field is a real cost/abuse vector distinct
+  // from the "flood the DB with text" gap already closed elsewhere.
+  if (description.length > MAX_DESCRIPTION_INPUT_LENGTH) {
+    throw new ValidationError(`Keep your description under ${MAX_DESCRIPTION_INPUT_LENGTH} characters.`);
   }
 
   const ai = getClient();
@@ -126,6 +137,23 @@ export async function generateProductDescription(input: {
 }): Promise<string> {
   if (!input.name.trim()) {
     throw new ValidationError("Add a product name first.");
+  }
+  // Same reasoning as classifyRequest's cap above — every field here is
+  // billed per token and rides straight into the prompt.
+  if (input.name.length > MAX_NAME_INPUT_LENGTH) {
+    throw new ValidationError(`Product name must be under ${MAX_NAME_INPUT_LENGTH} characters.`);
+  }
+  if (input.categoryLabel.length > MAX_NAME_INPUT_LENGTH) {
+    throw new ValidationError(`Category must be under ${MAX_NAME_INPUT_LENGTH} characters.`);
+  }
+  if (input.condition != null && input.condition.length > MAX_SHORT_FIELD_INPUT_LENGTH) {
+    throw new ValidationError(`Condition must be under ${MAX_SHORT_FIELD_INPUT_LENGTH} characters.`);
+  }
+  if (input.color != null && input.color.length > MAX_SHORT_FIELD_INPUT_LENGTH) {
+    throw new ValidationError(`Color must be under ${MAX_SHORT_FIELD_INPUT_LENGTH} characters.`);
+  }
+  if (input.variation != null && input.variation.length > MAX_SHORT_FIELD_INPUT_LENGTH) {
+    throw new ValidationError(`Size/variation must be under ${MAX_SHORT_FIELD_INPUT_LENGTH} characters.`);
   }
 
   const ai = getClient();
