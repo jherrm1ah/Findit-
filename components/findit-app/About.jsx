@@ -29,6 +29,15 @@ export default function About() {
           <p className="text-[13px] text-[#6B6483]">Nigeria</p>
         </div>
       </div>
+
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] overflow-hidden mt-4">
+        <a href="/privacy" target="_blank" rel="noreferrer" className="flex items-center justify-between px-4 py-3.5 border-b border-[#ECE9F7]">
+          <p className="text-[13px] text-[#1E1B4B]">Privacy Policy</p>
+        </a>
+        <a href="/terms" target="_blank" rel="noreferrer" className="flex items-center justify-between px-4 py-3.5">
+          <p className="text-[13px] text-[#1E1B4B]">Terms of Service</p>
+        </a>
+      </div>
     </div>
   );
 }
