@@ -192,7 +192,7 @@ export default async function StorePage({ params }: { params: { slug: string } }
               never renders MainApp without a session) and the param survives
               that detour, so it still opens the thread once they're in. */}
           <Link
-            href={`/?messageSeller=${encodeURIComponent(profile.name)}`}
+            href={`/?messageSeller=${encodeURIComponent(profile.name)}&messageSellerId=${encodeURIComponent(profile.id)}`}
             className="mt-11 shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
             style={{ background: "#1E1B4B" }}
           >

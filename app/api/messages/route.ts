@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listConversations, findUserByBusinessName, getOrCreateConversation } from "@/lib/repo";
+import { listConversations, findUserByBusinessName, findUserForSellerId, getOrCreateConversation } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -21,18 +21,24 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to message a seller." }, { status: 401 });
   }
 
-  let body: { sellerBusinessName?: string };
+  let body: { sellerBusinessName?: string; sellerId?: string };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.sellerBusinessName) {
-    return NextResponse.json({ error: "sellerBusinessName is required" }, { status: 400 });
+  if (!body.sellerBusinessName && !body.sellerId) {
+    return NextResponse.json({ error: "sellerId or sellerBusinessName is required" }, { status: 400 });
   }
 
-  const seller = await findUserByBusinessName(body.sellerBusinessName);
+  // Prefer the unambiguous id whenever the caller has it — business_name
+  // has no uniqueness constraint, so a name-only lookup throws instead of
+  // guessing when two sellers share a name. Name stays as the fallback for
+  // callers with no id available (pre-seller_id-backfill data).
+  const seller = body.sellerId
+    ? await findUserForSellerId(body.sellerId)
+    : await findUserByBusinessName(body.sellerBusinessName!);
   if (!seller) {
     return NextResponse.json(
       { error: "This seller hasn't joined FindIt directly yet, so there's no one to message." },

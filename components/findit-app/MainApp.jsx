@@ -1052,10 +1052,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     if (messageDeepLinkHandled.current || !user) return;
     const params = new URLSearchParams(window.location.search);
     const wantedSeller = params.get("messageSeller");
+    const wantedSellerId = params.get("messageSellerId");
     messageDeepLinkHandled.current = true;
     if (!wantedSeller) return;
-    openConversationWithSeller(wantedSeller);
+    openConversationWithSeller(wantedSeller, wantedSellerId || undefined);
     params.delete("messageSeller");
+    params.delete("messageSellerId");
     const query = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
   }, [user]);
@@ -1169,13 +1171,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
   // seller" deep link (?messageSeller=<name>) can open the same thread
   // without needing a product object — /store/[slug] only has the seller's
   // public name, never a Product.
-  const openConversationWithSeller = async (sellerName) => {
+  const openConversationWithSeller = async (sellerName, sellerId) => {
     if (!user) {
       showToast("Log in to message a seller.", "error");
       return;
     }
     try {
-      const conversationId = await api.startConversation(sellerName);
+      const conversationId = await api.startConversation(sellerName, sellerId);
       setActiveThread({ id: conversationId, otherParty: { businessName: sellerName, name: sellerName } });
       setThreadLoading(true);
       setProduct(null);
@@ -1188,7 +1190,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     }
   };
 
-  const handleContactSeller = (product) => openConversationWithSeller(product.seller);
+  const handleContactSeller = (product) => openConversationWithSeller(product.seller, product.sellerId);
 
   const handleReportProduct = async (productId, reason, details) => {
     if (!user) {

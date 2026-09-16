@@ -2290,6 +2290,22 @@ export async function findUserByBusinessName(name: string): Promise<PublicUser |
   return row ? rowToPublicUser(row) : null;
 }
 
+// The unambiguous counterpart to findUserByBusinessName above — business_name
+// has no uniqueness constraint (see lib/sellerIdentityMatch.ts), so two
+// different sellers can share a name, and a name-only lookup for the
+// "message seller" flow would then throw (maybeSingle refuses to guess
+// between rows) instead of opening a thread with either one. Every caller
+// that already knows the seller's real id (a product's sellerId, a store
+// profile's id) should use this instead; the name path stays only as a
+// fallback for contexts with no id (pre-seller_id-backfill data).
+export async function findUserForSellerId(sellerId: string): Promise<PublicUser | null> {
+  const db = getDb();
+  const sellerResult = await db.from("sellers").select("user_id").eq("id", sellerId).maybeSingle();
+  const sellerRow = assertNoError(sellerResult, "looking up seller") as Row | null;
+  if (!sellerRow) return null;
+  return getPublicUser(sellerRow.user_id as string);
+}
+
 // Exported so a seller-initiated conversation (see
 // app/api/orders/[id]/message/route.ts) can look up the buyer's
 // display name — never their phone, password, or anything else private.
