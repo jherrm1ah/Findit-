@@ -16,6 +16,12 @@ export default function manifest(): MetadataRoute.Manifest {
     icons: [
       { src: "/icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
       { src: "/apple-icon", sizes: "180x180", type: "image/png" },
+      // Android/Play Store (TWA) look for these two sizes specifically —
+      // without them, a Trusted Web Activity build has no valid launcher
+      // icon to package. See lib/brandIcon.tsx.
+      { src: "/icons/192", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/icons/512", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/icons/512-maskable", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

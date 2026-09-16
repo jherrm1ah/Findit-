@@ -148,9 +148,13 @@ export default function LandingPage({ categories, onGetStarted }) {
           <Logo size={20} />
           <span className="text-[12px] text-[#6B6483]">© {new Date().getFullYear()} FindIt</span>
         </div>
-        <button onClick={onGetStarted} className="text-[12px] font-medium text-[#7C3AED]">
-          Sell on FindIt →
-        </button>
+        <div className="flex items-center gap-4">
+          <a href="/privacy" className="text-[12px] text-[#6B6483]">Privacy</a>
+          <a href="/terms" className="text-[12px] text-[#6B6483]">Terms</a>
+          <button onClick={onGetStarted} className="text-[12px] font-medium text-[#7C3AED]">
+            Sell on FindIt →
+          </button>
+        </div>
       </footer>
     </div>
   );
