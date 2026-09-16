@@ -21,6 +21,20 @@ import { join } from "path";
 const ADMIN_API_DIR = join(__dirname, "..", "app", "api", "admin");
 const REPO_ROOT = join(__dirname, "..");
 
+// Not every admin-gated route lives under app/api/admin/ — seller
+// approve/reject/suspend (the same "moderation" domain the routes above
+// gate) sits under app/api/sellers/ instead, since it's addressed by seller
+// id like the rest of that resource. A directory walk alone silently never
+// sees these, which is exactly the kind of blind spot this file's own
+// comment warns a hand-rolled check creates: a route that looks covered
+// but isn't. List every such route explicitly here so it gets the same
+// protection — add to this list, not just app/api/admin/, when a new
+// admin-only action is addressed by a non-admin resource path.
+const ADMIN_GATED_ROUTES_OUTSIDE_ADMIN_DIR = [
+  join(REPO_ROOT, "app", "api", "sellers", "route.ts"),
+  join(REPO_ROOT, "app", "api", "sellers", "[id]", "route.ts"),
+];
+
 const SHARED_GUARDS = /\b(requireAdmin|requireSuperAdmin|requireAnyAdmin)\s*\(/;
 const HAND_ROLLED_SESSION = /\bgetSessionUser\s*\(/;
 
@@ -43,7 +57,10 @@ function relative(file: string): string {
   return file.slice(REPO_ROOT.length + 1);
 }
 
-const adminRoutes = walk(ADMIN_API_DIR).filter((f) => f.endsWith("route.ts"));
+const adminRoutes = [
+  ...walk(ADMIN_API_DIR).filter((f) => f.endsWith("route.ts")),
+  ...ADMIN_GATED_ROUTES_OUTSIDE_ADMIN_DIR,
+];
 
 describe("admin route authorization guardrail", () => {
   it("finds admin routes to check at all", () => {
