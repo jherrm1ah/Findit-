@@ -546,11 +546,14 @@ export const api = {
     }),
 
   getConversations: () => request("/api/messages").then((d) => d.conversations),
-  startConversation: (sellerBusinessName) =>
+  // sellerId is the unambiguous path — business_name can collide between two
+  // different sellers, in which case the name-only fallback fails outright
+  // rather than guessing. Pass sellerId whenever the caller has it.
+  startConversation: (sellerBusinessName, sellerId) =>
     request("/api/messages", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sellerBusinessName }),
+      body: JSON.stringify({ sellerBusinessName, sellerId }),
     }).then((d) => d.conversationId),
   getMessages: (conversationId) =>
     request(`/api/messages/${conversationId}`).then((d) => d.messages),
