@@ -44,8 +44,15 @@ function VerificationBadge({ level }) {
 // a business name were shown as one merged store; and nothing could be shown
 // for a seller whose products the buyer hadn't happened to load. All three
 // are why a buyer "couldn't view seller profiles".
-export default function SellerProfile({ profile, loading, error, onBack, onOpenProduct, onContact, myLocation }) {
+export default function SellerProfile({ profile, loading, error, onBack, onOpenProduct, onContact, myLocation, viewerSellerId }) {
   const [contacting, setContacting] = useState(false);
+
+  // A seller previewing their own storefront (or one who happened to land
+  // here via a stale link) is looking at their own listing — the server
+  // already refuses to create a self-conversation, but that only surfaces
+  // as an error toast after tapping a button that should never have been
+  // offered in the first place.
+  const isOwnProfile = viewerSellerId != null && profile?.id === viewerSellerId;
 
   const listings = profile?.listings ?? [];
   const sellerName = profile?.name ?? null;
@@ -171,21 +178,28 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
           </div>
         )}
 
-        <button
-          onClick={async () => {
-            setContacting(true);
-            try {
-              await onContact({ seller: sellerName });
-            } finally {
-              setContacting(false);
-            }
-          }}
-          disabled={contacting}
-          className={`w-full flex items-center justify-center gap-2 text-white text-[13px] font-semibold py-3 rounded-xl mb-6 ${contacting ? "opacity-60" : ""}`}
-          style={{ background: "#1E1B4B" }}
-        >
-          <MessageCircle size={15} /> {contacting ? "Opening…" : "Contact seller"}
-        </button>
+        {!isOwnProfile && (
+          <button
+            onClick={async () => {
+              setContacting(true);
+              try {
+                // sellerId (not just the name) — business_name has no
+                // uniqueness constraint, so the name-only lookup this used
+                // to send can throw on a real collision between two
+                // sellers, the same reason every other "contact seller"
+                // entry point in this app already prefers the id.
+                await onContact({ seller: sellerName, sellerId: profile.id });
+              } finally {
+                setContacting(false);
+              }
+            }}
+            disabled={contacting}
+            className={`w-full flex items-center justify-center gap-2 text-white text-[13px] font-semibold py-3 rounded-xl mb-6 ${contacting ? "opacity-60" : ""}`}
+            style={{ background: "#1E1B4B" }}
+          >
+            <MessageCircle size={15} /> {contacting ? "Opening…" : "Contact seller"}
+          </button>
+        )}
 
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
           <Package size={13} className="text-[#7C3AED]" /> Listings
