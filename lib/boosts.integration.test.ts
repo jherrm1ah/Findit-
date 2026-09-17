@@ -61,4 +61,23 @@ describe("activateBoost — idempotent on payment_id", () => {
 
     expect(fakeDb.dump("boosts")).toHaveLength(2);
   });
+
+  it("only extends once when two overlapping calls race for the same payment (concurrent webhook redeliveries)", async () => {
+    // Simulates two in-flight redeliveries of the same charge.success event
+    // reaching activateBoost before either has committed anything — the
+    // scenario a plain "check then act" idempotency guard doesn't cover,
+    // since both calls can pass the existence check before either inserts.
+    await Promise.all([
+      activateBoost({ productId: "product_1", sellerId: "seller_1", boostPlanId: "boost_7d", amount: 2000, paymentId: "pay_race" }),
+      activateBoost({ productId: "product_1", sellerId: "seller_1", boostPlanId: "boost_7d", amount: 2000, paymentId: "pay_race" }),
+    ]);
+
+    const boosts = fakeDb.dump("boosts");
+    expect(boosts).toHaveLength(1); // only one of the two ever claimed the payment_id
+
+    const product = fakeDb.dump("products").find((p) => p.id === "product_1")!;
+    const extensionDays = (new Date(product.boosted_until as string).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+    expect(extensionDays).toBeGreaterThan(6);
+    expect(extensionDays).toBeLessThan(8); // a single 7-day extension, not 14
+  });
 });
