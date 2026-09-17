@@ -300,22 +300,37 @@ export async function updateSellerBusinessName(userId: string, newName: string):
   // existing listings/orders would silently stop matching their own
   // dashboard.
   if (oldName && oldName !== trimmed) {
-    assertNoError(
-      await db.from("sellers").update({ name: trimmed }).eq("user_id", userId),
-      "updating seller record"
-    );
-    assertNoError(
-      await db.from("products").update({ seller: trimmed }).eq("seller", oldName),
-      "updating product listings"
-    );
-    assertNoError(
-      await db.from("orders").update({ seller: trimmed }).eq("seller", oldName),
-      "updating orders"
-    );
-    assertNoError(
-      await db.from("offers").update({ seller: trimmed }).eq("seller", oldName),
-      "updating offers"
-    );
+    const sellerResult = await db
+      .from("sellers")
+      .update({ name: trimmed })
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle();
+    const sellerRow = assertNoError(sellerResult, "updating seller record") as Row | null;
+    const sellerId = (sellerRow?.id as string | undefined) ?? null;
+
+    // business_name has no uniqueness constraint (see lib/sellerIdentityMatch.ts)
+    // — a plain `where seller = oldName` update would ALSO rename a
+    // completely different seller's products/orders/offers if they happen
+    // to share this seller's old name, silently reattributing rows that
+    // were never this account's to begin with. Scope by seller_id (this
+    // seller's own, reliable identifier) whenever it's known, and let the
+    // name-only match reach only the legacy rows that still have no
+    // seller_id at all — the same two-query split listOrders/
+    // listPublicProductsForSeller already use to read this same collision
+    // safely, applied here to a write instead.
+    for (const table of ["products", "orders", "offers"] as const) {
+      if (sellerId) {
+        assertNoError(
+          await db.from(table).update({ seller: trimmed }).eq("seller_id", sellerId),
+          `updating ${table} by seller id`
+        );
+      }
+      assertNoError(
+        await db.from(table).update({ seller: trimmed }).eq("seller", oldName).is("seller_id", null),
+        `updating legacy ${table} rows`
+      );
+    }
   }
 
   return rowToUser(row);
