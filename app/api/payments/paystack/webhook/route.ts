@@ -4,6 +4,7 @@ import { getDb, assertNoError } from "@/lib/db";
 import { changeStorePlan, changePlatformSubscription, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
 import { confirmOrderPayment } from "@/lib/payments";
 import { activateBoost } from "@/lib/boosts";
+import { ValidationError } from "@/lib/errors";
 
 type Row = Record<string, unknown>;
 
@@ -22,6 +23,35 @@ async function activateBoostFromPayment(payment: Row): Promise<void> {
     amount: payment.amount as number,
     paymentId: payment.id as string,
   });
+}
+
+// Same idea as activateBoostFromPayment, for the two subscription kinds
+// (FindIt Pro / store plans). changeStorePlan and changePlatformSubscription
+// throw ValidationError specifically for business-rule outcomes that a retry
+// can never fix — "That plan isn't available" (an admin disabled it before
+// the webhook landed), "You're already subscribed to X" (this exact change
+// already applied, e.g. on a redelivery after a first attempt that DID
+// succeed) — so those are logged and treated as done, not retried. Anything
+// else (a plain Error — a transient DB failure, a network hiccup) is a real
+// "the money was taken but the plan never actually changed" case, the same
+// gap activateBoostFromPayment closes for boosts, so the caller retries it.
+async function applySubscriptionFromPayment(payment: Row): Promise<void> {
+  const metadata = (payment.metadata as {
+    sellerId?: string;
+    userId?: string;
+    planId?: string;
+    billingPeriod?: BillingPeriod;
+    ownerType?: "platform";
+  } | null) ?? null;
+  if (metadata?.ownerType === "platform" && metadata.userId && metadata.planId) {
+    await changePlatformSubscription(metadata.userId, metadata.planId, metadata.billingPeriod ?? "monthly", {
+      paymentConfirmed: true,
+    });
+  } else if (metadata?.sellerId && metadata.planId) {
+    await changeStorePlan(metadata.sellerId, metadata.planId, metadata.billingPeriod ?? "monthly", {
+      paymentConfirmed: true,
+    });
+  }
 }
 
 // Paystack calls this — never a logged-in browser, so there is no session
@@ -65,12 +95,12 @@ export async function POST(req: NextRequest) {
     // of the payment itself (a transient DB error, the platform fee config
     // missing a row, etc.), and used to just get logged and swallowed for
     // boosts/subscriptions, leaving the payment permanently 'success' with
-    // nothing to show for it and no way to repair it. confirmOrderPayment
-    // and activateBoost are both safe no-ops once they've actually applied
-    // (see lib/payments.ts and lib/boosts.ts's payment_id check), so
-    // retrying them here on a redelivery is what actually lets Paystack's
-    // own retry mechanism heal that. Returning non-2xx keeps it retrying
-    // until this succeeds.
+    // nothing to show for it and no way to repair it. confirmOrderPayment,
+    // activateBoost, and applySubscriptionFromPayment (for a genuinely
+    // retryable failure, not a terminal ValidationError) are all safe to
+    // call again once they've actually applied, so retrying them here on a
+    // redelivery is what actually lets Paystack's own retry mechanism heal
+    // that. Returning non-2xx keeps it retrying until this succeeds.
     if (payment.order_id) {
       try {
         await confirmOrderPayment(payment.order_id as string);
@@ -84,6 +114,17 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("[paystack-webhook] retry: boost activation still failing", err);
         return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
+      }
+    } else {
+      try {
+        await applySubscriptionFromPayment(payment);
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          console.error("[paystack-webhook] retry: subscription change not retryable", err.message);
+        } else {
+          console.error("[paystack-webhook] retry: subscription change still failing", err);
+          return NextResponse.json({ error: "subscription change failed" }, { status: 500 });
+        }
       }
     }
     return NextResponse.json({ received: true }); // already processed — webhooks can be delivered more than once
@@ -144,28 +185,17 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
       }
     } else {
-      const metadata = (payment.metadata as {
-        sellerId?: string;
-        userId?: string;
-        planId?: string;
-        billingPeriod?: BillingPeriod;
-        ownerType?: "platform";
-      } | null) ?? null;
-      if (metadata?.ownerType === "platform" && metadata.userId && metadata.planId) {
-        try {
-          await changePlatformSubscription(metadata.userId, metadata.planId, metadata.billingPeriod ?? "monthly", {
-            paymentConfirmed: true,
-          });
-        } catch (err) {
-          console.error("[paystack-webhook] payment succeeded but FindIt Pro subscription failed", err);
-        }
-      } else if (metadata?.sellerId && metadata.planId) {
-        try {
-          await changeStorePlan(metadata.sellerId, metadata.planId, metadata.billingPeriod ?? "monthly", {
-            paymentConfirmed: true,
-          });
-        } catch (err) {
-          console.error("[paystack-webhook] payment succeeded but plan change failed", err);
+      try {
+        // Non-2xx on a genuinely retryable failure, same reasoning as the
+        // order/boost branches above — see applySubscriptionFromPayment for
+        // why a ValidationError specifically is treated as done, not retried.
+        await applySubscriptionFromPayment(payment);
+      } catch (err) {
+        if (err instanceof ValidationError) {
+          console.error("[paystack-webhook] payment succeeded but subscription change isn't retryable", err.message);
+        } else {
+          console.error("[paystack-webhook] payment succeeded but subscription change failed", err);
+          return NextResponse.json({ error: "subscription change failed" }, { status: 500 });
         }
       }
     }
