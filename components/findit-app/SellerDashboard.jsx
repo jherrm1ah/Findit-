@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
@@ -732,6 +732,55 @@ function PayoutAccountCard({ payoutAccount, banks, onSave, saving }) {
   );
 }
 
+// The five sections a seller actually comes here for, previously all
+// stacked in one long scroll with no way to jump between them — "Store
+// branding" sat between the revenue chart and "My listings," "Orders to
+// fulfill" came after the payout card, and everything for one seller with
+// a modest catalog was several screens of scrolling before reaching
+// requests. Grouped by what a seller is actually trying to do: check in
+// (Overview), manage the catalog (Listings), fulfill what's sold
+// (Orders), respond to buyers (Requests), and the one-time/occasional
+// setup (Store — branding, payout account, reviews).
+const TABS = [
+  { key: "overview", label: "Overview", icon: LayoutDashboard },
+  { key: "listings", label: "Listings", icon: Package },
+  { key: "orders", label: "Orders", icon: ClipboardList },
+  { key: "requests", label: "Requests", icon: Send },
+  { key: "store", label: "Store", icon: Store },
+];
+
+function TabBar({ active, onChange, counts }) {
+  return (
+    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-6 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
+      {TABS.map(({ key, label, icon: Icon }) => {
+        const isActive = active === key;
+        const count = counts[key];
+        return (
+          <button
+            key={key}
+            onClick={() => onChange(key)}
+            className={`shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full border transition ${
+              isActive ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"
+            }`}
+            style={isActive ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+          >
+            <Icon size={13} /> {label}
+            {count > 0 && (
+              <span
+                className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${
+                  isActive ? "bg-white/25 text-white" : "bg-[#F5F2FC] text-[#7C3AED]"
+                }`}
+              >
+                {count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SellerDashboard({
   requests, onSendOffer, user, mySellerId, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
@@ -755,6 +804,7 @@ export default function SellerDashboard({
   const [messagingId, setMessagingId] = useState(null);
   const [boostPickerId, setBoostPickerId] = useState(null);
   const [boostingId, setBoostingId] = useState(null);
+  const [activeTab, setActiveTab] = useState("overview");
 
   const boostListing = async (productId, boostPlanId) => {
     setBoostingId(productId);
@@ -912,6 +962,14 @@ export default function SellerDashboard({
         )}
       </p>
 
+      <TabBar
+        active={activeTab}
+        onChange={setActiveTab}
+        counts={{ listings: myListings.length, orders: myOrders.length, requests: requests.length }}
+      />
+
+      {activeTab === "overview" && (
+      <>
       {plan && (
         <button
           onClick={() => go?.("storePlans")}
@@ -1037,9 +1095,11 @@ export default function SellerDashboard({
       </div>
 
       <StoreAnalytics plan={plan} orders={myOrders} go={go} />
-      <ReviewsCard />
-      <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
+      </>
+      )}
 
+      {activeTab === "listings" && (
+      <>
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My listings</p>
         {!adding && !atListingLimit && (
@@ -1170,14 +1230,24 @@ export default function SellerDashboard({
           </div>
         ))}
       </div>
+      </>
+      )}
 
+      {activeTab === "store" && (
+      <>
+      <ReviewsCard />
+      <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
       <PayoutAccountCard
         payoutAccount={payoutAccount}
         banks={banks}
         onSave={onSavePayoutAccount}
         saving={savingPayoutAccount}
       />
+      </>
+      )}
 
+      {activeTab === "orders" && (
+      <>
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Orders to fulfill</p>
       <div className="space-y-3 mb-7">
         {myOrders.length === 0 && (
@@ -1258,7 +1328,11 @@ export default function SellerDashboard({
           );
         })}
       </div>
+      </>
+      )}
 
+      {activeTab === "requests" && (
+      <>
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Matching customer requests</p>
       <div className="space-y-3">
         {requests.length === 0 && (
@@ -1304,6 +1378,8 @@ export default function SellerDashboard({
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 }
