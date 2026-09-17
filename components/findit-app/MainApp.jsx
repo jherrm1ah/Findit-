@@ -77,6 +77,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   const [activeThread, setActiveThread] = useState(null);
   const [threadMessages, setThreadMessages] = useState([]);
   const [threadLoading, setThreadLoading] = useState(false);
+  // Bumped on every open/back so a slow getMessages response from a thread
+  // the buyer already left can't land late and overwrite whatever they
+  // opened next (or resurrect the thread after they went back).
+  const threadRequestRef = useRef(0);
   // Real in-app support tickets (lib/support.ts) — see HelpSupport.jsx.
   // Reuses <Thread> for the ticket conversation itself: a ticket message's
   // `isAdmin` maps to the same `mine` field Thread already renders around.
@@ -930,16 +934,20 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   };
 
   const handleOpenThread = async (id, otherParty) => {
+    const requestId = ++threadRequestRef.current;
     setActiveThread({ id, otherParty });
     setThreadLoading(true);
     try {
       const messages = await api.getMessages(id);
+      if (threadRequestRef.current !== requestId) return; // superseded by a newer open/back
       setThreadMessages(messages);
       setConversations((cs) => cs.map((c) => (c.id === id ? { ...c, unreadCount: 0 } : c)));
     } catch (err) {
-      showToast(err.message || "Couldn't load that conversation — try again.", "error");
+      if (threadRequestRef.current === requestId) {
+        showToast(err.message || "Couldn't load that conversation — try again.", "error");
+      }
     } finally {
-      setThreadLoading(false);
+      if (threadRequestRef.current === requestId) setThreadLoading(false);
     }
   };
 
@@ -1175,10 +1183,19 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // way to make an open conversation feel live without a websocket.
   useEffect(() => {
     if (!activeThread) return;
+    let cancelled = false;
     const interval = setInterval(() => {
-      api.getMessages(activeThread.id).then(setThreadMessages).catch(() => {});
+      api
+        .getMessages(activeThread.id)
+        .then((messages) => {
+          if (!cancelled) setThreadMessages(messages);
+        })
+        .catch(() => {});
     }, 4000);
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [activeThread?.id]);
 
   // Split out from handleContactSeller below so the store page's "Message
@@ -1564,7 +1581,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
           otherParty={activeThread.otherParty}
           messages={threadMessages}
           loading={threadLoading}
-          onBack={() => setActiveThread(null)}
+          onBack={() => {
+            threadRequestRef.current++;
+            setActiveThread(null);
+          }}
           onSend={handleSendMessage}
         />
       )}
