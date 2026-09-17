@@ -1554,6 +1554,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
           onOpenProduct={handleOpenProductFromSeller}
           onContact={handleContactSeller}
           myLocation={myLocation}
+          viewerSellerId={mySellerId}
         />
       )}
 
