@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ShieldCheck, Camera, ClipboardCheck, ArrowRight, ArrowLeft,
   Check, ImagePlus, X, Loader2, AlertCircle, Navigation,
@@ -53,6 +53,43 @@ function StepDots({ step }) {
 }
 
 function PhotoPicker({ label, files, onChange, hint }) {
+  // One blob: URL per File, created once and reused across re-renders —
+  // URL.createObjectURL(f) called straight in the render (the old code)
+  // mints a brand-new, never-revoked URL on EVERY render, for every photo
+  // already selected, not just a newly added one — typing anywhere else in
+  // this multi-step form re-renders this component and leaks another batch.
+  // This ref is the cache; the effects below revoke a file's URL once it's
+  // removed, and everything still outstanding once the picker itself
+  // unmounts (e.g. the wizard moves to another step).
+  const urlsRef = useRef(new Map());
+
+  useEffect(() => {
+    const current = new Set(files);
+    for (const [file, url] of urlsRef.current) {
+      if (!current.has(file)) {
+        URL.revokeObjectURL(url);
+        urlsRef.current.delete(file);
+      }
+    }
+  }, [files]);
+
+  useEffect(
+    () => () => {
+      for (const url of urlsRef.current.values()) URL.revokeObjectURL(url);
+      urlsRef.current.clear();
+    },
+    []
+  );
+
+  const urlFor = (file) => {
+    let url = urlsRef.current.get(file);
+    if (!url) {
+      url = URL.createObjectURL(file);
+      urlsRef.current.set(file, url);
+    }
+    return url;
+  };
+
   const addFiles = (e) => {
     const picked = Array.from(e.target.files || []);
     e.target.value = "";
@@ -71,7 +108,7 @@ function PhotoPicker({ label, files, onChange, hint }) {
                 memory before upload — there is no network fetch for
                 next/image to intercept or optimize, and a blob: URL isn't
                 a remote pattern it could route through anyway. */}
-            <img src={URL.createObjectURL(f)} alt="" className="w-full h-full object-cover" />
+            <img src={urlFor(f)} alt="" className="w-full h-full object-cover" />
             <button
               type="button"
               onClick={() => remove(i)}
