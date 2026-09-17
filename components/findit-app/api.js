@@ -87,6 +87,10 @@ export const api = {
 
   getMySellerStatus: () => request("/api/sellers/me").then((d) => d.status),
   getMyStoreBranding: () => request("/api/sellers/me").then((d) => ({ logoUrl: d.logoUrl, bannerUrl: d.bannerUrl })),
+  // The unambiguous key for "which listings/orders are actually mine" —
+  // business_name has no uniqueness constraint, so filtering by it alone
+  // (as SellerDashboard used to) can mix in a same-named stranger's data.
+  getMySellerId: () => request("/api/sellers/me").then((d) => d.sellerId),
 
   getSavedIds: () => request("/api/saved").then((d) => d.productIds),
   saveItem: (productId) =>

@@ -22,6 +22,18 @@ function statusTone(status) {
   return "gold";
 }
 
+// SELLER_STEPS deliberately excludes "Delivered" (only the buyer can mark an
+// order delivered) — so SELLER_STEPS.indexOf("Delivered") returns -1, and a
+// naive `SELLER_STEPS[SELLER_STEPS.indexOf(status) + 1]` reads index 0
+// instead of "no next step": every delivered order would compute
+// nextStatus = "Awaiting payment" (index 0's value, truthy), rendering an
+// enabled "Mark as Awaiting payment" button on every completed order
+// instead of the "Delivered — payment released" pill.
+function nextSellerStep(status) {
+  if (status === "Delivered") return undefined;
+  return SELLER_STEPS[SELLER_STEPS.indexOf(status) + 1];
+}
+
 const EMPTY_OFFER = { price: "", delivery: "", eta: "", warranty: "", note: "" };
 
 function OfferForm({ onSend, onCancel, sending }) {
@@ -312,6 +324,19 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
 function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage, go }) {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  // Each upload's onUpdateBranding call fills in the OTHER field from
+  // `branding` as it stood at the moment this specific upload started —
+  // it's a closure over a prop value, never re-read after the await. If
+  // both uploads are allowed to run at once (the natural way a seller sets
+  // up branding for the first time — logo, then immediately banner, while
+  // the logo is still mid-upload), the second one's stale `branding` still
+  // shows the first's field as unset, and its onUpdateBranding call
+  // overwrites the field the first upload just successfully saved — no
+  // error, just a silently vanished logo or banner. Disabling BOTH controls
+  // while EITHER is busy (not just each one's own flag) serializes them, so
+  // by the time a second upload can start, `branding` has already re-
+  // rendered with the first one's result.
+  const busy = uploadingLogo || uploadingBanner;
   const locked = !plan || plan.customizationLevel === "none";
 
   const upload = async (file, kind) => {
@@ -359,13 +384,13 @@ function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage,
               <div className={`relative bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
                 {url ? <NextImage src={url} alt="" fill sizes="120px" className="object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
               </div>
-              <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || uploading ? "opacity-50 pointer-events-none" : ""}`}>
+              <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || busy ? "opacity-50 pointer-events-none" : ""}`}>
                 {uploading ? "Uploading…" : url ? "Change" : "Upload"}
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  disabled={saving || uploading}
+                  disabled={saving || busy}
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     e.target.value = "";
@@ -708,7 +733,7 @@ function PayoutAccountCard({ payoutAccount, banks, onSave, saving }) {
 }
 
 export default function SellerDashboard({
-  requests, onSendOffer, user, orders, onAdvanceOrderStatus,
+  requests, onSendOffer, user, mySellerId, orders, onAdvanceOrderStatus,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
   onMessageBuyer,
   myLocation,
@@ -752,8 +777,30 @@ export default function SellerDashboard({
     }
   };
 
-  const myOrders = orders.filter((o) => o.seller === user.businessName);
-  const myListings = products.filter((p) => p.seller === user.businessName);
+  // sellerId-first, business_name only as the fallback for a legacy row that
+  // predates the seller_id backfill (migration 009) and so has none — the
+  // same union lib/repo.ts#listOrders already does server-side. Plain name
+  // matching alone (the old code) would also catch a same-named stranger's
+  // listings here — business_name has no uniqueness constraint — and, for
+  // orders specifically, this account's OWN purchases from that stranger too
+  // (orders already includes this user's own buyer-side orders, and one of
+  // those could carry `seller === user.businessName` purely by the name
+  // collision, with nothing to do with this account's own sales).
+  //
+  // While mySellerId hasn't loaded yet (its own fetch, racing products'/
+  // orders' own fetches on every mount — see MainApp.jsx), falling straight
+  // to the sellerId branch would show NOTHING for a seller whose rows all
+  // carry a real seller_id, until that fetch resolves — a listings/orders
+  // section that visibly empties out and refills on every page load. Until
+  // it's known, matching by name alone (the old behaviour) is the safer
+  // default: it can't under-count, only (rarely) over-count under an actual
+  // name collision, and only for that brief window.
+  const isMine = (row) =>
+    mySellerId != null
+      ? row.sellerId === mySellerId || (row.sellerId == null && row.seller === user.businessName)
+      : row.seller === user.businessName;
+  const myOrders = orders.filter(isMine);
+  const myListings = products.filter(isMine);
   const plan = storePlan?.plan ?? null;
   const usage = storePlan?.usage ?? null;
   const atListingLimit = plan && plan.productLimit !== null && (usage?.activeProducts ?? 0) >= plan.productLimit;
@@ -787,10 +834,7 @@ export default function SellerDashboard({
   };
 
   const advance = async (order) => {
-    // SELLER_STEPS stops at "Out for delivery" — only the buyer can mark an
-    // order delivered, which is what releases the payment.
-    const nextIdx = SELLER_STEPS.indexOf(order.status) + 1;
-    const nextStatus = SELLER_STEPS[nextIdx];
+    const nextStatus = nextSellerStep(order.status);
     if (!nextStatus) return;
     setAdvancingId(order.id);
     try {
@@ -1140,7 +1184,7 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No orders under your business name yet.</p>
         )}
         {myOrders.map((o) => {
-          const nextStatus = SELLER_STEPS[SELLER_STEPS.indexOf(o.status) + 1];
+          const nextStatus = nextSellerStep(o.status);
           const awaitingBuyer = !nextStatus && o.status !== "Delivered";
           return (
             <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">

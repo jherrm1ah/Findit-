@@ -103,6 +103,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // admin call, so a tampered client gains nothing here.
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [mySellerStatus, setMySellerStatus] = useState(null); // pending | approved | rejected | null
+  // This account's own sellers.id | null — the unambiguous key SellerDashboard
+  // needs to tell "my listings/orders" apart from a same-named seller's, since
+  // business_name has no uniqueness constraint. See GET /api/sellers/me.
+  const [mySellerId, setMySellerId] = useState(null);
   // { subscription, plan, usage: { activeProducts, label }, plans } | null —
   // see GET /api/sellers/me/subscription. null until the first fetch, or
   // permanently for any account that's never been a seller.
@@ -215,6 +219,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     }
     if (isSeller) {
       api.getMySellerStatus().then(setMySellerStatus).catch(() => {});
+      api.getMySellerId().then(setMySellerId).catch(() => {});
       api.getMyStorePlan().then(setStorePlan).catch(() => {});
       api.getMyStoreBranding().then(setStoreBranding).catch(() => {});
       api.getMyVerification().then(setVerification).catch(() => {});
@@ -1332,6 +1337,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               requests={requests}
               onSendOffer={handleSendOffer}
               user={user}
+              mySellerId={mySellerId}
               orders={orders}
               onAdvanceOrderStatus={handleAdvanceOrderStatus}
               products={products}
