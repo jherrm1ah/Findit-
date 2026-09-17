@@ -307,6 +307,79 @@ describe("releasing escrow on an order nobody paid for", () => {
   });
 });
 
+describe("confirmDelivery vs reportOrderIssue — mutual exclusion race", () => {
+  // The actual bug: confirmDelivery's atomic guard was buyer_confirmed_at
+  // IS NULL; reportOrderIssue's was issue_reported_at IS NULL — two
+  // DIFFERENT columns on the same row, so a buyer who fires both close
+  // together (two tabs, a double-tap across adjacent buttons) could have
+  // BOTH succeed: confirmDelivery releases escrow and the route triggers a
+  // real Paystack payout, while reportOrderIssue's write lands right after
+  // and flips escrow_status to 'disputed' — leaving the seller already
+  // paid on an order that now reads as an open dispute an admin might
+  // refund too. Both now gate on escrow_status itself, matched against
+  // exactly what each read, so they're mutually exclusive under a race.
+  function seedPaidDispatchedOrder() {
+    fakeDb.reset({
+      orders: [
+        {
+          id: "ORD-1",
+          user_id: "buyer_1",
+          item: "Blender",
+          seller: "Kemi's Kitchen",
+          seller_id: "seller_1",
+          price: 15000,
+          status: "Out for delivery",
+          escrow_status: "held",
+          payment_status: "paid",
+          buyer_confirmed_at: null,
+          issue_reported_at: null,
+          platform_fee_bps: 200,
+          platform_fee_amount: 300,
+          seller_payout_amount: 14700,
+          created_at: new Date().toISOString(),
+        },
+      ],
+      users: [{ id: "seller_user_1", role: "seller", business_name: "Kemi's Kitchen", name: "Kemi", notifications_enabled: true }],
+      notifications: [],
+    });
+  }
+
+  it("lets only one of confirm-delivery and report-issue win when fired concurrently", async () => {
+    seedPaidDispatchedOrder();
+
+    const [confirmResult, reportResult] = await Promise.allSettled([
+      confirmDelivery("ORD-1", "buyer_1"),
+      reportOrderIssue("ORD-1", "buyer_1", "It arrived broken and doesn't turn on."),
+    ]);
+
+    const succeeded = [confirmResult, reportResult].filter((r) => r.status === "fulfilled");
+    expect(succeeded).toHaveLength(1);
+
+    // The final row reflects exactly one outcome, never a mix of both
+    // (e.g. escrow_status changed by the loser after the winner committed).
+    const [row] = fakeDb.dump("orders");
+    if (confirmResult.status === "fulfilled") {
+      expect(row.escrow_status).toBe("released");
+      expect(row.issue_reported_at).toBeNull();
+    } else {
+      expect(row.escrow_status).toBe("disputed");
+      expect(row.buyer_confirmed_at).toBeNull();
+    }
+  });
+
+  it("still confirms delivery normally with no race in play", async () => {
+    seedPaidDispatchedOrder();
+    const order = await confirmDelivery("ORD-1", "buyer_1");
+    expect(order?.escrowStatus).toBe("released");
+  });
+
+  it("still reports an issue normally with no race in play", async () => {
+    seedPaidDispatchedOrder();
+    const order = await reportOrderIssue("ORD-1", "buyer_1", "It arrived broken and doesn't turn on.");
+    expect(order?.escrowStatus).toBe("disputed");
+  });
+});
+
 describe("reportOrderIssue — post-confirmation window", () => {
   function seedConfirmedOrder(buyerConfirmedAt: string) {
     fakeDb.reset({

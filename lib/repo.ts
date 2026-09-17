@@ -1163,8 +1163,21 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
 
   const now = new Date().toISOString();
   const db = getDb();
-  // Conditional on buyer_confirmed_at still being null, so two taps in quick
-  // succession can't both release the same order's funds.
+  // Conditional on escrow_status still being whatever this function just
+  // read it as (held, or disputed if this confirmation is settling the
+  // buyer's own earlier report) — not just buyer_confirmed_at being null.
+  // reportOrderIssue below writes the SAME row on a DIFFERENT column
+  // (issue_reported_at) with its own independent null-guard, so a buyer
+  // who fires both actions close together (two tabs, a double-tap across
+  // adjacent buttons) could previously have BOTH succeed: this call
+  // releases escrow and triggers a real Paystack payout, while
+  // reportOrderIssue's write lands after and flips escrow_status to
+  // 'disputed' — leaving the seller already paid on an order that now
+  // reads as an open dispute an admin might refund too. Gating both
+  // functions' writes on escrow_status itself (matched against exactly
+  // what each one read) makes them mutually exclusive: whichever commits
+  // first moves escrow_status away from the value the other is still
+  // conditioned on, so the second write matches zero rows and fails clean.
   const result = await db
     .from("orders")
     .update({
@@ -1178,11 +1191,16 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
     })
     .eq("id", id)
     .eq("user_id", userId)
+    .eq("escrow_status", existing.escrowStatus)
     .is("buyer_confirmed_at", null)
     .select()
     .maybeSingle();
   const row = assertNoError(result, "confirming delivery") as Row | null;
-  if (!row) throw new ValidationError("You've already confirmed this order.");
+  if (!row) {
+    throw new ValidationError(
+      "This order's status just changed (already confirmed, or a report came in first) — refresh and try again."
+    );
+  }
   const order = rowToOrder(row);
 
   // The one moment an order is genuinely complete. Creating the verified
@@ -1247,6 +1265,14 @@ export async function reportOrderIssue(
   }
 
   const db = getDb();
+  // Conditional on escrow_status still matching exactly what was just read
+  // above (held, or released-and-within-window) — see the matching comment
+  // on confirmDelivery's own update for why this, not just
+  // issue_reported_at being null, is what actually makes these two
+  // functions mutually exclusive under a race: whichever of the two
+  // commits first moves escrow_status away from the value this call is
+  // still conditioned on, so a losing concurrent report fails clean here
+  // instead of landing after a payout already went out.
   const result = await db
     .from("orders")
     .update({
@@ -1256,11 +1282,16 @@ export async function reportOrderIssue(
     })
     .eq("id", id)
     .eq("user_id", userId)
+    .eq("escrow_status", existing.escrowStatus)
     .is("issue_reported_at", null)
     .select()
     .maybeSingle();
   const row = assertNoError(result, "reporting an order problem") as Row | null;
-  if (!row) throw new ValidationError("You've already reported a problem with this order.");
+  if (!row) {
+    throw new ValidationError(
+      "This order's status just changed (already confirmed or reported) — refresh and try again."
+    );
+  }
 
   // A post-confirmation report (see the window check above) disputes a
   // transaction record that already exists and reads 'completed' — this is
