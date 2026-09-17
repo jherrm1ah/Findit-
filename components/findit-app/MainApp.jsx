@@ -47,7 +47,7 @@ function tabsFor(role) {
   ];
 }
 
-export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
+export default function MainApp({ user, onLogout, showToast, onUserUpdate, preloadedMainData }) {
   const isSeller = user?.role === "seller";
   const isAdmin = user?.role === "admin";
   const TABS = tabsFor(user?.role);
@@ -190,8 +190,16 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate }) {
     // applyCategoryOverrides in ./data for why this isn't setState.
     api.getCategories().then(applyCategoryOverrides).catch(() => {});
 
-    const tasks = [api.getProducts(), api.getOrders(), api.getNotifications()];
-    Promise.all(tasks)
+    // App.jsx starts this same fetch as soon as the session check resolves
+    // — overlapping it with the splash screen's own display time instead of
+    // only starting once MainApp mounts (i.e. after the splash has already
+    // finished). Without preloadedMainData, this "Loading FindIt…" screen
+    // below was stacked sequentially after the splash on every refresh
+    // instead of overlapping it, most noticeable on a slower connection.
+    // Falls back to firing fresh requests when there's nothing preloaded —
+    // a brand-new login doesn't go through that session-check path at all.
+    const mainData = preloadedMainData ?? Promise.all([api.getProducts(), api.getOrders(), api.getNotifications()]);
+    mainData
       .then(([p, o, n]) => {
         setProducts(p);
         setOrders(o);

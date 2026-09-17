@@ -36,6 +36,15 @@ export default function App() {
   const [phase, setPhase] = useState("splash"); // splash → onboarding → login → main
   const [user, setUser] = useState(null);
   const sessionRef = useRef(null);
+  // Products/orders/notifications for a returning, already-signed-in user —
+  // kicked off as soon as the session check below resolves, so it overlaps
+  // the splash screen's own display time instead of only starting once
+  // MainApp mounts (i.e. strictly after the splash has already finished).
+  // Without this, every refresh showed the branded splash, then a SECOND,
+  // separate "Loading FindIt…" spinner stacked right after it while MainApp
+  // fetched its own data from scratch — most noticeable on a slower
+  // connection. See MainApp.jsx's preloadedMainData prop.
+  const mainDataRef = useRef(null);
 
   const [toasts, setToasts] = useState([]);
   const toastIdRef = useRef(0);
@@ -47,7 +56,13 @@ export default function App() {
   const dismissToast = (id) => setToasts((ts) => ts.filter((t) => t.id !== id));
 
   useEffect(() => {
-    sessionRef.current = api.me().catch(() => null);
+    const sessionPromise = api.me().catch(() => null);
+    sessionRef.current = sessionPromise;
+    sessionPromise.then((sessionUser) => {
+      if (sessionUser) {
+        mainDataRef.current = Promise.all([api.getProducts(), api.getOrders(), api.getNotifications()]);
+      }
+    });
   }, []);
 
   // A session can lapse while someone is mid-way through the app. Without
@@ -131,6 +146,7 @@ export default function App() {
         onLogout={handleLogout}
         showToast={showToast}
         onUserUpdate={(updatedUser) => setUser(updatedUser)}
+        preloadedMainData={mainDataRef.current}
       />
     );
   }
