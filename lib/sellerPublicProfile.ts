@@ -141,14 +141,39 @@ export async function getPublicSellerProfile(
   // buyer actually reviewed; the completed count comes from escrow outcomes,
   // because most buyers never leave a review and rating-based counts would
   // badly undercount a seller's real track record.
-  const [reviewedResult, outcomeResult, planMap, reviews] = await Promise.all([
-    db.from("orders").select("my_rating").eq("seller", name).eq("reviewed", true),
-    db.from("orders").select("escrow_status").eq("seller", name).in("escrow_status", ["released", "disputed"]),
-    getStorePlanDisplayMap(),
-    listPublicReviewsForSeller(resolved.id),
-  ]);
-  const reviewed = assertNoError(reviewedResult, "loading seller reviews") as Row[];
-  const outcomes = assertNoError(outcomeResult, "loading seller order outcomes") as Row[];
+  //
+  // seller_id first, business_name only as the fallback for orders that
+  // predate the seller_id backfill (migration 009) — business_name has no
+  // uniqueness constraint, so a plain `.eq("seller", name)` here would merge
+  // a same-named stranger's entire order history into THIS seller's public
+  // rating, review count, completed-order count, and dispute count. Those
+  // last two directly decide the "Verified"/"Trusted" badge this page shows
+  // (computeVerificationLevel below) and feed the aggregateRating this page
+  // publishes to Google via JSON-LD — a name collision here doesn't just
+  // show a wrong number, it can hand one seller a badge (or a dispute rate)
+  // that's actually a stranger's.
+  const [reviewedByIdResult, reviewedLegacyResult, outcomeByIdResult, outcomeLegacyResult, planMap, reviews] =
+    await Promise.all([
+      db.from("orders").select("my_rating").eq("seller_id", resolved.id).eq("reviewed", true),
+      db.from("orders").select("my_rating").eq("seller", name).is("seller_id", null).eq("reviewed", true),
+      db.from("orders").select("escrow_status").eq("seller_id", resolved.id).in("escrow_status", ["released", "disputed"]),
+      db
+        .from("orders")
+        .select("escrow_status")
+        .eq("seller", name)
+        .is("seller_id", null)
+        .in("escrow_status", ["released", "disputed"]),
+      getStorePlanDisplayMap(),
+      listPublicReviewsForSeller(resolved.id),
+    ]);
+  const reviewed = [
+    ...(assertNoError(reviewedByIdResult, "loading seller reviews") as Row[]),
+    ...(assertNoError(reviewedLegacyResult, "loading legacy seller reviews") as Row[]),
+  ];
+  const outcomes = [
+    ...(assertNoError(outcomeByIdResult, "loading seller order outcomes") as Row[]),
+    ...(assertNoError(outcomeLegacyResult, "loading legacy seller order outcomes") as Row[]),
+  ];
 
   const ratings = reviewed
     .map((r) => r.my_rating as number | null)

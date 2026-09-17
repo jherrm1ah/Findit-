@@ -292,4 +292,51 @@ describe("public seller profile — reputation is computed, never declared", () 
     expect(result.profile.reviewCount).toBe(2);
     expect(result.profile.completedOrderCount).toBe(3);
   });
+
+  // The bug this closes: the old query matched orders by `seller` (business
+  // name) alone, with no seller_id filter at all — business_name has no
+  // uniqueness constraint, so a namesake's entire order history (rating,
+  // dispute count, completed-order count) would silently merge into THIS
+  // seller's public numbers. Unlike a same-named DIFFERENT seller in the
+  // test above (which the old query already isolated correctly, since that
+  // one used a different name), this is the actual collision case: two real
+  // accounts sharing the exact same name.
+  it("never merges a same-named seller's rating, disputes, or completed orders into this one", async () => {
+    fakeDb.reset({
+      sellers: [
+        seedSeller({ id: "seller_1", name: "Shopera" }),
+        seedSeller({ id: "seller_2", user_id: "u_2", name: "Shopera" }),
+      ],
+      orders: [
+        { id: "o_1", seller: "Shopera", seller_id: "seller_1", reviewed: true, my_rating: 5, escrow_status: "released" },
+        // seller_2's own order, under the same business name — a disputed,
+        // badly-rated order that must never count against seller_1.
+        { id: "o_2", seller: "Shopera", seller_id: "seller_2", reviewed: true, my_rating: 1, escrow_status: "disputed" },
+      ],
+    });
+
+    const result = await getPublicSellerProfile("seller_1", listings);
+    if (result.status !== "ok") throw new Error("expected a profile");
+
+    expect(result.profile.rating).toBe(5);
+    expect(result.profile.reviewCount).toBe(1);
+    // seller_1's own order (o_1) is released, so it does count — the point
+    // is that seller_2's disputed order does NOT push this number down.
+    expect(result.profile.completedOrderCount).toBe(1);
+  });
+
+  it("still attributes a pre-backfill order with no seller_id by name, for reputation too", async () => {
+    fakeDb.reset({
+      sellers: [seedSeller()],
+      orders: [
+        { id: "o_legacy", seller: "Terra Gadgets", seller_id: null, reviewed: true, my_rating: 3, escrow_status: "released" },
+      ],
+    });
+
+    const result = await getPublicSellerProfile("seller_1", listings);
+    if (result.status !== "ok") throw new Error("expected a profile");
+
+    expect(result.profile.rating).toBe(3);
+    expect(result.profile.completedOrderCount).toBe(1);
+  });
 });
