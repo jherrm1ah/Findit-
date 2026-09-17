@@ -7,6 +7,23 @@ import { activateBoost } from "@/lib/boosts";
 
 type Row = Record<string, unknown>;
 
+// Shared between the fresh charge.success path and the "already recorded,
+// retry the side effect" redelivery path above — both need the exact same
+// metadata pulled off the payment row. Missing fields silently skip
+// activation (nothing to activate without an id) rather than throw, since
+// a malformed metadata row isn't something a retry can ever fix.
+async function activateBoostFromPayment(payment: Row): Promise<void> {
+  const metadata = (payment.metadata as { productId?: string; sellerId?: string; boostPlanId?: string } | null) ?? null;
+  if (!metadata?.productId || !metadata.sellerId || !metadata.boostPlanId) return;
+  await activateBoost({
+    productId: metadata.productId,
+    sellerId: metadata.sellerId,
+    boostPlanId: metadata.boostPlanId,
+    amount: payment.amount as number,
+    paymentId: payment.id as string,
+  });
+}
+
 // Paystack calls this — never a logged-in browser, so there is no session
 // here. The x-paystack-signature check below (HMAC of the raw body against
 // OUR secret key) is what stands in for auth: anyone who can produce a
@@ -44,21 +61,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true });
   }
   if (payment.status === "success") {
-    // Already recorded as paid — but the order-confirmation step below can
-    // fail independently of the payment itself (a transient DB error, the
-    // platform fee config missing a row, etc.), and used to just get logged
-    // and swallowed, leaving the payment permanently 'success' while the
-    // order stayed 'pending' forever with no way to repair it. confirmOrderPayment
-    // is a safe no-op once it has actually applied (see lib/payments.ts —
-    // it checks payment_status === 'paid' first), so retrying it here on a
-    // redelivery is what actually lets Paystack's own retry mechanism heal
-    // that. Returning non-2xx keeps it retrying until this succeeds.
+    // Already recorded as paid — but the steps below can fail independently
+    // of the payment itself (a transient DB error, the platform fee config
+    // missing a row, etc.), and used to just get logged and swallowed for
+    // boosts/subscriptions, leaving the payment permanently 'success' with
+    // nothing to show for it and no way to repair it. confirmOrderPayment
+    // and activateBoost are both safe no-ops once they've actually applied
+    // (see lib/payments.ts and lib/boosts.ts's payment_id check), so
+    // retrying them here on a redelivery is what actually lets Paystack's
+    // own retry mechanism heal that. Returning non-2xx keeps it retrying
+    // until this succeeds.
     if (payment.order_id) {
       try {
         await confirmOrderPayment(payment.order_id as string);
       } catch (err) {
         console.error("[paystack-webhook] retry: order confirmation still failing", err);
         return NextResponse.json({ error: "order confirmation failed" }, { status: 500 });
+      }
+    } else if (payment.kind === "boost") {
+      try {
+        await activateBoostFromPayment(payment);
+      } catch (err) {
+        console.error("[paystack-webhook] retry: boost activation still failing", err);
+        return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
       }
     }
     return NextResponse.json({ received: true }); // already processed — webhooks can be delivered more than once
@@ -97,8 +122,8 @@ export async function POST(req: NextRequest) {
       try {
         await confirmOrderPayment(payment.order_id as string);
       } catch (err) {
-        // Non-2xx (rather than swallowing this like the boost/subscription
-        // branches below do) so Paystack redelivers the webhook — see the
+        // Non-2xx (rather than swallowing this like the subscription branch
+        // below does) so Paystack redelivers the webhook — see the
         // `payment.status === "success"` branch above, which is what
         // actually retries confirmOrderPayment on that redelivery. The
         // payment itself is already correctly recorded as collected either
@@ -107,18 +132,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "order confirmation failed" }, { status: 500 });
       }
     } else if (payment.kind === "boost") {
-      const metadata = (payment.metadata as { productId?: string; sellerId?: string; boostPlanId?: string } | null) ?? null;
-      if (metadata?.productId && metadata.sellerId && metadata.boostPlanId) {
-        try {
-          await activateBoost({
-            productId: metadata.productId,
-            sellerId: metadata.sellerId,
-            boostPlanId: metadata.boostPlanId,
-            amount: payment.amount as number,
-          });
-        } catch (err) {
-          console.error("[paystack-webhook] payment succeeded but boost activation failed", err);
-        }
+      try {
+        // Non-2xx here too, same reasoning as the order branch above —
+        // activateBoost is idempotent on payment_id (lib/boosts.ts), so a
+        // redelivered webhook retrying this is safe, and without a retry a
+        // transient failure here previously meant "seller charged, boost
+        // never applied, no way to recover" forever.
+        await activateBoostFromPayment(payment);
+      } catch (err) {
+        console.error("[paystack-webhook] payment succeeded but boost activation failed", err);
+        return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
       }
     } else {
       const metadata = (payment.metadata as {
