@@ -94,6 +94,52 @@ describe("acceptOffer — double-accept race", () => {
     expect(result).toBeNull();
     expect(fakeDb.dump("orders")).toHaveLength(0);
   });
+
+  // The other half of the same race: accepting the SAME offer twice is
+  // guarded above, but nothing stopped accepting two DIFFERENT offers on
+  // one request — a buyer double-tapping "Accept" on two separate offers
+  // before the list refreshes (the client only disables the one button
+  // tapped, not the whole request card) would create two real orders for
+  // a request that should only ever be matched once.
+  it("creates exactly one order when two different offers on the same request are both accepted", async () => {
+    fakeDb.reset({
+      requests: [{ id: "req_1", user_id: "buyer_1", title: "Need a blender", status: "open", created_at: new Date().toISOString() }],
+      offers: [
+        { id: "off_1", request_id: "req_1", seller: "Kemi's Kitchen", seller_id: "seller_1", price: 15000, accepted: false, created_at: new Date().toISOString() },
+        { id: "off_2", request_id: "req_1", seller: "Terra Gadgets", seller_id: "seller_2", price: 14000, accepted: false, created_at: new Date().toISOString() },
+      ],
+      orders: [],
+    });
+
+    const [first, second] = await Promise.all([
+      acceptOffer("req_1", "off_1", "buyer_1"),
+      acceptOffer("req_1", "off_2", "buyer_1"),
+    ]);
+
+    const successes = [first, second].filter((r) => r !== null);
+    expect(successes).toHaveLength(1);
+    expect(fakeDb.dump("orders")).toHaveLength(1);
+    expect(fakeDb.dump("requests")[0].status).toBe("matched");
+    // Only the winning offer is marked accepted — the loser is untouched.
+    const acceptedOffers = fakeDb.dump("offers").filter((o) => o.accepted);
+    expect(acceptedOffers).toHaveLength(1);
+  });
+
+  it("refuses to accept an offer on a request that's already matched", async () => {
+    fakeDb.reset({
+      requests: [{ id: "req_1", user_id: "buyer_1", title: "Need a blender", status: "open", created_at: new Date().toISOString() }],
+      offers: [
+        { id: "off_1", request_id: "req_1", seller: "Kemi's Kitchen", seller_id: "seller_1", price: 15000, accepted: false, created_at: new Date().toISOString() },
+        { id: "off_2", request_id: "req_1", seller: "Someone Else", seller_id: "seller_2", price: 9000, accepted: false, created_at: new Date().toISOString() },
+      ],
+      orders: [],
+    });
+    await acceptOffer("req_1", "off_1", "buyer_1");
+
+    const result = await acceptOffer("req_1", "off_2", "buyer_1");
+    expect(result).toBeNull();
+    expect(fakeDb.dump("orders")).toHaveLength(1);
+  });
 });
 
 describe("confirmOrderPayment — webhook redelivery", () => {

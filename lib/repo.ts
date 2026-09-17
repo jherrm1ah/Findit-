@@ -2148,26 +2148,34 @@ export async function acceptOffer(
   // caller can't distinguish "doesn't exist" from "not yours".
   if (request.user_id !== userId) return null;
 
-  // Conditional on accepted still being false — without this, accepting the
-  // same offer twice (a double-tap, a back-button-then-resubmit, or two
-  // near-simultaneous requests) creates a second real order from one offer,
-  // since nothing else here checks whether it was already accepted. Only
-  // the call that actually flips accepted false -> true proceeds; a second
-  // one gets treated the same as "not found" rather than creating a
-  // duplicate order.
-  const claimResult = await db
-    .from("offers")
-    .update({ accepted: true })
-    .eq("id", offerId)
-    .eq("accepted", false)
+  // Claim the REQUEST first, atomically — this, not the offer row, is the
+  // real "only one winner" gate. The offer-level check below stops the
+  // SAME offer being accepted twice, but does nothing to stop a buyer
+  // accepting two DIFFERENT offers on the same request (a double-tap on
+  // two different "Accept" buttons before the list refreshes — the client
+  // only disables the one button being tapped, see MyRequests.jsx): two
+  // concurrent accepts on different offers would both pass an offer-scoped
+  // check, creating two real orders for one request. Only the call that
+  // actually flips this request open -> matched proceeds; every other
+  // accept attempt on this request, on any offer, fails the same way a
+  // not-found request would.
+  const requestClaimResult = await db
+    .from("requests")
+    .update({ status: "matched" })
+    .eq("id", requestId)
+    .eq("status", "open")
     .select("id")
     .maybeSingle();
-  const claimed = assertNoError(claimResult, "accepting offer") as Row | null;
-  if (!claimed) return null;
+  const requestClaimed = assertNoError(requestClaimResult, "claiming request") as Row | null;
+  if (!requestClaimed) return null;
 
+  // The request claim above is what actually prevents a duplicate order —
+  // this offer-level flip is now just bookkeeping (which specific offer
+  // won), safe to do unconditionally since only one caller can ever reach
+  // this point for this request.
   await assertNoError(
-    await db.from("requests").update({ status: "matched" }).eq("id", requestId),
-    "updating request status"
+    await db.from("offers").update({ accepted: true }).eq("id", offerId),
+    "accepting offer"
   );
 
   // "Awaiting payment", not "Seller preparing" — accepting an offer doesn't
