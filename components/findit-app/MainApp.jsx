@@ -409,13 +409,13 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     setProduct(p);
   };
 
-  const buyNow = async (prod, qty, condition) => {
+  const buyNow = async (prod, qty) => {
     try {
       // Only productId/qty go to the server — it looks up the real product
       // and computes price/seller itself, so nothing here is trusted as-is.
       const order = await api.createOrder({ productId: prod.id, qty });
       setOrders((os) => [order, ...os]);
-      setCheckoutOrder({ order, product: prod, qty, condition });
+      setCheckoutOrder({ order, product: prod, qty });
       go("checkout");
     } catch (err) {
       showToast(err.message || "Couldn't place that order — try again.", "error");
@@ -949,6 +949,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       setThreadMessages((ms) => [...ms, message]);
     } catch (err) {
       showToast(err.message || "Couldn't send that message — try again.", "error");
+      throw err;
     }
   };
 
@@ -1521,7 +1522,6 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             order={checkoutOrder.order}
             product={checkoutOrder.product}
             qty={checkoutOrder.qty}
-            condition={checkoutOrder.condition}
             onPay={api.payForOrder}
             showToast={showToast}
             go={go}
