@@ -975,12 +975,23 @@ export async function createOrderFromProduct(
 }
 
 // Shared by both ways an order gets created (direct purchase and accepting
-// a request offer) — looks the seller's account up by business name so the
-// notification lands on the right user, not just a string on the order row.
-// Called only once a payment is actually confirmed (lib/payments.ts), never
-// at order creation.
+// a request offer) — looks the seller's account up so the notification
+// lands on the right user, not just a string on the order row. Called only
+// once a payment is actually confirmed (lib/payments.ts), never at order
+// creation.
+//
+// Prefers order.sellerId (unambiguous) over the business-name lookup —
+// business_name has no uniqueness constraint, so findUserByBusinessName's
+// .maybeSingle() throws when two sellers share a name. Left unguarded, that
+// throw would propagate out of confirmOrderPayment AFTER the order's
+// payment_status write already committed: the Paystack webhook handler
+// would then retry forever on a payment that was, in fact, already applied,
+// and the real seller would never actually get notified. Name lookup stays
+// only as the fallback for orders with no seller_id (pre-backfill data).
 export async function notifySellerOfNewOrder(sellerBusinessName: string, order: Order): Promise<void> {
-  const seller = await findUserByBusinessName(sellerBusinessName);
+  const seller = order.sellerId
+    ? await findUserForSellerId(order.sellerId)
+    : await findUserByBusinessName(sellerBusinessName);
   if (!seller) return; // seller hasn't joined FindIt as an account directly — nothing to notify
   await notifyBestEffort({
     userId: seller.id,
@@ -1030,7 +1041,15 @@ export async function submitOrderReview(
   // afterward, and never undoes what just succeeded if it fails.
   await recordReview(order, userId, review);
 
-  const seller = await findUserByBusinessName(order.seller);
+  // order.sellerId when available (unambiguous) — see notifySellerOfNewOrder's
+  // comment above for why a bare business-name lookup here is a real bug,
+  // not just a style preference: it throws on a name collision, which would
+  // propagate out of whichever order-lifecycle step this is and fail an
+  // action that had already succeeded (the review/confirmation/report/
+  // resolution itself is saved before this notification runs).
+  const seller = order.sellerId
+    ? await findUserForSellerId(order.sellerId)
+    : await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
       userId: seller.id,
@@ -1209,7 +1228,15 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   // been shown must not fail because a record couldn't be written.
   await recordCompletedTransaction(order);
 
-  const seller = await findUserByBusinessName(order.seller);
+  // order.sellerId when available (unambiguous) — see notifySellerOfNewOrder's
+  // comment above for why a bare business-name lookup here is a real bug,
+  // not just a style preference: it throws on a name collision, which would
+  // propagate out of whichever order-lifecycle step this is and fail an
+  // action that had already succeeded (the review/confirmation/report/
+  // resolution itself is saved before this notification runs).
+  const seller = order.sellerId
+    ? await findUserForSellerId(order.sellerId)
+    : await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
       userId: seller.id,
@@ -1301,7 +1328,15 @@ export async function reportOrderIssue(
   await markTransactionDisputed(id, userId, trimmed);
   const order = rowToOrder(row);
 
-  const seller = await findUserByBusinessName(order.seller);
+  // order.sellerId when available (unambiguous) — see notifySellerOfNewOrder's
+  // comment above for why a bare business-name lookup here is a real bug,
+  // not just a style preference: it throws on a name collision, which would
+  // propagate out of whichever order-lifecycle step this is and fail an
+  // action that had already succeeded (the review/confirmation/report/
+  // resolution itself is saved before this notification runs).
+  const seller = order.sellerId
+    ? await findUserForSellerId(order.sellerId)
+    : await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
       userId: seller.id,
@@ -1389,7 +1424,15 @@ export async function resolveOrderIssue(
         : `FindIt reviewed your report on "${order.item}" and released the payment to the seller.`,
   });
 
-  const seller = await findUserByBusinessName(order.seller);
+  // order.sellerId when available (unambiguous) — see notifySellerOfNewOrder's
+  // comment above for why a bare business-name lookup here is a real bug,
+  // not just a style preference: it throws on a name collision, which would
+  // propagate out of whichever order-lifecycle step this is and fail an
+  // action that had already succeeded (the review/confirmation/report/
+  // resolution itself is saved before this notification runs).
+  const seller = order.sellerId
+    ? await findUserForSellerId(order.sellerId)
+    : await findUserByBusinessName(order.seller);
   if (seller) {
     await notifyBestEffort({
       userId: seller.id,

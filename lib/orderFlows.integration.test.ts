@@ -160,6 +160,7 @@ describe("confirmOrderPayment — webhook redelivery", () => {
         },
       ],
       platform_fee_config: [{ id: "fee_1", fee_bps: 500, created_at: new Date().toISOString() }],
+      sellers: [{ id: "seller_1", user_id: "seller_user_1", name: "Kemi's Kitchen" }],
       users: [
         {
           id: "seller_user_1",
@@ -339,6 +340,7 @@ describe("confirmDelivery vs reportOrderIssue — mutual exclusion race", () => 
           created_at: new Date().toISOString(),
         },
       ],
+      sellers: [{ id: "seller_1", user_id: "seller_user_1", name: "Kemi's Kitchen" }],
       users: [{ id: "seller_user_1", role: "seller", business_name: "Kemi's Kitchen", name: "Kemi", notifications_enabled: true }],
       notifications: [],
     });
@@ -399,6 +401,7 @@ describe("reportOrderIssue — post-confirmation window", () => {
           created_at: new Date().toISOString(),
         },
       ],
+      sellers: [{ id: "seller_1", user_id: "seller_user_1", name: "Kemi's Kitchen" }],
       users: [{ id: "seller_user_1", role: "seller", business_name: "Kemi's Kitchen", name: "Kemi", notifications_enabled: true }],
       notifications: [],
     });
