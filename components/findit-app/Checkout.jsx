@@ -9,7 +9,7 @@ import { STEPS, naira } from "./data";
 // Paystack charge, confirmed by app/api/payments/paystack/webhook. Nothing
 // here marks the order paid on its own; the button only ever starts a real
 // checkout or reports honestly that payments aren't configured yet.
-export default function Checkout({ order, product, qty, condition, onPay, showToast, go }) {
+export default function Checkout({ order, product, qty, onPay, showToast, go }) {
   const [paying, setPaying] = useState(false);
   const [notConfigured, setNotConfigured] = useState(false);
   const total = product.price * qty;
@@ -47,7 +47,7 @@ export default function Checkout({ order, product, qty, condition, onPay, showTo
         </h1>
       </div>
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5">
-        <p className="text-[12px] text-[#6B6483] mb-1">{product.name} · {condition} · Qty {qty}</p>
+        <p className="text-[12px] text-[#6B6483] mb-1">{product.name} · Qty {qty}</p>
         <p className="text-[15px] font-semibold text-[#1E1B4B] mb-1">{product.seller}</p>
         <p className="text-[18px] font-bold text-[#7C3AED]">{naira(total)}</p>
       </div>

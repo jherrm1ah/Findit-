@@ -9,11 +9,9 @@ import { categoryGroup, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 
-const CONDITIONS = ["New", "Used", "Refurb", "Any"];
-
 // Matches lib/productReports.ts#REPORT_REASON_LABELS (migration 027) — kept
-// as a small duplicated client-side list the same way CONDITIONS above is,
-// rather than a network round trip just to populate a reason picker.
+// as a small duplicated client-side list rather than a network round trip
+// just to populate a reason picker.
 const REPORT_REASONS = [
   { value: "prohibited_item", label: "Prohibited item" },
   { value: "counterfeit", label: "Possible counterfeit" },
@@ -24,7 +22,6 @@ const REPORT_REASONS = [
 ];
 
 export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation, onReportProduct, showToast }) {
-  const [condition, setCondition] = useState(0);
   const [qty, setQty] = useState(1);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [contacting, setContacting] = useState(false);
@@ -179,22 +176,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
           </div>
         )}
 
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <p className="text-[12px] text-[#8A8372] mb-2">Condition you want</p>
-            <div className="flex gap-2">
-              {CONDITIONS.map((c, i) => (
-                <button
-                  key={c}
-                  onClick={() => setCondition(i)}
-                  className={`w-10 h-10 rounded-xl text-[10.5px] font-semibold flex items-center justify-center ${condition === i ? "text-white" : "bg-[#F5F2FC] text-[#6B6483]"}`}
-                  style={condition === i ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
-                >
-                  {c === "Refurb" ? "R" : c[0]}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="flex items-center justify-end mb-6">
           <div>
             <p className="text-[12px] text-[#8A8372] mb-2 text-right">QTY</p>
             <div className="flex items-center gap-3 bg-[#F5F2FC] rounded-xl px-2 py-1.5">
@@ -280,7 +262,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
           onClick={async () => {
             setBuying(true);
             try {
-              await onBuyNow(product, qty, CONDITIONS[condition]);
+              await onBuyNow(product, qty);
             } finally {
               setBuying(false);
             }

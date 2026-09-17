@@ -23,9 +23,11 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
-    setDraft("");
     try {
       await onSend(conversationId, body);
+      setDraft("");
+    } catch {
+      // onSend already surfaced a toast — keep the draft so nothing typed is lost.
     } finally {
       setSending(false);
     }

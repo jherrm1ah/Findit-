@@ -8,7 +8,7 @@ import { api } from "./api";
 
 export default function RequestForm({ go, showToast, myLocation }) {
   const [stage, setStage] = useState("form");
-  const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New", deadline: "" });
+  const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New" });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [classifying, setClassifying] = useState(false);
@@ -128,7 +128,6 @@ export default function RequestForm({ go, showToast, myLocation }) {
         {myLocation && (
           <p className="text-[11px] text-[#6B6483] -mt-2 flex items-center gap-1"><MapPin size={11} /> Using your current location so nearby sellers see this first.</p>
         )}
-        <Field label="Deadline (optional)"><input type="date" value={form.deadline} onChange={(e) => setForm({ ...form, deadline: e.target.value })} className="input" /></Field>
         <button
           type="submit"
           disabled={submitting}
