@@ -810,7 +810,26 @@ export async function updateProduct(
   return getProduct(id);
 }
 
-export async function deleteProduct(id: string): Promise<boolean> {
+// A hard delete, unlike moderateProduct's soft "removed" status — and
+// product_reports has `on delete cascade` on this row (migration 027), so
+// deleting a listing permanently erases every report ever filed against it.
+// A seller under active review could otherwise destroy that evidence
+// unilaterally, the moment they realize they've been reported, before an
+// admin ever gets to look at it — the same kind of moderation bypass
+// already closed once this session for shared links to a removed listing.
+// Only a seller is blocked here; an admin who has already reviewed a
+// listing and decided it should go still can, same as they already can via
+// moderateProduct's own removal path.
+export async function deleteProduct(id: string, actingAdminId: string | null = null): Promise<boolean> {
+  if (!actingAdminId) {
+    const statusResult = await getDb().from("products").select("moderation_status").eq("id", id).maybeSingle();
+    const statusRow = assertNoError(statusResult, "checking listing before deleting") as Row | null;
+    if (statusRow?.moderation_status === "under_review") {
+      throw new ValidationError(
+        "This listing is under review and can't be deleted right now — an admin needs to resolve the report first."
+      );
+    }
+  }
   const db = getDb();
   const result = await db.from("products").delete().eq("id", id).select();
   const rows = assertNoError(result, "deleting product") as Row[];

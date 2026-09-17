@@ -108,6 +108,10 @@ export async function DELETE(
     );
   }
 
-  await deleteProduct(params.id);
+  try {
+    await deleteProduct(params.id, user?.role === "admin" ? user.id : null);
+  } catch (err) {
+    return errorResponse(err, "Couldn't delete that listing.");
+  }
   return NextResponse.json({ ok: true });
 }

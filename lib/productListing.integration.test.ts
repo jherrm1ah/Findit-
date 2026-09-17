@@ -16,7 +16,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { createProduct, updateProduct, getProduct, listProducts, createOrderFromProduct } = await import("./repo");
+const { createProduct, updateProduct, getProduct, listProducts, createOrderFromProduct, deleteProduct } = await import("./repo");
 
 function categories() {
   return [{ id: "electronics", label: "Electronics", icon_key: "Package", sort_order: 0, active: true, created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z" }];
@@ -225,5 +225,44 @@ describe("createOrderFromProduct — refuses an out-of-stock listing", () => {
 
     const order = await createOrderFromProduct(product.id, 1, "buyer_1");
     expect(order.item).toBe(product.name);
+  });
+});
+
+describe("deleteProduct — blocks a seller from destroying evidence under review", () => {
+  it("refuses a seller's delete while the listing is under review", async () => {
+    const product = await createProduct(baseInput());
+    fakeDb.reset({
+      categories: categories(),
+      products: fakeDb.dump("products").map((p) =>
+        p.id === product.id ? { ...p, moderation_status: "under_review" } : p
+      ),
+      product_images: fakeDb.dump("product_images"),
+    });
+
+    await expect(deleteProduct(product.id, null)).rejects.toThrow(/under review/i);
+    expect(await getProduct(product.id)).not.toBeNull();
+  });
+
+  it("still lets an admin delete a listing under review", async () => {
+    const product = await createProduct(baseInput());
+    fakeDb.reset({
+      categories: categories(),
+      products: fakeDb.dump("products").map((p) =>
+        p.id === product.id ? { ...p, moderation_status: "under_review" } : p
+      ),
+      product_images: fakeDb.dump("product_images"),
+    });
+
+    const deleted = await deleteProduct(product.id, "admin_1");
+    expect(deleted).toBe(true);
+    expect(await getProduct(product.id)).toBeNull();
+  });
+
+  it("lets a seller delete a normal active listing with no restriction", async () => {
+    const product = await createProduct(baseInput());
+
+    const deleted = await deleteProduct(product.id, null);
+    expect(deleted).toBe(true);
+    expect(await getProduct(product.id)).toBeNull();
   });
 });
