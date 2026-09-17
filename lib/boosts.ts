@@ -86,11 +86,26 @@ export async function updateBoostPlan(id: string, patch: Partial<Omit<BoostPlan,
 // boosted_until, so buying a second boost while one is still running adds
 // on top of it rather than a shorter plan overwriting a longer remaining
 // window.
-export async function activateBoost(input: { productId: string; sellerId: string; boostPlanId: string; amount: number }): Promise<void> {
+//
+// This is additive, not a no-op, so it must never run twice for the same
+// payment — the webhook can legitimately redeliver the same charge.success
+// event. paymentId (migration 029) is what makes a second call for the
+// same payment a safe, cheap no-op instead of double-extending the boost.
+export async function activateBoost(input: {
+  productId: string;
+  sellerId: string;
+  boostPlanId: string;
+  amount: number;
+  paymentId: string;
+}): Promise<void> {
+  const db = getDb();
+  const existingResult = await db.from("boosts").select("id").eq("payment_id", input.paymentId).maybeSingle();
+  const existing = assertNoError(existingResult, "checking for an existing boost") as Row | null;
+  if (existing) return;
+
   const plan = await getBoostPlan(input.boostPlanId);
   if (!plan) throw new Error(`activateBoost: boost plan ${input.boostPlanId} not found`);
 
-  const db = getDb();
   const productResult = await db.from("products").select("boosted_until").eq("id", input.productId).maybeSingle();
   const product = assertNoError(productResult, "loading product for boost activation") as Row | null;
   if (!product) throw new Error(`activateBoost: product ${input.productId} not found`);
@@ -108,6 +123,7 @@ export async function activateBoost(input: { productId: string; sellerId: string
     seller_id: input.sellerId,
     boost_plan_id: input.boostPlanId,
     amount: input.amount,
+    payment_id: input.paymentId,
     ends_at: endsAt.toISOString(),
   });
   assertNoError(insertResult, "recording boost purchase");
