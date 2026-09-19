@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
@@ -805,6 +805,7 @@ export default function SellerDashboard({
   const [boostPickerId, setBoostPickerId] = useState(null);
   const [boostingId, setBoostingId] = useState(null);
   const [activeTab, setActiveTab] = useState("overview");
+  const [storeLinkCopied, setStoreLinkCopied] = useState(false);
 
   const boostListing = async (productId, boostPlanId) => {
     setBoostingId(productId);
@@ -1031,16 +1032,34 @@ export default function SellerDashboard({
               <code className="text-[11.5px] text-[#1E1B4B] bg-[#F7F5FD] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 break-all">
                 {myStore.url}
               </code>
-              {!myStore.claimedButUnavailable && (
-                <a
-                  href={`/store/${myStore.slug}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11.5px] font-semibold text-[#7C3AED] px-2.5 py-1.5"
+              <div className="flex items-center gap-1 ml-auto">
+                {!myStore.claimedButUnavailable && (
+                  <a
+                    href={`/store/${myStore.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[11.5px] font-semibold text-[#7C3AED] px-2.5 py-1.5"
+                  >
+                    Visit
+                  </a>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(myStore.url);
+                      setStoreLinkCopied(true);
+                      setTimeout(() => setStoreLinkCopied(false), 1500);
+                    } catch {
+                      // Clipboard permission denied or unavailable — nothing to recover.
+                    }
+                  }}
+                  className="flex items-center gap-1 text-[11.5px] font-semibold text-[#7C3AED] px-2.5 py-1.5"
                 >
-                  Visit
-                </a>
-              )}
+                  {storeLinkCopied ? <Check size={13} /> : <Copy size={13} />}
+                  {storeLinkCopied ? "Copied" : "Copy"}
+                </button>
+              </div>
             </div>
           ) : myStore.eligible ? (
             <button
