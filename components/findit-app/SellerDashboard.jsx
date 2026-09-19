@@ -852,8 +852,20 @@ export default function SellerDashboard({
   const myOrders = orders.filter(isMine);
   const myListings = products.filter(isMine);
   const plan = storePlan?.plan ?? null;
-  const usage = storePlan?.usage ?? null;
-  const atListingLimit = plan && plan.productLimit !== null && (usage?.activeProducts ?? 0) >= plan.productLimit;
+  // Active-listing count derived live from myListings — the same list
+  // rendered below — rather than storePlan.usage.activeProducts, a
+  // separately-fetched snapshot that goes stale the moment a listing is
+  // added or deleted (neither handleCreateProduct nor handleDeleteProduct
+  // in MainApp.jsx refetches storePlan). That staleness used to leave this
+  // gate and the usage label out of sync with the actual list until some
+  // unrelated action (e.g. a plan change) happened to refresh storePlan.
+  const activeListingCount = myListings.filter((p) => p.active !== false).length;
+  const atListingLimit = plan && plan.productLimit !== null && activeListingCount >= plan.productLimit;
+  const usageLabel = plan
+    ? plan.productLimit === null
+      ? `${activeListingCount} product${activeListingCount === 1 ? "" : "s"}`
+      : `${activeListingCount} / ${plan.productLimit} products used`
+    : null;
 
   const reviewedOrders = myOrders.filter((o) => o.reviewed && o.myRating != null);
   const avgRating = reviewedOrders.length
@@ -982,7 +994,7 @@ export default function SellerDashboard({
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-[#1E1B4B]">{plan.name} plan</p>
               <p className="text-[11px] text-[#6B6483]">
-                {usage.label}
+                {usageLabel}
                 {storePlan.subscription.status === "trialing" && " · Trial"}
               </p>
             </div>
