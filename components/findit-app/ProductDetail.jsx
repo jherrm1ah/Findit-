@@ -3,11 +3,12 @@
 import { useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  ChevronLeft, ShoppingBag, ShoppingCart, Heart, User, BadgeCheck, Star, Check,
+  ChevronLeft, ShoppingBag, ShoppingCart, User, BadgeCheck, Star, Check,
   Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
 import { categoryGroup, naira } from "./data";
-import { IconButton, ArtBlock, Pill } from "./shared";
+import { ArtBlock, Pill } from "./shared";
+import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { DURATION, EASE, SPRING_SNAPPY, press } from "./motion";
 
@@ -110,14 +111,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
 
         <div className="flex items-start justify-between mb-1">
           <p className="text-[12px] text-[#8A8372]">{categoryGroup(product.category).label}</p>
-          <button
-            onClick={() => onToggleSaved(product.id)}
-            aria-label={savedIds.includes(product.id) ? "Remove from saved items" : "Save item"}
-            aria-pressed={savedIds.includes(product.id)}
+          <FavoriteButton
+            saved={savedIds.includes(product.id)}
+            onToggle={() => onToggleSaved(product.id)}
             className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1"
-          >
-            <Heart size={14} className={savedIds.includes(product.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
-          </button>
+          />
         </div>
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</h1>
 

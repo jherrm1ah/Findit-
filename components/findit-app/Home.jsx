@@ -5,13 +5,14 @@ import { motion, AnimatePresence, useAnimate } from "motion/react";
 import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
-  ListOrdered, Bell, Menu, ShoppingBag, ShoppingCart, Heart, SlidersHorizontal,
+  ListOrdered, Bell, Menu, ShoppingBag, ShoppingCart, SlidersHorizontal,
   LayoutDashboard, MapPin, Store, Tag,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
-import { IconButton, Logo, ArtBlock } from "./shared";
+import { Logo, ArtBlock } from "./shared";
+import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm } from "@/lib/geo";
-import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY } from "./motion";
+import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
 
 const BANNERS = [
   { tag: "Request-first", title: "Can't find it?\nAsk FindIt.", cta: "Request now", action: "request" },
@@ -264,12 +265,12 @@ export default function Home({
       </div>
       <div className="flex gap-3 overflow-x-auto pb-1 mb-7 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
         {Object.entries(GROUPS).slice(0, 8).map(([k, g]) => (
-          <button key={k} onClick={() => go("browse", k)} className="flex flex-col items-center gap-2 shrink-0 w-[76px]">
+          <motion.button key={k} onClick={() => go("browse", k)} whileTap={{ scale: 0.92 }} transition={SPRING_SNAPPY} className="flex flex-col items-center gap-2 shrink-0 w-[76px]">
             <div className="w-[68px] h-[68px] rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#F0EAFC,#E4D9FA)" }}>
               <g.icon size={24} className="text-[#7C3AED]" strokeWidth={1.6} />
             </div>
             <span className="text-[10.5px] text-[#1E1B4B] font-medium text-center leading-tight line-clamp-2">{g.label}</span>
-          </button>
+          </motion.button>
         ))}
       </div>
 
@@ -278,66 +279,75 @@ export default function Home({
         <h2 className="text-[15px] font-bold text-[#1E1B4B]">{myLocation ? "Near you" : "New Listings"}</h2>
         <button onClick={() => go("browse")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7">
+      <motion.div
+        className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7"
+        initial="hidden"
+        animate="visible"
+        variants={STAGGER_CONTAINER}
+      >
         {trending.map((p) => (
-          <div key={p.id} className="relative text-left">
-            <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
+          <motion.div key={p.id} variants={STAGGER_ITEM} className="relative text-left">
+            <motion.button
+              onClick={() => openProduct(p)}
+              whileTap={{ scale: 0.96 }}
+              transition={SPRING_SNAPPY}
+              className="block w-full text-left"
+              aria-label={`View ${p.name}`}
+            >
               <div className="relative rounded-[20px] overflow-hidden mb-2">
                 <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               </div>
               <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
               <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
-              aria-label={savedIds.includes(p.id) ? "Remove from saved items" : "Save item"}
-              aria-pressed={savedIds.includes(p.id)}
+            </motion.button>
+            <FavoriteButton
+              saved={savedIds.includes(p.id)}
+              onToggle={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
               className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
-            >
-              <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
-            </button>
-          </div>
+            />
+          </motion.div>
         ))}
         {trending.length === 0 && (
           <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-8">
             No listings yet — be the first to sell on FindIt, or request an item to get the ball rolling.
           </p>
         )}
-      </div>
+      </motion.div>
 
       {saved.length > 0 && (
-        <>
+        <motion.div {...revealOnView}>
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-[15px] font-bold text-[#1E1B4B]">Saved for you</h2>
             <button onClick={() => go("account")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
           </div>
           <div className="flex gap-3 overflow-x-auto pb-1 mb-7 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
             {saved.map((p) => (
-              <button key={p.id} onClick={() => openProduct(p)} className="text-left shrink-0 w-[120px]" aria-label={`View ${p.name}`}>
+              <motion.button key={p.id} onClick={() => openProduct(p)} whileTap={{ scale: 0.96 }} transition={SPRING_SNAPPY} className="text-left shrink-0 w-[120px]" aria-label={`View ${p.name}`}>
                 <div className="relative rounded-[16px] overflow-hidden mb-2">
                   <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-24 w-full" />
                 </div>
                 <p className="text-[11.5px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
                 <p className="text-[12.5px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-              </button>
+              </motion.button>
             ))}
           </div>
-        </>
+        </motion.div>
       )}
 
-      <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-3">
+      <motion.button {...revealOnView} onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-3">
         <div>
           <p className="text-[13px] font-semibold text-[#1E1B4B]">See the full catalogue</p>
           <p className="text-[11px] text-[#6B6483]">All {products.length} products across {Object.keys(GROUPS).length} categories</p>
         </div>
         <ChevronRight size={18} className="text-[#7C3AED]" />
-      </button>
+      </motion.button>
 
       {/* A buyer used to have to open "Browse sellers" first and search a
           second time inside it — go("sellers", query) below sends the term
           typed here straight into SellerDirectory's own results (see its
           initialQuery prop), so this one field actually finds a store. */}
-      <form
+      <motion.form
+        {...revealOnView}
         onSubmit={(e) => {
           e.preventDefault();
           go("sellers", sellerSearch.trim());
@@ -370,24 +380,30 @@ export default function Home({
             <Search size={13} className="text-white" />
           </button>
         </div>
-      </form>
+      </motion.form>
 
       <h2 className="text-[15px] font-bold mb-4 text-[#1E1B4B]">How FindIt works</h2>
-      <div className="space-y-3">
+      <motion.div
+        className="space-y-3"
+        initial="hidden"
+        whileInView="visible"
+        viewport={{ once: true, margin: "-60px" }}
+        variants={STAGGER_CONTAINER}
+      >
         {[
           ["Tell FindIt what you need", MessageCircle],
           ["We search trusted sellers", Search],
           ["Compare offers & pay safely", ShieldCheck],
           ["Receive it, confirm delivery", Truck],
         ].map(([label, Icon], i) => (
-          <div key={i} className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
+          <motion.div key={i} variants={STAGGER_ITEM} className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
             <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
               <Icon size={15} className="text-white" />
             </div>
             <p className="text-[13px] text-[#1E1B4B]">{label}</p>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }

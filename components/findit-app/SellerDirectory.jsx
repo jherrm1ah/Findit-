@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown, ChevronLeft } from "lucide-react";
-import { IconButton } from "./shared";
+import { IconButton } from "./sharedMotion";
 import { api } from "./api";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
 

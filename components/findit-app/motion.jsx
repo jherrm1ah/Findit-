@@ -48,6 +48,30 @@ export const pressFade = {
   transition: { duration: DURATION.instant },
 };
 
+// A parent+child pair for "cards cascade in" entrances — mount-triggered,
+// for a grid that's already on screen when its parent appears (not
+// scroll-linked; see revealOnView below for content further down the page).
+export const STAGGER_CONTAINER = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.055 } },
+};
+export const STAGGER_ITEM = {
+  hidden: { opacity: 0, y: 14 },
+  visible: { opacity: 1, y: 0, transition: { duration: DURATION.base, ease: EASE } },
+};
+
+// Spread onto anything below the fold that should reveal itself as the
+// buyer scrolls to it rather than sit fully rendered off-screen — an
+// IntersectionObserver under the hood (motion's default), not a scroll
+// listener, so this is cheap even with several instances on one page.
+// Plays once; scrolling back up and down again never replays it.
+export const revealOnView = {
+  initial: "hidden",
+  whileInView: "visible",
+  viewport: { once: true, margin: "-60px" },
+  variants: STAGGER_ITEM,
+};
+
 // A number that animates from its previous value to a new one instead of
 // just replacing the text — the cart badge, cart subtotal, order totals.
 // Renders a MotionValue as children directly (a supported motion.* pattern:

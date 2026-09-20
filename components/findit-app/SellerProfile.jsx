@@ -4,7 +4,8 @@ import { useState } from "react";
 import Image from "next/image";
 import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
 import { categoryGroup, naira } from "./data";
-import { IconButton, ArtBlock, Pill } from "./shared";
+import { ArtBlock, Pill } from "./shared";
+import { IconButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
 

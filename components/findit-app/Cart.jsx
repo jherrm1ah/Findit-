@@ -2,7 +2,8 @@
 
 import { ChevronLeft, Minus, Plus, X, ShoppingCart } from "lucide-react";
 import { categoryGroup, naira } from "./data";
-import { IconButton, ArtBlock } from "./shared";
+import { ArtBlock } from "./shared";
+import { IconButton } from "./sharedMotion";
 
 export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove, onCheckout, checkingOut }) {
   // A cart line can outlive its product (deactivated, removed, or the

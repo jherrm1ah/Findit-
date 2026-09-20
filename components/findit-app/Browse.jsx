@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Search, X, SlidersHorizontal, CheckCircle2, Heart, BadgeCheck, Star, MapPin } from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { Search, X, SlidersHorizontal, CheckCircle2, BadgeCheck, Star, MapPin } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
+import { FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
 export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation }) {
   const [group, setGroup] = useState(initialGroup || "all");
@@ -74,62 +77,79 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
       )}
 
       <div className="flex gap-2 overflow-x-auto pb-1 mb-4 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
-        <button
-          onClick={() => setGroup("all")}
-          className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition ${group === "all" ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-          style={group === "all" ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
-        >
-          All
-        </button>
-        {Object.entries(GROUPS).map(([k, g]) => (
-          <button
-            key={k}
-            onClick={() => setGroup(k)}
-            className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition flex items-center gap-1 ${group === k ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-            style={group === k ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
-          >
-            <g.icon size={12} /> {g.label}
-          </button>
-        ))}
+        {["all", ...Object.keys(GROUPS)].map((k) => {
+          const g = k === "all" ? null : GROUPS[k];
+          const active = group === k;
+          return (
+            <motion.button
+              key={k}
+              onClick={() => setGroup(k)}
+              whileTap={{ scale: 0.93 }}
+              transition={SPRING_SNAPPY}
+              className={`relative shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border flex items-center gap-1 ${active ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
+            >
+              {/* A single shared background that slides/morphs between
+                  whichever chip is active, instead of each chip's own
+                  background hard-cutting in — the "satisfying selection"
+                  ask, done once here rather than per-chip. */}
+              {active && (
+                <motion.span
+                  layoutId="categoryPill"
+                  className="absolute inset-0 rounded-full -z-10"
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                  transition={SPRING_SOFT}
+                />
+              )}
+              {g && <g.icon size={12} />} {g ? g.label : "All"}
+            </motion.button>
+          );
+        })}
       </div>
 
-      <div className="grid grid-cols-2 gap-x-3 gap-y-5">
-        {list.map((p) => (
-          <div key={p.id} className="relative text-left">
-            <button onClick={() => openProduct(p)} className="block w-full text-left" aria-label={`View ${p.name}`}>
-              <div className="relative rounded-[20px] overflow-hidden mb-2">
-                <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
-                {p.verified && (
-                  <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
-                    <BadgeCheck size={12} className="text-[#7C3AED]" />
-                  </span>
-                )}
-              </div>
-              <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
-              <div className="flex items-center justify-between">
-                <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-                {p.rating != null && (
-                  <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
-                )}
-              </div>
-              {Number.isFinite(p._km) && (
-                <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372] mt-0.5"><MapPin size={9} /> {formatDistanceKm(p._km)}</span>
-              )}
-            </button>
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
-              aria-label={savedIds.includes(p.id) ? "Remove from saved items" : "Save item"}
-              aria-pressed={savedIds.includes(p.id)}
-              className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <AnimatePresence>
+          {list.map((p) => (
+            <motion.div
+              key={p.id}
+              layout="position"
+              variants={STAGGER_ITEM}
+              exit={{ opacity: 0, scale: 0.92, transition: { duration: DURATION.fast, ease: EASE } }}
+              className="relative text-left"
             >
-              <Heart size={14} className={savedIds.includes(p.id) ? "fill-[#E64980] text-[#E64980]" : "text-[#8A8372]"} />
-            </button>
-          </div>
-        ))}
+              <motion.button onClick={() => openProduct(p)} whileTap={{ scale: 0.96 }} transition={SPRING_SNAPPY} className="block w-full text-left" aria-label={`View ${p.name}`}>
+                <div className="relative rounded-[20px] overflow-hidden mb-2">
+                  <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
+                  {p.verified && (
+                    <span className="absolute bottom-2 left-2 bg-white/95 rounded-full p-1">
+                      <BadgeCheck size={12} className="text-[#7C3AED]" />
+                    </span>
+                  )}
+                </div>
+                <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
+                <div className="flex items-center justify-between">
+                  <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
+                  {p.rating != null && (
+                    <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372]"><Star size={10} className="fill-[#F59E0B] text-[#F59E0B]" /> {p.rating}</span>
+                  )}
+                </div>
+                {Number.isFinite(p._km) && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-[#8A8372] mt-0.5"><MapPin size={9} /> {formatDistanceKm(p._km)}</span>
+                )}
+              </motion.button>
+              <FavoriteButton
+                saved={savedIds.includes(p.id)}
+                onToggle={(e) => { e.stopPropagation(); onToggleSaved(p.id); }}
+                className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center"
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {list.length === 0 && (
-          <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">No matches — try requesting this item instead.</p>
+          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">
+            No matches — try requesting this item instead.
+          </motion.p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
