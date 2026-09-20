@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   ShieldCheck, Camera, ClipboardCheck, ArrowRight, ArrowLeft,
   Check, ImagePlus, X, Loader2, AlertCircle, Navigation,
@@ -10,6 +11,7 @@ import { GROUPS } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 import { requestBrowserLocation } from "./location";
 import { api } from "./api";
+import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 const STEPS = ["business", "location", "verification", "review"];
 const STEP_LABELS = { business: "Business", location: "Location", verification: "Verification", review: "Review" };
@@ -42,8 +44,8 @@ function StepDots({ step }) {
     <div className="flex items-center gap-1.5 mb-6">
       {STEPS.map((s, i) => (
         <div key={s} className="flex-1">
-          <div className={`h-1.5 rounded-full ${i <= idx ? "bg-[#7C3AED]" : "bg-[#ECE9F7]"}`} />
-          <p className={`text-[9.5px] mt-1 text-center ${i === idx ? "text-[#7C3AED] font-semibold" : "text-[#8A8372]"}`}>
+          <div className={`h-1.5 rounded-full transition-colors duration-300 ${i <= idx ? "bg-[#7C3AED]" : "bg-[#ECE9F7]"}`} />
+          <p className={`text-[9.5px] mt-1 text-center transition-colors duration-200 ${i === idx ? "text-[#7C3AED] font-semibold" : "text-[#8A8372]"}`}>
             {STEP_LABELS[s]}
           </p>
         </div>
@@ -100,32 +102,42 @@ function PhotoPicker({ label, files, onChange, hint }) {
     <div>
       <p className="text-[11.5px] font-medium text-[#514B67] mb-1.5">{label}</p>
       {hint && <p className="text-[10.5px] text-[#8A8372] mb-2">{hint}</p>}
-      <div className="flex flex-wrap gap-2">
-        {files.map((f, i) => (
-          <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
-            {/* Deliberately a plain <img>, not next/image: this is a local
-                blob: URL preview of a file the browser already has in
-                memory before upload — there is no network fetch for
-                next/image to intercept or optimize, and a blob: URL isn't
-                a remote pattern it could route through anyway. */}
-            <img src={urlFor(f)} alt="" className="w-full h-full object-cover" />
-            <button
-              type="button"
-              onClick={() => remove(i)}
-              className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 flex items-center justify-center"
-              aria-label="Remove photo"
+      <motion.div className="flex flex-wrap gap-2" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <AnimatePresence initial={false}>
+          {files.map((f, i) => (
+            <motion.div
+              key={i}
+              layout
+              variants={STAGGER_ITEM}
+              exit={{ opacity: 0, scale: 0.8, transition: { duration: DURATION.fast, ease: EASE } }}
+              className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]"
             >
-              <X size={9} className="text-white" />
-            </button>
-          </div>
-        ))}
+              {/* Deliberately a plain <img>, not next/image: this is a local
+                  blob: URL preview of a file the browser already has in
+                  memory before upload — there is no network fetch for
+                  next/image to intercept or optimize, and a blob: URL isn't
+                  a remote pattern it could route through anyway. */}
+              <img src={urlFor(f)} alt="" className="w-full h-full object-cover" />
+              <motion.button
+                type="button"
+                onClick={() => remove(i)}
+                whileTap={{ scale: 0.85 }}
+                transition={{ duration: DURATION.instant }}
+                className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/60 flex items-center justify-center"
+                aria-label="Remove photo"
+              >
+                <X size={9} className="text-white" />
+              </motion.button>
+            </motion.div>
+          ))}
+        </AnimatePresence>
         {files.length < 6 && (
           <label className="w-16 h-16 rounded-lg border border-dashed border-[#B7AFD6] flex items-center justify-center cursor-pointer">
             <ImagePlus size={16} className="text-[#B7AFD6]" />
             <input type="file" accept="image/*" multiple className="hidden" onChange={addFiles} />
           </label>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -261,20 +273,43 @@ export default function SellerOnboarding({ go, showToast }) {
   if (submitted) {
     return (
       <div className="px-5 pt-16 pb-10 flex flex-col items-center text-center">
-        <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+        <motion.div
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={SPRING_SOFT}
+          className="w-16 h-16 rounded-full flex items-center justify-center mb-5"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
           <Check size={26} className="text-white" strokeWidth={2.2} />
-        </div>
-        <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>Submitted for verification</h1>
-        <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">
+        </motion.div>
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: DURATION.base, ease: EASE, delay: 0.15 }}
+          className="text-[18px] font-bold text-[#1E1B4B] mb-2"
+          style={{ fontFamily: "Fraunces, serif" }}
+        >
+          Submitted for verification
+        </motion.h1>
+        <motion.p
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: DURATION.base, ease: EASE, delay: 0.22 }}
+          className="text-[13px] text-[#6B6483] max-w-[280px] mb-6"
+        >
           A FindIt admin will review your information — usually within a day or two. You can keep selling on FindIt in the meantime.
-        </p>
-        <button
+        </motion.p>
+        <motion.button
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: DURATION.base, ease: EASE, delay: 0.29 }}
           onClick={() => go("seller")}
+          {...press}
           className="text-white text-[13px] font-semibold px-5 py-3 rounded-xl"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           Back to dashboard
-        </button>
+        </motion.button>
       </div>
     );
   }
@@ -290,7 +325,7 @@ export default function SellerOnboarding({ go, showToast }) {
       </p>
 
       {(priorStatus === "needs_info" || priorStatus === "rejected") && rejectionReason && (
-        <div className="flex items-start gap-2.5 bg-[#FDF0F4] rounded-xl p-3 mb-5">
+        <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="flex items-start gap-2.5 bg-[#FDF0F4] rounded-xl p-3 mb-5">
           <AlertCircle size={14} className="text-[#C22468] shrink-0 mt-0.5" />
           <div className="min-w-0">
             <p className="text-[12px] font-semibold text-[#C22468] mb-0.5">
@@ -298,27 +333,37 @@ export default function SellerOnboarding({ go, showToast }) {
             </p>
             <p className="text-[11.5px] text-[#514B67]">{rejectionReason}</p>
           </div>
-        </div>
+        </motion.div>
       )}
 
       <StepDots step={step} />
 
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={step}
+          initial={{ opacity: 0, x: 24 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -24 }}
+          transition={{ duration: DURATION.base, ease: EASE }}
+        >
       {step === "business" && (
         <div className="space-y-4">
           <div>
             <p className="text-[11.5px] font-medium text-[#514B67] mb-1.5">What type of seller are you?</p>
             <div className="grid grid-cols-2 gap-2">
               {SELLER_TYPES.map((t) => (
-                <button
+                <motion.button
                   key={t.value}
                   type="button"
                   onClick={() => set({ sellerType: t.value })}
-                  className={`text-left px-3 py-2.5 rounded-xl border text-[12px] font-medium ${
+                  whileTap={{ scale: 0.97 }}
+                  transition={SPRING_SNAPPY}
+                  className={`text-left px-3 py-2.5 rounded-xl border text-[12px] font-medium transition-colors duration-150 ${
                     form.sellerType === t.value ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
                   }`}
                 >
                   {t.label}
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
@@ -362,16 +407,18 @@ export default function SellerOnboarding({ go, showToast }) {
                 [true, "Yes, I have a shop"],
                 [false, "No — home-based or online"],
               ].map(([val, label]) => (
-                <button
+                <motion.button
                   key={String(val)}
                   type="button"
                   onClick={() => set({ hasPhysicalStore: val })}
-                  className={`flex-1 px-3 py-2.5 rounded-xl border text-[12px] font-medium ${
+                  whileTap={{ scale: 0.97 }}
+                  transition={SPRING_SNAPPY}
+                  className={`flex-1 px-3 py-2.5 rounded-xl border text-[12px] font-medium transition-colors duration-150 ${
                     form.hasPhysicalStore === val ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
                   }`}
                 >
                   {label}
-                </button>
+                </motion.button>
               ))}
             </div>
           </div>
@@ -383,31 +430,42 @@ export default function SellerOnboarding({ go, showToast }) {
           </div>
           <p className="text-[10.5px] text-[#8A8372] -mt-2">This general area is shown on your public storefront.</p>
 
-          {form.hasPhysicalStore && (
-            <Field label="Shop address">
-              <textarea
-                value={form.shopAddress}
-                onChange={(e) => set({ shopAddress: e.target.value })}
-                rows={2}
-                maxLength={2000}
-                placeholder="Full address — only used for verification, never shown publicly."
-                className={inputCls("resize-none")}
-              />
-            </Field>
-          )}
+          <AnimatePresence initial={false}>
+            {form.hasPhysicalStore && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: DURATION.fast, ease: EASE }}
+                className="overflow-hidden"
+              >
+                <Field label="Shop address">
+                  <textarea
+                    value={form.shopAddress}
+                    onChange={(e) => set({ shopAddress: e.target.value })}
+                    rows={2}
+                    maxLength={2000}
+                    placeholder="Full address — only used for verification, never shown publicly."
+                    className={inputCls("resize-none")}
+                  />
+                </Field>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <Field label="Website (optional)">
             <input value={form.website} onChange={(e) => set({ website: e.target.value })} placeholder="https://…" maxLength={200} className={inputCls()} />
           </Field>
 
-          <button
+          <motion.button
             type="button"
             onClick={useMyLocation}
             disabled={locating}
+            {...press}
             className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] disabled:opacity-50"
           >
             <Navigation size={13} /> {locating ? "Getting location…" : form.lat != null ? "Location added ✓" : "Use my current location (optional)"}
-          </button>
+          </motion.button>
         </div>
       )}
 
@@ -438,7 +496,7 @@ export default function SellerOnboarding({ go, showToast }) {
       )}
 
       {step === "review" && (
-        <div className="space-y-3">
+        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
           {[
             ["Seller type", SELLER_TYPES.find((t) => t.value === form.sellerType)?.label || "—"],
             ["What you sell", GROUPS[form.category]?.label || form.category],
@@ -446,41 +504,45 @@ export default function SellerOnboarding({ go, showToast }) {
             ["Physical store", form.hasPhysicalStore === null ? "—" : form.hasPhysicalStore ? "Yes" : "No"],
             ["Evidence", `${evidenceCount} item${evidenceCount === 1 ? "" : "s"}`],
           ].map(([label, value]) => (
-            <div key={label} className="flex items-center justify-between bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
+            <motion.div key={label} variants={STAGGER_ITEM} className="flex items-center justify-between bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
               <p className="text-[11.5px] text-[#8A8372]">{label}</p>
               <p className="text-[12px] font-semibold text-[#1E1B4B] text-right">{value}</p>
-            </div>
+            </motion.div>
           ))}
-          <p className="text-[11px] text-[#6B6483] pt-2">
+          <motion.p variants={STAGGER_ITEM} className="text-[11px] text-[#6B6483] pt-2">
             An admin will review this before your Verified badge appears. You can keep selling on FindIt while it's under review.
-          </p>
-        </div>
+          </motion.p>
+        </motion.div>
       )}
+        </motion.div>
+      </AnimatePresence>
 
       <div className="flex gap-2 mt-7">
         {STEPS.indexOf(step) > 0 && (
-          <button onClick={() => goStep(-1)} className="flex items-center gap-1.5 px-4 py-3 rounded-xl border border-[#ECE9F7] text-[#514B67] text-[13px] font-semibold">
+          <motion.button onClick={() => goStep(-1)} {...press} className="flex items-center gap-1.5 px-4 py-3 rounded-xl border border-[#ECE9F7] text-[#514B67] text-[13px] font-semibold">
             <ArrowLeft size={14} /> Back
-          </button>
+          </motion.button>
         )}
         {step !== "review" ? (
-          <button
+          <motion.button
             onClick={() => goStep(1)}
             disabled={!stepValid}
+            {...press}
             className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[13px] font-semibold py-3 rounded-xl ${!stepValid ? "opacity-40" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
             Continue <ArrowRight size={14} />
-          </button>
+          </motion.button>
         ) : (
-          <button
+          <motion.button
             onClick={submit}
             disabled={submitting}
+            {...press}
             className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[13px] font-semibold py-3 rounded-xl ${submitting ? "opacity-60" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
             <ClipboardCheck size={14} /> {submitting ? "Submitting…" : "Submit for verification"}
-          </button>
+          </motion.button>
         )}
       </div>
     </div>

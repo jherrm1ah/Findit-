@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { motion } from "motion/react";
 import { Check, Clock, Crown, Store, Loader2 } from "lucide-react";
 import { naira } from "./data";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 const TIER_ICONS = { store_free: Store, store_basic: Store, store_business: Store, store_pro: Crown };
 
@@ -75,15 +77,16 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
       )}
       {storePlan.subscription.status !== "trialing" && <div className="mb-5" />}
 
-      <div className="space-y-3">
+      <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
         {plans.map((plan) => {
           const Icon = TIER_ICONS[plan.id] || Store;
           const isCurrent = plan.id === currentPlan.id;
           const isBusy = changing && pendingPlanId === plan.id;
           return (
-            <div
+            <motion.div
               key={plan.id}
-              className={`bg-white rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 border-2 ${
+              variants={STAGGER_ITEM}
+              className={`bg-white rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 border-2 transition-colors duration-200 ${
                 isCurrent ? "border-[#7C3AED]" : "border-[#ECE9F7]"
               }`}
             >
@@ -124,32 +127,34 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
               </ul>
 
               {!isCurrent && (
-                <button
+                <motion.button
                   onClick={() => choose(plan.id)}
                   disabled={changing}
+                  {...press}
                   className={`w-full text-white text-[12.5px] font-semibold py-2.5 rounded-xl ${changing ? "opacity-50" : ""}`}
                   style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                 >
                   {isBusy ? "Working…" : plan.sortOrder > currentPlan.sortOrder ? `Upgrade to ${plan.name}` : `Switch to ${plan.name}`}
-                </button>
+                </motion.button>
               )}
               {isCurrent && plan.priceMonthly > 0 && (
-                <button
+                <motion.button
                   onClick={onCancelPlan}
                   disabled={changing}
+                  {...press}
                   className="w-full text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl py-2.5 disabled:opacity-50"
                 >
                   Cancel — back to Free
-                </button>
+                </motion.button>
               )}
-            </div>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
-      <button onClick={() => go("seller")} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
+      <motion.button onClick={() => go("seller")} {...press} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
         Back to dashboard
-      </button>
+      </motion.button>
     </div>
   );
 }

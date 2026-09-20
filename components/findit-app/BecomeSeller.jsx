@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Store, ShieldCheck, ClipboardList, Package } from "lucide-react";
 import { Field } from "./shared";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 // A buyer turning their existing account into a seller account. Before this
 // existed, the only way to start selling was to sign up again — and since a
@@ -29,7 +31,7 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
   };
 
   return (
-    <div className="px-5 pt-6 pb-10">
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
         <Store size={18} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
@@ -56,13 +58,13 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
       </div>
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">What happens next</p>
-      <div className="space-y-3 mb-6">
+      <motion.div className="space-y-3 mb-6" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
         {[
           [ClipboardList, "A FindIt admin reviews your account", "Usually the same day. You keep buying as normal in the meantime."],
           [Package, "Then you can list products and answer requests", "Your dashboard shows orders to fulfil and requests that match what you sell."],
           [ShieldCheck, "Buyers' payments are held until they confirm delivery", "That protection runs both ways — it's why buyers trust ordering from someone new."],
         ].map(([Icon, title, body]) => (
-          <div key={title} className="flex gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4">
+          <motion.div key={title} variants={STAGGER_ITEM} className="flex gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4">
             <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
               <Icon size={16} className="text-[#7C3AED]" />
             </div>
@@ -70,22 +72,35 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
               <p className="text-[13px] font-semibold text-[#1E1B4B] mb-0.5">{title}</p>
               <p className="text-[11px] text-[#6B6483] leading-relaxed">{body}</p>
             </div>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
-      {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="text-[12px] text-[#E64980] mb-3"
+          >
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
-      <button
+      <motion.button
         onClick={submit}
         disabled={businessName.trim().length < 2 || submitting}
+        {...press}
         className={`w-full text-white text-[13px] font-semibold py-3 rounded-xl ${
           businessName.trim().length < 2 || submitting ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
         }`}
         style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
       >
         {submitting ? "Setting up…" : "Submit for review"}
-      </button>
-    </div>
+      </motion.button>
+    </motion.div>
   );
 }
