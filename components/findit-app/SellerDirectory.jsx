@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "motion/react";
 import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown, ChevronLeft } from "lucide-react";
 import { IconButton } from "./sharedMotion";
 import { api } from "./api";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
+import { DURATION, EASE, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldCheck };
 
@@ -90,30 +92,44 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
         )}
       </div>
 
-      <button
+      <motion.button
         onClick={() => setVerifiedOnly((v) => !v)}
+        whileTap={{ scale: 0.97 }}
+        transition={{ duration: DURATION.instant }}
         className="flex items-center gap-1.5 text-[12px] text-[#514B67] mb-4"
       >
         <div
-          className={`w-4 h-4 rounded border flex items-center justify-center ${verifiedOnly ? "bg-[#7C3AED] border-[#7C3AED]" : "border-[#B7AFD6]"}`}
+          className={`w-4 h-4 rounded border flex items-center justify-center transition-colors duration-150 ${verifiedOnly ? "bg-[#7C3AED] border-[#7C3AED]" : "border-[#B7AFD6]"}`}
         >
-          {verifiedOnly && <ShieldCheck size={10} className="text-white" />}
+          <AnimatePresence>
+            {verifiedOnly && (
+              <motion.span initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} transition={{ duration: DURATION.instant }}>
+                <ShieldCheck size={10} className="text-white" />
+              </motion.span>
+            )}
+          </AnimatePresence>
         </div>
         Verified &amp; trusted sellers only
-      </button>
+      </motion.button>
 
       {loading && <p className="text-[13px] text-[#6B6483] py-10 text-center">Loading sellers…</p>}
       {!loading && error && <p className="text-[13px] text-[#6B6483] py-10 text-center">{error}</p>}
 
       {!loading && !error && (
-        <div className="space-y-3">
+        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+          <AnimatePresence initial={false}>
           {list.map((s) => {
             const copy = VERIFICATION_LEVEL_COPY[s.verificationLevel] ?? VERIFICATION_LEVEL_COPY.new;
             const LevelIcon = LEVEL_ICON[s.verificationLevel] ?? BadgeCheck;
             return (
-              <button
+              <motion.button
                 key={s.id}
+                layout="position"
+                variants={STAGGER_ITEM}
+                exit={{ opacity: 0, scale: 0.96, transition: { duration: DURATION.fast, ease: EASE } }}
                 onClick={() => onViewSeller(s.id)}
+                whileTap={{ scale: 0.98 }}
+                transition={SPRING_SNAPPY}
                 className="w-full flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3.5 text-left shadow-sm shadow-[#4C1D95]/5"
               >
                 <div
@@ -162,13 +178,14 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
                     </div>
                   )}
                 </div>
-              </button>
+              </motion.button>
             );
           })}
+          </AnimatePresence>
           {list.length === 0 && (
-            <p className="text-center text-[13px] text-[#6B6483] py-10">No sellers match your search.</p>
+            <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-[13px] text-[#6B6483] py-10">No sellers match your search.</motion.p>
           )}
-        </div>
+        </motion.div>
       )}
     </div>
   );
