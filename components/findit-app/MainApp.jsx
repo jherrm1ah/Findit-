@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import {
   Home as HomeIcon, Search, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
+import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { getStoredCart, storeCart } from "./cart";
 import { applyCategoryOverrides } from "./data";
@@ -1372,6 +1373,33 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       )}
 
       <main className="pb-24">
+        {/* Cart renders as its own fixed-position overlay (see Cart.jsx),
+            so it stays outside the screen-transition wrapper below: a
+            `transform` on an ancestor would hijack its `position: fixed`
+            containing block and break its full-viewport coverage mid-swap.
+            Every other screen shares one fade/slide transition, keyed on
+            `screen`, so navigating between them reads as one continuous
+            motion instead of an instant cut. */}
+        {screen === "cart" && (
+          <Cart
+            cart={cart}
+            products={buyerVisibleProducts}
+            onBack={() => go("home")}
+            go={go}
+            onUpdateQty={handleUpdateCartQty}
+            onRemove={handleRemoveFromCart}
+            onCheckout={handleCartCheckout}
+            checkingOut={checkingOutCart}
+          />
+        )}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={screen}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+          >
         {screen === "home" && (
           <Home
             go={go}
@@ -1387,18 +1415,6 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             orders={orders}
             myRequests={myRequests}
             cartCount={cartCount}
-          />
-        )}
-        {screen === "cart" && (
-          <Cart
-            cart={cart}
-            products={buyerVisibleProducts}
-            onBack={() => go("home")}
-            go={go}
-            onUpdateQty={handleUpdateCartQty}
-            onRemove={handleRemoveFromCart}
-            onCheckout={handleCartCheckout}
-            checkingOut={checkingOutCart}
           />
         )}
         {screen === "browse" && (
@@ -1669,6 +1685,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             go={go}
           />
         )}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       <AnimatePresence>
