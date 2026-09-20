@@ -1712,6 +1712,26 @@ export async function updateSellerBranding(
   assertNoError(result, "updating store branding");
 }
 
+// Everywhere except here, `description` only ever changes as a side effect
+// of submitVerification, which also resets verification_status to
+// 'pending' — correct for the fields that actually describe the business
+// (type, category, evidence), wrong for a seller who just wants to fix a
+// typo in their bio, since it costs them their Verified/Trusted badge until
+// an admin re-reviews. This updates the bio alone and never touches
+// verification_status, so it's safe to expose regardless of whether the
+// seller is pending, approved, or rejected.
+const MAX_SELLER_DESCRIPTION_LENGTH = 2000;
+
+export async function updateSellerDescription(sellerId: string, description: string | null): Promise<void> {
+  const trimmed = description?.trim() || null;
+  if (trimmed && trimmed.length > MAX_SELLER_DESCRIPTION_LENGTH) {
+    throw new ValidationError(`Bio must be under ${MAX_SELLER_DESCRIPTION_LENGTH} characters.`);
+  }
+  const db = getDb();
+  const result = await db.from("sellers").update({ description: trimmed }).eq("id", sellerId);
+  assertNoError(result, "updating seller description");
+}
+
 export async function setSellerStatus(id: string, status: SellerStatus, reason: string | null = null): Promise<Seller | null> {
   if ((status === "rejected" || status === "suspended") && !reason?.trim()) {
     throw new ValidationError("Give the seller a reason — never a silent rejection or suspension.");

@@ -548,6 +548,15 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ logoUrl, bannerUrl }),
     }),
+  // Unlike submitVerification, this never resets verification_status — the
+  // one profile field a seller can always edit regardless of where their
+  // verification stands.
+  updateSellerDescription: (description) =>
+    request("/api/sellers/me/description", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ description }),
+    }),
 
   getConversations: () => request("/api/messages").then((d) => d.conversations),
   // sellerId is the unambiguous path — business_name can collide between two
