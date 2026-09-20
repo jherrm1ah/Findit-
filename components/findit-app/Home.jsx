@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { motion, AnimatePresence, useAnimate } from "motion/react";
 import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
@@ -10,11 +11,54 @@ import {
 import { GROUPS, categoryGroup, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
 import { haversineKm } from "@/lib/geo";
+import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY } from "./motion";
 
 const BANNERS = [
   { tag: "Request-first", title: "Can't find it?\nAsk FindIt.", cta: "Request now", action: "request" },
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
+
+// A subtle pulse on the cart glyph itself, plus the badge popping in/out
+// and its number counting rather than jumping — the "cart icon responds"
+// half of the add-to-cart moment. Kept separate from the generic
+// IconButton so this one animated case doesn't complicate every other
+// header icon that has nothing to animate.
+function CartIconButton({ count, onClick }) {
+  const [iconScope, animateIcon] = useAnimate();
+  const prevCount = useRef(count);
+
+  useEffect(() => {
+    if (count > prevCount.current && iconScope.current) {
+      animateIcon(iconScope.current, { scale: [1, 1.2, 1] }, { duration: DURATION.base, ease: EASE });
+    }
+    prevCount.current = count;
+  }, [count, animateIcon, iconScope]);
+
+  return (
+    <button
+      onClick={onClick}
+      aria-label="Cart"
+      className="relative w-11 h-11 rounded-full bg-white shadow-md shadow-[#4C1D95]/10 flex items-center justify-center shrink-0"
+    >
+      <span ref={iconScope} className="flex">
+        <ShoppingCart size={17} className="text-[#1E1B4B]" />
+      </span>
+      <AnimatePresence>
+        {count > 0 && (
+          <motion.span
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.4, opacity: 0 }}
+            transition={SPRING_SNAPPY}
+            className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-0.5 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center"
+          >
+            <AnimatedNumber value={count} />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+}
 
 export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
@@ -91,7 +135,7 @@ export default function Home({
         </div>
         <div className="flex items-center gap-2">
           <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined} aria-label="Notifications"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
-          <IconButton onClick={() => go("cart")} badge={cartCount > 0 ? String(cartCount) : undefined} aria-label="Cart"><ShoppingCart size={17} className="text-[#1E1B4B]" /></IconButton>
+          <CartIconButton count={cartCount} onClick={() => go("cart")} />
           <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
         </div>
 

@@ -1,13 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import {
-  ChevronLeft, ShoppingBag, ShoppingCart, Heart, User, BadgeCheck, Star,
+  ChevronLeft, ShoppingBag, ShoppingCart, Heart, User, BadgeCheck, Star, Check,
   Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { IconButton, ArtBlock, Pill } from "./shared";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { DURATION, EASE, SPRING_SNAPPY, press } from "./motion";
 
 // Matches lib/productReports.ts#REPORT_REASON_LABELS (migration 027) — kept
 // as a small duplicated client-side list rather than a network round trip
@@ -27,6 +29,13 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
   const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
+  const [justAdded, setJustAdded] = useState(false);
+  // { key, rect } | null — a short-lived flourish, not real UI state: a
+  // small clone of the product photo lifts off from the button and shrinks
+  // away, giving "add to cart" a sense of the item actually going
+  // somewhere rather than just a toast appearing.
+  const [flyItem, setFlyItem] = useState(null);
+  const addToCartRef = useRef(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0].value);
   const [reportDetails, setReportDetails] = useState("");
@@ -261,23 +270,53 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {onAddToCart && (
-            <button
+            <motion.button
+              ref={addToCartRef}
               onClick={async () => {
+                const rect = addToCartRef.current?.getBoundingClientRect();
                 setAddingToCart(true);
                 try {
                   await onAddToCart(product, qty);
+                  if (rect) setFlyItem({ key: Date.now(), rect });
+                  setJustAdded(true);
+                  setTimeout(() => setJustAdded(false), 900);
                 } finally {
                   setAddingToCart(false);
                 }
               }}
               disabled={addingToCart || product.qty === 0}
               aria-label="Add to cart"
-              className={`w-12 h-12 rounded-full border border-[#7C3AED]/30 flex items-center justify-center shrink-0 ${addingToCart || product.qty === 0 ? "opacity-40" : ""}`}
+              {...press}
+              className={`w-12 h-12 rounded-full border flex items-center justify-center shrink-0 ${justAdded ? "border-[#16A34A]/40 bg-[#16A34A]/10" : "border-[#7C3AED]/30"} ${addingToCart || product.qty === 0 ? "opacity-40" : ""}`}
             >
-              <ShoppingCart size={18} className="text-[#7C3AED]" />
-            </button>
+              <AnimatePresence mode="wait" initial={false}>
+                {justAdded ? (
+                  <motion.span
+                    key="check"
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.5, opacity: 0 }}
+                    transition={SPRING_SNAPPY}
+                    className="flex"
+                  >
+                    <Check size={18} className="text-[#16A34A]" />
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="cart"
+                    initial={{ scale: 0.5, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.5, opacity: 0 }}
+                    transition={SPRING_SNAPPY}
+                    className="flex"
+                  >
+                    <ShoppingCart size={18} className="text-[#7C3AED]" />
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </motion.button>
           )}
-          <button
+          <motion.button
             onClick={async () => {
               setBuying(true);
               try {
@@ -287,13 +326,30 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               }
             }}
             disabled={buying || product.qty === 0}
+            {...press}
             className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
             <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
-          </button>
+          </motion.button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {flyItem && (
+          <motion.div
+            key={flyItem.key}
+            className="fixed z-[70] rounded-full overflow-hidden pointer-events-none"
+            style={{ left: flyItem.rect.left, top: flyItem.rect.top, width: flyItem.rect.width, height: flyItem.rect.height }}
+            initial={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+            animate={{ opacity: 0, scale: 0.2, x: 90, y: -320 }}
+            transition={{ duration: 0.55, ease: EASE }}
+            onAnimationComplete={() => setFlyItem(null)}
+          >
+            <ArtBlock icon={Icon} art={product.art} imageUrl={activePhoto} className="w-full h-full" />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
