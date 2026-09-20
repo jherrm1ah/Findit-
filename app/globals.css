@@ -7,3 +7,34 @@
 body {
   background: #fafaff;
 }
+
+/* This app has no dark variant — the layout's <meta name="color-scheme"
+   content="light"> already says so, but scrollbars on the many internal
+   `overflow-y-auto` screens (Thread.jsx, SellerProfile.jsx, ProductDetail.jsx,
+   etc.) are more reliably themed by the CSS property than by that meta tag
+   alone in some engines. Declaring it again here, plus a subtle on-brand
+   scrollbar instead of leaving the OS default, is what actually stops a
+   heavy black bar from ever showing regardless of the visitor's OS theme. */
+:root {
+  color-scheme: light;
+}
+
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(124, 58, 237, 0.25) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.25);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.45);
+}
