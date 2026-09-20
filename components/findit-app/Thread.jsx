@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Send } from "lucide-react";
-import { IconButton } from "./shared";
+import { IconButton } from "./sharedMotion";
 
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });

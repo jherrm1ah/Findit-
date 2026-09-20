@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import {
   Home as HomeIcon, Search, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
-import { Logo, Wordmark, RoleGate, IconButton } from "./shared";
+import { Logo, Wordmark, RoleGate } from "./shared";
+import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { getStoredCart, storeCart } from "./cart";

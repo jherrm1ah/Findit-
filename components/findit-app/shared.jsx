@@ -62,19 +62,6 @@ export function Wordmark({ size = "text-[16px]" }) {
   );
 }
 
-export function IconButton({ children, onClick, badge, "aria-label": ariaLabel }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={ariaLabel}
-      className="relative w-11 h-11 rounded-full bg-white shadow-md shadow-[#4C1D95]/10 flex items-center justify-center shrink-0"
-    >
-      {children}
-      {badge && <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center">{badge}</span>}
-    </button>
-  );
-}
-
 // Shown when the signed-in account's role doesn't match the screen they
 // landed on (e.g. a buyer tapped the seller-dashboard nav icon). "Go home"
 // is the primary action — this is almost always an accidental tap, not a
