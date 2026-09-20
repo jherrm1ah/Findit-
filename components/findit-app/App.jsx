@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { MotionConfig } from "motion/react";
 import Splash from "./Splash";
 import Onboarding from "./Onboarding";
 import Login from "./Login";
@@ -152,9 +153,13 @@ export default function App() {
   }
 
   return (
-    <>
+    // reducedMotion="user" makes every motion.* animation in the app defer
+    // to the OS-level prefers-reduced-motion preference automatically —
+    // one place enforces this rather than every animated component
+    // needing its own check.
+    <MotionConfig reducedMotion="user">
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
       {content}
-    </>
+    </MotionConfig>
   );
 }
