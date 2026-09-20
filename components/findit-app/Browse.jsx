@@ -91,16 +91,26 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
               {/* A single shared background that slides/morphs between
                   whichever chip is active, instead of each chip's own
                   background hard-cutting in — the "satisfying selection"
-                  ask, done once here rather than per-chip. */}
+                  ask, done once here rather than per-chip. z-0 (not a
+                  negative z-index) on purpose: a negative value here
+                  escapes to whatever stacking context is nearest up the
+                  tree — reliably just this button locally, but the moment
+                  any ancestor (e.g. a screen-transition wrapper with its
+                  own animated opacity) establishes one first, the pill
+                  ends up painted behind that ancestor's own background
+                  instead of just behind this label. z-0 + the label's own
+                  relative z-10 keeps the stacking purely local instead. */}
               {active && (
                 <motion.span
                   layoutId="categoryPill"
-                  className="absolute inset-0 rounded-full -z-10"
+                  className="absolute inset-0 rounded-full z-0"
                   style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                   transition={SPRING_SOFT}
                 />
               )}
-              {g && <g.icon size={12} />} {g ? g.label : "All"}
+              <span className="relative z-10 flex items-center gap-1">
+                {g && <g.icon size={12} />} {g ? g.label : "All"}
+              </span>
             </motion.button>
           );
         })}
