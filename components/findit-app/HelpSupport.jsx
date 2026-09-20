@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Mail, ShoppingBag, Search, Store, MessageCircle, ChevronRight, Plus } from "lucide-react";
+import { DURATION, EASE, press } from "./motion";
 
 const FAQS = [
   {
@@ -76,38 +78,48 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My tickets</p>
-        <button onClick={() => setOpening((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+        <motion.button onClick={() => setOpening((v) => !v)} {...press} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
           <Plus size={13} /> New ticket
-        </button>
+        </motion.button>
       </div>
 
-      {opening && (
-        <form onSubmit={submit} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3 space-y-2.5">
-          <input
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder={'Subject — e.g. "Order hasn\'t arrived"'}
-            maxLength={200}
-            className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none"
-          />
-          <textarea
-            value={body}
-            onChange={(e) => setBody(e.target.value)}
-            placeholder="Describe what's going on…"
-            rows={3}
-            maxLength={2000}
-            className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none resize-none"
-          />
-          <button
-            type="submit"
-            disabled={!subject.trim() || !body.trim() || creating}
-            className="text-white text-[12.5px] font-semibold px-4 py-2 rounded-xl disabled:opacity-40"
-            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+      <AnimatePresence initial={false}>
+        {opening && (
+          <motion.form
+            onSubmit={submit}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3 space-y-2.5 overflow-hidden"
           >
-            {creating ? "Sending…" : "Send"}
-          </button>
-        </form>
-      )}
+            <input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder={'Subject — e.g. "Order hasn\'t arrived"'}
+              maxLength={200}
+              className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none"
+            />
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              placeholder="Describe what's going on…"
+              rows={3}
+              maxLength={2000}
+              className="w-full border border-[#ECE9F7] rounded-lg px-3 py-2 text-[13px] outline-none resize-none"
+            />
+            <motion.button
+              type="submit"
+              disabled={!subject.trim() || !body.trim() || creating}
+              {...press}
+              className="text-white text-[12.5px] font-semibold px-4 py-2 rounded-xl disabled:opacity-40"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
+              {creating ? "Sending…" : "Send"}
+            </motion.button>
+          </motion.form>
+        )}
+      </AnimatePresence>
 
       <div className="space-y-2.5 mb-7">
         {tickets.length === 0 && !opening && (

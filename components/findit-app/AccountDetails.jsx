@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "motion/react";
 import { User, Store, FileText, Phone, Lock, Pencil } from "lucide-react";
 import { Field } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
+import { DURATION, EASE, press } from "./motion";
 
 // A section card's header row — icon + uppercase label — matching the
 // pattern already used across the seller dashboard (BrandingCard, "Your
@@ -192,40 +194,56 @@ export default function AccountDetails({
           <div className="flex items-center justify-between mb-3">
             <SectionHeader icon={FileText} label="Bio" />
             {!editingBio && (
-              <button onClick={startEditingBio} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+              <motion.button onClick={startEditingBio} {...press} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
                 <Pencil size={11} /> {bio ? "Edit" : "Add"}
-              </button>
+              </motion.button>
             )}
           </div>
-          {editingBio ? (
-            <>
-              <textarea
-                value={bioDraft}
-                onChange={(e) => setBioDraft(e.target.value)}
-                maxLength={2000}
-                rows={3}
-                placeholder="Tell buyers what you sell and what makes your store worth trusting."
-                className="w-full bg-[#F5F2FC] rounded-xl px-3 py-2.5 text-[12.5px] text-[#1E1B4B] outline-none resize-none mb-2"
-              />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={saveBio}
-                  disabled={savingBio}
-                  className={`text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl ${savingBio ? "opacity-60" : ""}`}
-                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-                >
-                  {savingBio ? "Saving…" : "Save bio"}
-                </button>
-                <button onClick={() => setEditingBio(false)} disabled={savingBio} className="text-[12.5px] font-semibold text-[#6B6483]">
-                  Cancel
-                </button>
-              </div>
-            </>
-          ) : (
-            <p className="text-[12.5px] text-[#514B67] leading-relaxed">
-              {bio || "Buyers see this on your public profile and storefront. Add a short bio."}
-            </p>
-          )}
+          <AnimatePresence mode="wait" initial={false}>
+            {editingBio ? (
+              <motion.div
+                key="editing"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: DURATION.fast, ease: EASE }}
+              >
+                <textarea
+                  value={bioDraft}
+                  onChange={(e) => setBioDraft(e.target.value)}
+                  maxLength={2000}
+                  rows={3}
+                  placeholder="Tell buyers what you sell and what makes your store worth trusting."
+                  className="w-full bg-[#F5F2FC] rounded-xl px-3 py-2.5 text-[12.5px] text-[#1E1B4B] outline-none resize-none mb-2"
+                />
+                <div className="flex items-center gap-2">
+                  <motion.button
+                    onClick={saveBio}
+                    disabled={savingBio}
+                    {...press}
+                    className={`text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl ${savingBio ? "opacity-60" : ""}`}
+                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                  >
+                    {savingBio ? "Saving…" : "Save bio"}
+                  </motion.button>
+                  <motion.button onClick={() => setEditingBio(false)} disabled={savingBio} {...press} className="text-[12.5px] font-semibold text-[#6B6483]">
+                    Cancel
+                  </motion.button>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.p
+                key="viewing"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: DURATION.fast, ease: EASE }}
+                className="text-[12.5px] text-[#514B67] leading-relaxed"
+              >
+                {bio || "Buyers see this on your public profile and storefront. Add a short bio."}
+              </motion.p>
+            )}
+          </AnimatePresence>
         </div>
       )}
 
