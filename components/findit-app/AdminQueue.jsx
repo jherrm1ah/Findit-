@@ -2,11 +2,13 @@
 
 import { useState, useEffect } from "react";
 import Image from "next/image";
+import { motion } from "motion/react";
 import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 import { ADMIN_ROLES, hasAdminPermission } from "@/lib/adminRolesLevels";
+import { DURATION, SPRING_SNAPPY, press } from "./motion";
 
 function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
@@ -2454,27 +2456,30 @@ export default function AdminQueue({
           </span>
         )}
         {onLeaveAdmin && (
-          <button
+          <motion.button
             onClick={onLeaveAdmin}
+            {...press}
             className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-full border border-[#ECE9F7] bg-white shrink-0"
           >
             <LogOut size={11} /> Leave admin
-          </button>
+          </motion.button>
         )}
       </div>
 
       <div className="flex gap-1.5 overflow-x-auto pb-4 mb-1 -mx-5 px-5">
         {TABS.map((t) => (
-          <button
+          <motion.button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className={`flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full whitespace-nowrap shrink-0 ${
+            whileTap={{ scale: 0.95 }}
+            transition={SPRING_SNAPPY}
+            className={`flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full whitespace-nowrap shrink-0 transition-colors duration-150 ${
               activeTab === t.key ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
             }`}
             style={activeTab === t.key ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : undefined}
           >
             <t.icon size={13} /> {t.label}
-          </button>
+          </motion.button>
         ))}
       </div>
 

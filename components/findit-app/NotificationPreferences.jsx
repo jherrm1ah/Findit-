@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
+import { DURATION, EASE, SPRING_SNAPPY } from "./motion";
 
 export default function NotificationPreferences({ user, onToggle, showToast }) {
   const [enabled, setEnabled] = useState(user.notificationsEnabled);
@@ -35,26 +37,36 @@ export default function NotificationPreferences({ user, onToggle, showToast }) {
             Order status changes, new offers on your requests, reviews, and seller approvals.
           </p>
         </div>
-        <button
+        <motion.button
           onClick={toggle}
           disabled={saving}
+          whileTap={{ scale: 0.94 }}
           aria-label={enabled ? "Turn off notifications" : "Turn on notifications"}
           aria-pressed={enabled}
-          className="w-11 h-6 rounded-full shrink-0 relative transition-colors disabled:opacity-60"
+          className="w-11 h-6 rounded-full shrink-0 relative transition-colors duration-200 disabled:opacity-60"
           style={{ background: enabled ? "linear-gradient(135deg,#A855F7,#7C3AED)" : "#E4E1F0" }}
         >
-          <span
-            className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all"
-            style={{ left: enabled ? "22px" : "2px" }}
+          <motion.span
+            className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow"
+            animate={{ left: enabled ? 22 : 2 }}
+            transition={SPRING_SNAPPY}
           />
-        </button>
+        </motion.button>
       </div>
 
-      {!enabled && (
-        <p className="text-[11.5px] text-[#8A8372] mt-3 px-1">
-          You'll still see your orders and requests as normal — you just won't get new notification alerts for them.
-        </p>
-      )}
+      <AnimatePresence>
+        {!enabled && (
+          <motion.p
+            initial={{ opacity: 0, height: 0, marginTop: 0 }}
+            animate={{ opacity: 1, height: "auto", marginTop: 12 }}
+            exit={{ opacity: 0, height: 0, marginTop: 0 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="text-[11.5px] text-[#8A8372] px-1 overflow-hidden"
+          >
+            You'll still see your orders and requests as normal — you just won't get new notification alerts for them.
+          </motion.p>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
