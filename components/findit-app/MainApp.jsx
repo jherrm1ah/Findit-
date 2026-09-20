@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import {
   Home as HomeIcon, Search, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
@@ -1670,22 +1671,25 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
         )}
       </main>
 
-      {product && (
-        <ProductDetail
-          product={product}
-          onClose={() => setProduct(null)}
-          go={go}
-          onBuyNow={buyNow}
-          onAddToCart={handleAddToCart}
-          onContact={handleContactSeller}
-          onViewSeller={handleViewSeller}
-          savedIds={savedIds}
-          onToggleSaved={handleToggleSaved}
-          myLocation={myLocation}
-          onReportProduct={handleReportProduct}
-          showToast={showToast}
-        />
-      )}
+      <AnimatePresence>
+        {product && (
+          <ProductDetail
+            key={product.id}
+            product={product}
+            onClose={() => setProduct(null)}
+            go={go}
+            onBuyNow={buyNow}
+            onAddToCart={handleAddToCart}
+            onContact={handleContactSeller}
+            onViewSeller={handleViewSeller}
+            savedIds={savedIds}
+            onToggleSaved={handleToggleSaved}
+            myLocation={myLocation}
+            onReportProduct={handleReportProduct}
+            showToast={showToast}
+          />
+        )}
+      </AnimatePresence>
 
       {viewedSeller && (
         <SellerProfile

@@ -10,7 +10,7 @@ import { categoryGroup, naira } from "./data";
 import { ArtBlock, Pill } from "./shared";
 import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
-import { DURATION, EASE, SPRING_SNAPPY, press } from "./motion";
+import { DURATION, EASE, SPRING_SNAPPY, press, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
 // Matches lib/productReports.ts#REPORT_REASON_LABELS (migration 027) — kept
 // as a small duplicated client-side list rather than a network round trip
@@ -68,7 +68,13 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
   const activePhoto = photos[photoIndex] ?? null;
 
   return (
-    <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28">
+    <motion.div
+      className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28"
+      initial={{ opacity: 0, y: 28 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 20 }}
+      transition={{ duration: DURATION.base, ease: EASE }}
+    >
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/90 backdrop-blur px-5 pt-4 pb-3 flex items-center justify-between">
         <IconButton onClick={onClose} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         <p className="text-[15px] font-bold text-[#1E1B4B]">Details</p>
@@ -76,7 +82,12 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
       </div>
 
       <div className="px-5">
-        <div className={`relative rounded-[20px] overflow-hidden ${photos.length > 1 ? "mb-3" : "mb-5"}`}>
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: DURATION.base, ease: EASE, delay: 0.03 }}
+          className={`relative rounded-[20px] overflow-hidden ${photos.length > 1 ? "mb-3" : "mb-5"}`}
+        >
           <ArtBlock icon={Icon} art={product.art} imageUrl={activePhoto} className="h-64 w-full" />
           {/* Tap the left/right third of the photo to step through the
               gallery — no swipe library, just two transparent hit zones. */}
@@ -94,7 +105,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               />
             </>
           )}
-        </div>
+        </motion.div>
         {photos.length > 1 && (
           <div className="flex justify-center gap-1.5 mb-5">
             {photos.map((_, i) => (
@@ -109,17 +120,18 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
           </div>
         )}
 
-        <div className="flex items-start justify-between mb-1">
+        <motion.div initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <motion.div variants={STAGGER_ITEM} className="flex items-start justify-between mb-1">
           <p className="text-[12px] text-[#8A8372]">{categoryGroup(product.category).label}</p>
           <FavoriteButton
             saved={savedIds.includes(product.id)}
             onToggle={() => onToggleSaved(product.id)}
             className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1"
           />
-        </div>
-        <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</h1>
+        </motion.div>
+        <motion.h1 variants={STAGGER_ITEM} className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</motion.h1>
 
-        <div className="flex items-center justify-between mb-5">
+        <motion.div variants={STAGGER_ITEM} className="flex items-center justify-between mb-5">
           {/* Opens the storefront by seller_id where the listing has one —
               the only key that can't confuse two sellers sharing a business
               name. Listings predating migration 009's backfill still have
@@ -162,7 +174,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
           >
             {contacting ? "Opening…" : "Contact"}
           </button>
-        </div>
+        </motion.div>
 
         {/* What the seller actually declared about THIS specific listing —
             distinct from the "condition you want" picker below, which is
@@ -170,7 +182,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             seller actually set it (see migration 026: nullable, no
             default, an old unedited listing has no honest answer here). */}
         {(product.condition || product.deliveryOption || product.color || product.variation || product.location || product.qty != null) && (
-          <div className="flex gap-1.5 flex-wrap mb-4">
+          <motion.div variants={STAGGER_ITEM} className="flex gap-1.5 flex-wrap mb-4">
             {product.condition && <Pill tone={product.condition === "New" ? "green" : "gold"}>{product.condition}</Pill>}
             {product.qty != null && (
               <Pill tone={product.qty > 0 ? "stone" : "red"}>
@@ -181,10 +193,10 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}
             {product.variation && <Pill tone="stone">{product.variation}</Pill>}
             {product.location && <Pill tone="stone"><MapPin size={11} /> {product.location}</Pill>}
-          </div>
+          </motion.div>
         )}
 
-        <div className="flex items-center justify-end mb-6">
+        <motion.div variants={STAGGER_ITEM} className="flex items-center justify-end mb-6">
           <div>
             <p className="text-[12px] text-[#8A8372] mb-2 text-right">QTY</p>
             <div className="flex items-center gap-3 bg-[#F5F2FC] rounded-xl px-2 py-1.5">
@@ -197,16 +209,18 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               </button>
             </div>
           </div>
-        </div>
+        </motion.div>
 
-        <p className="text-[12px] font-semibold text-[#1E1B4B] mb-2">Description</p>
-        <p className="text-[13px] leading-relaxed text-[#514B67] mb-4">
-          {product.description
-            ? product.description
-            : "The seller hasn't added a description yet. Payment is held by FindIt until you confirm delivery, so you never pay a seller directly."}
-        </p>
+        <motion.div variants={STAGGER_ITEM}>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-2">Description</p>
+          <p className="text-[13px] leading-relaxed text-[#514B67] mb-4">
+            {product.description
+              ? product.description
+              : "The seller hasn't added a description yet. Payment is held by FindIt until you confirm delivery, so you never pay a seller directly."}
+          </p>
+        </motion.div>
 
-        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+        <motion.div variants={STAGGER_ITEM} className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <div className="flex gap-1.5 flex-wrap">
             {product.verified ? <Pill tone="green"><BadgeCheck size={11} /> Verified seller</Pill> : <Pill tone="stone">Unverified seller</Pill>}
           </div>
@@ -220,10 +234,15 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               <Flag size={11} /> Report this listing
             </button>
           )}
-        </div>
+        </motion.div>
+        </motion.div>
 
         {reportOpen && !reportSubmitted && (
-          <div className="bg-[#FDF6EC] border border-[#F5D9A8] rounded-2xl p-3.5 mb-4">
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="bg-[#FDF6EC] border border-[#F5D9A8] rounded-2xl p-3.5 mb-4 overflow-hidden">
             <p className="text-[11.5px] font-semibold text-[#1E1B4B] mb-2">What's wrong with this listing?</p>
             <select
               value={reportReason}
@@ -257,11 +276,17 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
                 Cancel
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ECE9F7] px-5 py-4 flex items-center justify-between gap-3 z-50">
+      <motion.div
+        initial={{ y: 90, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 90, opacity: 0 }}
+        transition={{ duration: DURATION.base, ease: EASE, delay: 0.06 }}
+        className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ECE9F7] px-5 py-4 flex items-center justify-between gap-3 z-50"
+      >
         <div>
           <p className="text-[11px] text-[#8A8372]">Total price</p>
           <p className="text-[19px] font-bold text-[#1E1B4B]">{naira(total)}</p>
@@ -331,7 +356,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
           </motion.button>
         </div>
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {flyItem && (
@@ -348,6 +373,6 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }
