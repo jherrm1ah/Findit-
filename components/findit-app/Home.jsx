@@ -55,6 +55,11 @@ export default function Home({
     .sort((a, b) => Number(b.sellerFeatured) - Number(a.sellerFeatured))
     .slice(0, 8);
 
+  // Same products+savedIds intersection Account.jsx's "Saved items" section
+  // already uses — a buyer who hearts something otherwise has no reminder of
+  // it anywhere until they happen to go looking in Account.
+  const saved = products.filter((p) => savedIds.includes(p.id));
+
   // The seller and admin entries are filtered by role rather than shown to
   // everyone. Neither ever granted access — both screens and every route
   // behind them check the role server-side — but listing an admin queue in a
@@ -253,6 +258,26 @@ export default function Home({
           </p>
         )}
       </div>
+
+      {saved.length > 0 && (
+        <>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-[15px] font-bold text-[#1E1B4B]">Saved for you</h2>
+            <button onClick={() => go("account")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1 mb-7 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
+            {saved.map((p) => (
+              <button key={p.id} onClick={() => openProduct(p)} className="text-left shrink-0 w-[120px]" aria-label={`View ${p.name}`}>
+                <div className="relative rounded-[16px] overflow-hidden mb-2">
+                  <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-24 w-full" />
+                </div>
+                <p className="text-[11.5px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
+                <p className="text-[12.5px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <button onClick={() => go("browse")} className="w-full rounded-[20px] p-4 flex items-center justify-between text-left border border-[#ECE9F7] bg-white mb-3">
         <div>
