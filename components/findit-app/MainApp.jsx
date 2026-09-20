@@ -129,6 +129,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // Drives the dashboard's "Complete verification" prompt; the wizard
   // itself (SellerOnboarding.jsx) fetches its own full copy when opened.
   const [verification, setVerification] = useState(null);
+  const [savingDescription, setSavingDescription] = useState(false);
   // { hasAccount, bankAccountName, maskedAccountNumber } | null — real
   // payout destination; see GET /api/sellers/me/payout-account. Without
   // this on file, a delivered order's payout is recorded as
@@ -575,6 +576,27 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       throw err;
     } finally {
       setSavingBranding(false);
+    }
+  };
+
+  // Deliberately separate from the verification wizard's submit — that one
+  // resets verification_status to 'pending' on every save, which is right
+  // for the fields that actually describe the business but would cost a
+  // seller their Verified/Trusted badge just for fixing a typo in their
+  // bio. This updates the bio alone and merges it straight into the local
+  // `verification` object so whatever already reads verification.description
+  // reflects it immediately, without a full refetch.
+  const handleUpdateSellerDescription = async (description) => {
+    setSavingDescription(true);
+    try {
+      await api.updateSellerDescription(description);
+      setVerification((v) => (v ? { ...v, description: description?.trim() || null } : v));
+      showToast("Bio updated.");
+    } catch (err) {
+      showToast(err.message || "Couldn't update your bio — try again.", "error");
+      throw err;
+    } finally {
+      setSavingDescription(false);
     }
   };
 
@@ -1370,6 +1392,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               onUpdateBranding={handleUpdateStoreBranding}
               savingBranding={savingBranding}
               verification={verification}
+              onUpdateDescription={handleUpdateSellerDescription}
+              savingDescription={savingDescription}
               payoutAccount={payoutAccount}
               banks={banks}
               onSavePayoutAccount={handleSavePayoutAccount}
