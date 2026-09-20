@@ -250,8 +250,19 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
             className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
           >
             <option value="New">New</option>
-            <option value="Used">Used</option>
+            {/* FindIt only accepts new-condition listings going forward —
+                "Used" is never offered for a new listing. It only appears
+                here at all when editing a listing that was already Used
+                before this policy, so a seller keeps full control over an
+                item they've already honestly listed (switch it to New, or
+                leave it as the accurate Used it always was) without being
+                silently relabeled or locked out of editing anything else
+                on it. */}
+            {initial.condition === "Used" && <option value="Used">Used</option>}
           </select>
+          {initial.condition !== "Used" && (
+            <p className="text-[10px] text-[#8A8372] mt-1">FindIt is new-condition items only.</p>
+          )}
         </Field>
         <Field label="Quantity available">
           <input

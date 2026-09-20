@@ -652,11 +652,14 @@ export async function createProduct(input: {
   lng?: number | null;
   description?: string | null;
   // Required, unlike every optional field below: a buyer deciding whether
-  // to buy something deserves to know upfront whether it's new or used,
-  // not "not specified" on every listing going forward. See migration 026
-  // for why this stays nullable at the DB level regardless (an EXISTING
-  // listing has no honest answer until its seller edits it).
-  condition: "New" | "Used";
+  // to buy something deserves to know upfront whether it's new — FindIt
+  // only accepts new-condition listings going forward (see the "New" check
+  // just below), so this is narrowed to the one legal value at the type
+  // level too. See migration 026 for why the column stays nullable at the
+  // DB level regardless (an EXISTING pre-policy listing has no honest
+  // answer until its seller edits it, and existing "Used" listings are
+  // left as they are — this only blocks NEW ones).
+  condition: "New";
   qty?: number;
   location?: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both";
@@ -664,6 +667,13 @@ export async function createProduct(input: {
   variation?: string | null;
 }): Promise<Product> {
   validateProductInput(input);
+  // Belt-and-braces beyond the type above: the API route already rejects
+  // anything but "New" before this is ever called, but createProduct isn't
+  // only reachable through that one route (tests, future callers) — the
+  // actual policy boundary belongs here, not just at the HTTP edge.
+  if (input.condition !== "New") {
+    throw new ValidationError("New listings must be marked \"New\" — FindIt only accepts new-condition listings.");
+  }
   if (!(await isValidCategoryKey(input.category))) {
     throw new ValidationError("Unknown category.");
   }

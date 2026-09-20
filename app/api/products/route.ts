@@ -62,8 +62,15 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (body.condition !== "New" && body.condition !== "Used") {
-    return NextResponse.json({ error: "condition must be New or Used" }, { status: 400 });
+  // FindIt is new-condition only — this is the policy boundary at the HTTP
+  // edge; createProduct enforces the same thing independently (see its own
+  // comment) so this isn't the only thing standing between a request and a
+  // "Used" listing actually landing in the database.
+  if (body.condition !== "New") {
+    return NextResponse.json(
+      { error: "New listings must be marked \"New\" — FindIt only accepts new-condition listings." },
+      { status: 400 }
+    );
   }
   if (body.deliveryOption !== "Delivery" && body.deliveryOption !== "Pickup" && body.deliveryOption !== "Both") {
     return NextResponse.json({ error: "deliveryOption must be Delivery, Pickup, or Both" }, { status: 400 });

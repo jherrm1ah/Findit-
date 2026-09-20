@@ -8,7 +8,7 @@ import { api } from "./api";
 
 export default function RequestForm({ go, showToast, myLocation }) {
   const [stage, setStage] = useState("form");
-  const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "", condition: "New" });
+  const [form, setForm] = useState({ title: "", desc: "", category: "", budgetMin: "", budgetMax: "", qty: 1, location: "" });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [classifying, setClassifying] = useState(false);
@@ -52,7 +52,10 @@ export default function RequestForm({ go, showToast, myLocation }) {
         location: form.location,
         lat: myLocation?.lat ?? null,
         lng: myLocation?.lng ?? null,
-        condition: form.condition,
+        // FindIt is new-condition only — a request no longer offers Used
+        // or Either as an option, since no seller can legitimately list
+        // one to fulfill it.
+        condition: "New",
       });
       setStage("submitted");
     } catch (err) {
@@ -116,14 +119,7 @@ export default function RequestForm({ go, showToast, myLocation }) {
           <Field label="Budget min (₦)"><input type="number" value={form.budgetMin} onChange={(e) => setForm({ ...form, budgetMin: e.target.value })} className="input" /></Field>
           <Field label="Budget max (₦)"><input type="number" value={form.budgetMax} onChange={(e) => setForm({ ...form, budgetMax: e.target.value })} className="input" /></Field>
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Quantity"><input type="number" min={1} value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} className="input" /></Field>
-          <Field label="Condition">
-            <select value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} className="input">
-              <option>New</option><option>Used</option><option>Either</option>
-            </select>
-          </Field>
-        </div>
+        <Field label="Quantity"><input type="number" min={1} value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} className="input" /></Field>
         <Field label="Delivery note (optional)"><input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. nearest landmark or drop-off point" maxLength={120} className="input" /></Field>
         {myLocation && (
           <p className="text-[11px] text-[#6B6483] -mt-2 flex items-center gap-1"><MapPin size={11} /> Using your current location so nearby sellers see this first.</p>

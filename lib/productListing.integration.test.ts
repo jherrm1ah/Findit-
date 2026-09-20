@@ -76,6 +76,15 @@ describe("createProduct — migration 026 fields", () => {
     // boundary validateProductInput's runtime check exists to guard.
     await expect(createProduct(baseInput({ condition: "Refurbished" }))).rejects.toThrow(/condition/i);
   });
+
+  it("refuses to create a new listing with condition Used — FindIt is new-condition only", async () => {
+    // "Used" is a recognized, valid value as far as validateProductInput is
+    // concerned (existing pre-policy listings still legitimately have it) —
+    // this is createProduct's own, separate policy check, not a validation
+    // rule. updateProduct still allows it (see the test below), which is
+    // deliberate: this only blocks a *new* Used listing from being created.
+    await expect(createProduct(baseInput({ condition: "Used" }))).rejects.toThrow(/new-condition/i);
+  });
 });
 
 describe("updateProduct — replacing photos and fields", () => {
@@ -107,7 +116,11 @@ describe("updateProduct — replacing photos and fields", () => {
     expect(updated?.price).toBe(3000);
   });
 
-  it("updates condition/qty/location/deliveryOption/color/variation independently", async () => {
+  it("updates condition/qty/location/deliveryOption/color/variation independently, including keeping a listing Used", async () => {
+    // updateProduct deliberately has no "must be New" check — a listing
+    // that was already Used before FindIt went new-condition-only keeps
+    // full editability, condition included. Only createProduct blocks
+    // "Used" (see the new-listing test above).
     const created = await createProduct(baseInput());
 
     const updated = await updateProduct(created.id, {
