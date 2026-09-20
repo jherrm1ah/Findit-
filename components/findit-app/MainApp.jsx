@@ -1725,30 +1725,36 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
         )}
       </AnimatePresence>
 
-      {activeThread && (
-        <Thread
-          conversationId={activeThread.id}
-          otherParty={activeThread.otherParty}
-          messages={threadMessages}
-          loading={threadLoading}
-          onBack={() => {
-            threadRequestRef.current++;
-            setActiveThread(null);
-          }}
-          onSend={handleSendMessage}
-        />
-      )}
+      <AnimatePresence>
+        {activeThread && (
+          <Thread
+            key={activeThread.id}
+            conversationId={activeThread.id}
+            otherParty={activeThread.otherParty}
+            messages={threadMessages}
+            loading={threadLoading}
+            onBack={() => {
+              threadRequestRef.current++;
+              setActiveThread(null);
+            }}
+            onSend={handleSendMessage}
+          />
+        )}
+      </AnimatePresence>
 
-      {activeTicket && (
-        <Thread
-          conversationId={activeTicket.id}
-          otherParty={{ name: activeTicket.subject || "Support" }}
-          messages={ticketMessages}
-          loading={ticketLoading}
-          onBack={() => setActiveTicket(null)}
-          onSend={handleSendTicketMessage}
-        />
-      )}
+      <AnimatePresence>
+        {activeTicket && (
+          <Thread
+            key={activeTicket.id}
+            conversationId={activeTicket.id}
+            otherParty={{ name: activeTicket.subject || "Support" }}
+            messages={ticketMessages}
+            loading={ticketLoading}
+            onBack={() => setActiveTicket(null)}
+            onSend={handleSendTicketMessage}
+          />
+        )}
+      </AnimatePresence>
 
       <nav className="fixed bottom-0 left-0 right-0 z-30 px-6 pb-6 pt-2 flex justify-center">
         <div

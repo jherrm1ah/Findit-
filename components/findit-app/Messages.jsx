@@ -1,6 +1,8 @@
 "use client";
 
+import { motion, AnimatePresence } from "motion/react";
 import { MessageCircle, ChevronRight } from "lucide-react";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
 function timeAgoShort(iso) {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -18,38 +20,69 @@ export default function Messages({ conversations, onOpenThread }) {
       <p className="text-[12px] text-[#6B6483] mb-5">Conversations with sellers on FindIt.</p>
 
       {conversations.length === 0 && (
-        <p className="text-[12px] text-[#6B6483]">
+        <motion.p
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: DURATION.base, ease: EASE }}
+          className="text-[12px] text-[#6B6483]"
+        >
           No conversations yet — tap "Contact" on a product to message its seller.
-        </p>
+        </motion.p>
       )}
 
-      <div className="space-y-2.5">
-        {conversations.map((c) => {
-          const displayName = c.otherParty.businessName || c.otherParty.name;
-          return (
-            <button
-              key={c.id}
-              onClick={() => onOpenThread(c.id, c.otherParty)}
-              className={`w-full flex items-center gap-3 rounded-[20px] p-3.5 text-left border ${c.unreadCount > 0 ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
-            >
-              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-[14px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-                {displayName?.[0]?.toUpperCase() || <MessageCircle size={16} />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{displayName}</p>
-                <p className="text-[11.5px] text-[#6B6483] truncate">{c.lastMessage || "Say hello…"}</p>
-              </div>
-              <div className="flex flex-col items-end gap-1 shrink-0">
-                <span className="text-[10px] text-[#8A8372]">{timeAgoShort(c.lastMessageAt)}</span>
-                {c.unreadCount > 0 && (
-                  <span className="w-4 h-4 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center">{c.unreadCount}</span>
-                )}
-                {c.unreadCount === 0 && <ChevronRight size={14} className="text-[#B7AFD6]" />}
-              </div>
-            </button>
-          );
-        })}
-      </div>
+      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <AnimatePresence initial={false}>
+          {conversations.map((c) => {
+            const displayName = c.otherParty.businessName || c.otherParty.name;
+            return (
+              <motion.button
+                key={c.id}
+                layout="position"
+                variants={STAGGER_ITEM}
+                onClick={() => onOpenThread(c.id, c.otherParty)}
+                whileTap={{ scale: 0.98 }}
+                transition={{ duration: DURATION.instant }}
+                className={`w-full flex items-center gap-3 rounded-[20px] p-3.5 text-left border transition-colors duration-200 ${c.unreadCount > 0 ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
+              >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-[14px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+                  {displayName?.[0]?.toUpperCase() || <MessageCircle size={16} />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{displayName}</p>
+                  <p className="text-[11.5px] text-[#6B6483] truncate">{c.lastMessage || "Say hello…"}</p>
+                </div>
+                <div className="flex flex-col items-end gap-1 shrink-0">
+                  <span className="text-[10px] text-[#8A8372]">{timeAgoShort(c.lastMessageAt)}</span>
+                  <AnimatePresence mode="wait" initial={false}>
+                    {c.unreadCount > 0 ? (
+                      <motion.span
+                        key="unread"
+                        initial={{ opacity: 0, scale: 0.4 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.4 }}
+                        transition={{ duration: DURATION.fast, ease: EASE }}
+                        className="w-4 h-4 rounded-full bg-[#F59E0B] text-white text-[9px] font-bold flex items-center justify-center"
+                      >
+                        {c.unreadCount}
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="read"
+                        initial={{ opacity: 0, scale: 0.4 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.4 }}
+                        transition={{ duration: DURATION.fast, ease: EASE }}
+                      >
+                        <ChevronRight size={14} className="text-[#B7AFD6]" />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
+      </motion.div>
     </div>
   );
 }
