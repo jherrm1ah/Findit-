@@ -140,22 +140,42 @@ export default function Home({
           <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
         </div>
 
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-30" onClick={() => setMenuOpen(false)} />
-            <div className="absolute top-14 left-0 z-40 bg-white rounded-[20px] shadow-xl shadow-[#4C1D95]/15 border border-[#ECE9F7] p-2 w-56">
-              {MENU_LINKS.map((m) => (
-                <button
-                  key={m.screen}
-                  onClick={() => { setMenuOpen(false); go(m.screen); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] text-[#1E1B4B] font-medium hover:bg-[#F5F2FC] text-left"
-                >
-                  <m.icon size={15} className="text-[#7C3AED]" /> {m.label}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        <AnimatePresence>
+          {menuOpen && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: DURATION.fast }}
+                className="fixed inset-0 z-30"
+                onClick={() => setMenuOpen(false)}
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.94, y: -8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.94, y: -8 }}
+                transition={SPRING_SNAPPY}
+                style={{ transformOrigin: "top left" }}
+                className="absolute top-14 left-0 z-40 bg-white rounded-[20px] shadow-xl shadow-[#4C1D95]/15 border border-[#ECE9F7] p-2 w-56"
+              >
+                <motion.div initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+                  {MENU_LINKS.map((m) => (
+                    <motion.button
+                      key={m.screen}
+                      variants={STAGGER_ITEM}
+                      onClick={() => { setMenuOpen(false); go(m.screen); }}
+                      whileTap={{ scale: 0.97 }}
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] text-[#1E1B4B] font-medium hover:bg-[#F5F2FC] text-left"
+                    >
+                      <m.icon size={15} className="text-[#7C3AED]" /> {m.label}
+                    </motion.button>
+                  ))}
+                </motion.div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* search */}
