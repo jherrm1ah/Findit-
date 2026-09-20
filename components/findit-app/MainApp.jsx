@@ -1691,18 +1691,21 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
         )}
       </AnimatePresence>
 
-      {viewedSeller && (
-        <SellerProfile
-          profile={viewedSellerProfile}
-          loading={viewedSellerLoading}
-          error={viewedSellerError}
-          onBack={closeSellerProfile}
-          onOpenProduct={handleOpenProductFromSeller}
-          onContact={handleContactSeller}
-          myLocation={myLocation}
-          viewerSellerId={mySellerId}
-        />
-      )}
+      <AnimatePresence>
+        {viewedSeller && (
+          <SellerProfile
+            key={viewedSeller}
+            profile={viewedSellerProfile}
+            loading={viewedSellerLoading}
+            error={viewedSellerError}
+            onBack={closeSellerProfile}
+            onOpenProduct={handleOpenProductFromSeller}
+            onContact={handleContactSeller}
+            myLocation={myLocation}
+            viewerSellerId={mySellerId}
+          />
+        )}
+      </AnimatePresence>
 
       {activeThread && (
         <Thread

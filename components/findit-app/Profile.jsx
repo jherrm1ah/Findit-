@@ -2,9 +2,11 @@
 
 import { useRef, useState } from "react";
 import Image from "next/image";
+import { motion } from "motion/react";
 import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle, Crown } from "lucide-react";
 import { Pill } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
+import { DURATION, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 const SELLER_STATUS_META = {
   pending: { label: "Pending review", tone: "gold", icon: Clock },
@@ -84,12 +86,14 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
   ];
 
   return (
-    <div className="px-5 pt-6 pb-10">
-      <div className="flex items-center gap-3 mb-6">
-        <button
+    <motion.div className="px-5 pt-6 pb-10" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div variants={STAGGER_ITEM} className="flex items-center gap-3 mb-6">
+        <motion.button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadingAvatar}
+          whileTap={{ scale: 0.93 }}
+          transition={SPRING_SNAPPY}
           aria-label="Change profile photo"
           className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
@@ -106,7 +110,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
               <Camera size={14} className="text-white" />
             )}
           </span>
-        </button>
+        </motion.button>
         <input
           ref={fileInputRef}
           type="file"
@@ -130,20 +134,23 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
             </div>
           )}
         </div>
-        <button
+        <motion.button
           onClick={onLogout}
+          {...press}
           className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] px-3 py-2 rounded-full border border-[#ECE9F7] shrink-0"
         >
           <LogOut size={12} /> Log out
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
-      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Management</p>
-      <div className="space-y-3 mb-7">
+      <motion.p variants={STAGGER_ITEM} className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Management</motion.p>
+      <motion.div variants={STAGGER_ITEM} className="space-y-3 mb-7">
         {CARDS.map((c) => (
-          <button
+          <motion.button
             key={c.key}
             onClick={() => go(c.key)}
+            whileTap={{ scale: 0.98 }}
+            transition={SPRING_SNAPPY}
             className={`w-full flex items-center gap-3 rounded-[20px] p-4 text-left border ${c.primary ? "border-transparent text-white" : "bg-white border-[#ECE9F7]"}`}
             style={c.primary ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
           >
@@ -155,23 +162,25 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
               <p className={`text-[11px] ${c.primary ? "text-white/80" : "text-[#6B6483]"}`}>{c.subtitle}</p>
             </div>
             <ChevronRight size={16} className={c.primary ? "text-white/80" : "text-[#8A8372]"} />
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
-      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Settings</p>
-      <div className="bg-white border border-[#ECE9F7] rounded-[20px] overflow-hidden">
+      <motion.p variants={STAGGER_ITEM} className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Settings</motion.p>
+      <motion.div variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] overflow-hidden">
         {SETTINGS_ROWS.map((row, i) => (
-          <button
+          <motion.button
             key={row.key}
             onClick={() => go(row.key)}
+            whileTap={{ scale: 0.98, backgroundColor: "rgba(124,58,237,0.04)" }}
+            transition={{ duration: DURATION.instant }}
             className={`w-full flex items-center justify-between px-4 py-3.5 text-left ${i !== SETTINGS_ROWS.length - 1 ? "border-b border-[#ECE9F7]" : ""}`}
           >
             <p className="text-[13px] text-[#1E1B4B]">{row.label}</p>
             <ChevronRight size={15} className="text-[#B7AFD6]" />
-          </button>
+          </motion.button>
         ))}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

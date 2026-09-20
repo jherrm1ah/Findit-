@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, Star, BadgeCheck, ShieldCheck, MessageCircle, Package, MapPin, Crown, Calendar, Store } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { ArtBlock, Pill } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
 
 const LEVEL_TONE = { new: "stone", verified: "brand", trusted: "green" };
 const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldCheck };
@@ -21,16 +23,24 @@ function VerificationBadge({ level }) {
   const Icon = LEVEL_ICON[level] ?? BadgeCheck;
   return (
     <div className="relative">
-      <button type="button" onClick={() => setOpen((o) => !o)}>
+      <motion.button type="button" onClick={() => setOpen((o) => !o)} whileTap={{ scale: 0.94 }} transition={{ duration: DURATION.instant }}>
         <Pill tone={LEVEL_TONE[level] ?? "stone"}>
           <Icon size={10} /> {copy.label}
         </Pill>
-      </button>
-      {open && (
-        <div className="absolute z-10 top-full left-0 mt-1.5 w-56 bg-white border border-[#ECE9F7] rounded-xl p-3 shadow-lg shadow-[#4C1D95]/10">
-          <p className="text-[11px] text-[#514B67] leading-relaxed">{copy.explanation}</p>
-        </div>
-      )}
+      </motion.button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.96, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: -4 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="absolute z-10 top-full left-0 mt-1.5 w-56 bg-white border border-[#ECE9F7] rounded-xl p-3 shadow-lg shadow-[#4C1D95]/10"
+          >
+            <p className="text-[11px] text-[#514B67] leading-relaxed">{copy.explanation}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -75,7 +85,13 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
 
   if (loading || error || !profile) {
     return (
-      <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 16 }}
+        transition={{ duration: DURATION.base, ease: EASE }}
+        className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto"
+      >
         <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
           <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
           <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
@@ -85,25 +101,36 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
             {loading ? "Loading this store\u2026" : error || "This store isn\u2019t available."}
           </p>
         </div>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10">
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 16 }}
+      transition={{ duration: DURATION.base, ease: EASE }}
+      className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10"
+    >
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
         <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
       </div>
 
       {bannerUrl && (
-        <div className="relative h-28 w-full mb-[-2.5rem] overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, scale: 1.05 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: DURATION.slow, ease: EASE }}
+          className="relative h-28 w-full mb-[-2.5rem] overflow-hidden"
+        >
           <Image src={bannerUrl} alt="" fill sizes="100vw" className="object-cover" />
-        </div>
+        </motion.div>
       )}
 
-      <div className="px-5">
-        <div className="flex items-center gap-3 mb-4">
+      <motion.div className="px-5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <motion.div variants={STAGGER_ITEM} className="flex items-center gap-3 mb-4">
           <div
             className="relative w-14 h-14 rounded-full flex items-center justify-center shrink-0 text-white text-[20px] font-bold overflow-hidden border-2 border-white shadow-md"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
@@ -142,28 +169,31 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
               </div>
             )}
           </div>
-        </div>
+        </motion.div>
 
         {/* The dedicated storefront. Present only while the seller's paid
             plan actually publishes it — lib/sellerPublicProfile.ts returns
             null for storeSlug otherwise, so this never advertises a link
             that would land on a closed store. */}
         {profile.storeSlug && (
-          <a
+          <motion.a
+            variants={STAGGER_ITEM}
+            whileTap={{ scale: 0.97 }}
+            transition={{ duration: DURATION.instant }}
             href={`/store/${profile.storeSlug}`}
             className="w-full flex items-center justify-center gap-2 text-white text-[13px] font-semibold py-3 rounded-xl mb-4"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
             <Store size={15} /> Visit store
-          </a>
+          </motion.a>
         )}
 
         {profile.description && (
-          <p className="text-[12.5px] text-[#514B67] leading-relaxed mb-4">{profile.description}</p>
+          <motion.p variants={STAGGER_ITEM} className="text-[12.5px] text-[#514B67] leading-relaxed mb-4">{profile.description}</motion.p>
         )}
 
         {(profile.completedOrderCount > 0 || profile.reviewCount > 0) && (
-          <div className="flex items-center gap-4 mb-5 text-[11px] text-[#6B6483]">
+          <motion.div variants={STAGGER_ITEM} className="flex items-center gap-4 mb-5 text-[11px] text-[#6B6483]">
             {profile.completedOrderCount > 0 && (
               <span>
                 <b className="text-[#1E1B4B]">{profile.completedOrderCount}</b> completed order
@@ -176,11 +206,13 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
                 {profile.reviewCount === 1 ? "" : "s"}
               </span>
             )}
-          </div>
+          </motion.div>
         )}
 
         {!isOwnProfile && (
-          <button
+          <motion.button
+            variants={STAGGER_ITEM}
+            {...press}
             onClick={async () => {
               setContacting(true);
               try {
@@ -199,29 +231,29 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
             style={{ background: "#1E1B4B" }}
           >
             <MessageCircle size={15} /> {contacting ? "Opening…" : "Contact seller"}
-          </button>
+          </motion.button>
         )}
 
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+        <motion.p variants={STAGGER_ITEM} className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
           <Package size={13} className="text-[#7C3AED]" /> Listings
-        </p>
-        <div className="grid grid-cols-2 gap-x-3 gap-y-5">
+        </motion.p>
+        <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-x-3 gap-y-5">
           {listings.map((p) => (
-            <button key={p.id} onClick={() => onOpenProduct(p)} className="text-left">
+            <motion.button key={p.id} onClick={() => onOpenProduct(p)} whileTap={{ scale: 0.96 }} transition={{ duration: DURATION.instant }} className="text-left">
               <div className="relative rounded-[20px] overflow-hidden mb-2">
                 <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               </div>
               <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-2 h-8 mb-0.5">{p.name}</p>
               <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-            </button>
+            </motion.button>
           ))}
           {listings.length === 0 && (
             <p className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">No active listings right now.</p>
           )}
-        </div>
+        </motion.div>
 
         {profile.reviews.length > 0 && (
-          <div className="mt-8">
+          <motion.div {...revealOnView} className="mt-8">
             <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
               <Star size={13} className="text-[#7C3AED]" /> Reviews
             </p>
@@ -248,9 +280,9 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
                 </div>
               ))}
             </div>
-          </div>
+          </motion.div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
