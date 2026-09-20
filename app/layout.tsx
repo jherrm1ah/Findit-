@@ -61,6 +61,17 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   colorScheme: "light",
+  // Without this, opening the on-screen keyboard on Android Chrome leaves
+  // the layout viewport (and every `fixed inset-0`/`100vh` full-screen
+  // panel — Thread.jsx's chat box, every bottom-input form) at its
+  // original height, so the keyboard just overlaps the bottom of the
+  // screen instead of the page shrinking to fit above it. The message
+  // input then ends up rendered underneath the keyboard: still there,
+  // still working, just invisible. "resizes-content" makes the browser
+  // actually shrink the layout viewport when the keyboard opens, so a
+  // `flex flex-col` full-screen container reflows its `shrink-0` footer
+  // back into view instead of getting covered.
+  interactiveWidget: "resizes-content",
 };
 
 export default function RootLayout({
