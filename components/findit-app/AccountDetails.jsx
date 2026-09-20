@@ -1,8 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import { User, Store, FileText, Phone, Lock, Pencil } from "lucide-react";
 import { Field } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
+
+// A section card's header row — icon + uppercase label — matching the
+// pattern already used across the seller dashboard (BrandingCard, "Your
+// store link", etc.) rather than this page's previous plain bold labels.
+function SectionHeader({ icon: Icon, label }) {
+  return (
+    <div className="flex items-center gap-2 mb-3">
+      <Icon size={14} className="text-[#7C3AED]" />
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">{label}</p>
+    </div>
+  );
+}
 
 export default function AccountDetails({
   user,
@@ -10,6 +24,9 @@ export default function AccountDetails({
   onUpdateBusinessName,
   onUpdatePhone,
   onUpdatePassword,
+  bio,
+  onUpdateBio,
+  savingBio,
   showToast,
 }) {
   const [name, setName] = useState(user.name);
@@ -19,6 +36,9 @@ export default function AccountDetails({
   const [businessName, setBusinessName] = useState(user.businessName || "");
   const [savingBusinessName, setSavingBusinessName] = useState(false);
   useEffect(() => setBusinessName(user.businessName || ""), [user.businessName]);
+
+  const [editingBio, setEditingBio] = useState(false);
+  const [bioDraft, setBioDraft] = useState(bio ?? "");
 
   const [newPhone, setNewPhone] = useState(formatPhoneLocal(user.phone));
   const [phonePassword, setPhonePassword] = useState("");
@@ -57,6 +77,20 @@ export default function AccountDetails({
     }
   };
 
+  const startEditingBio = () => {
+    setBioDraft(bio ?? "");
+    setEditingBio(true);
+  };
+
+  const saveBio = async () => {
+    try {
+      await onUpdateBio?.(bioDraft);
+      setEditingBio(false);
+    } catch {
+      // MainApp already surfaced a toast — stay in edit mode so nothing is lost.
+    }
+  };
+
   const savePhone = async () => {
     if (!newPhone.trim() || !phonePassword || savingPhone) return;
     setSavingPhone(true);
@@ -88,17 +122,38 @@ export default function AccountDetails({
     }
   };
 
+  const isSeller = user.role === "seller";
+
   return (
     <div className="px-5 pt-6 pb-10">
       <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>
-        Account details
+        Personal details
       </h1>
-      <p className="text-[12px] text-[#6B6483] mb-6">
-        Update your name{user.role === "seller" ? ", business name" : ""}, phone number, and password.
+      <p className="text-[12px] text-[#6B6483] mb-5">
+        Your name{isSeller ? ", business name, bio" : ""}, phone number, and password.
       </p>
 
-      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Name</p>
+      <div className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5">
+        <div
+          className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {user.avatarUrl ? (
+            <Image src={user.avatarUrl} alt="" fill sizes="48px" className="object-cover" />
+          ) : (
+            <User size={20} className="text-white" />
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-[14px] font-bold text-[#1E1B4B] truncate">{user.name}</p>
+          <p className="text-[11.5px] text-[#6B6483]">
+            {formatPhoneLocal(user.phone)} · {isSeller ? "Seller account" : "Buyer account"}
+          </p>
+        </div>
+      </div>
+
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
+        <SectionHeader icon={User} label="Name" />
         <Field label="Full name">
           <input value={name} onChange={(e) => setName(e.target.value)} className="input" />
         </Field>
@@ -112,9 +167,9 @@ export default function AccountDetails({
         </button>
       </div>
 
-      {user.role === "seller" && (
-        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
-          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Business name</p>
+      {isSeller && (
+        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
+          <SectionHeader icon={Store} label="Business name" />
           <Field label="Business name">
             <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} className="input" />
           </Field>
@@ -132,8 +187,50 @@ export default function AccountDetails({
         </div>
       )}
 
-      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4">
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Phone number</p>
+      {isSeller && (
+        <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
+          <div className="flex items-center justify-between mb-3">
+            <SectionHeader icon={FileText} label="Bio" />
+            {!editingBio && (
+              <button onClick={startEditingBio} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+                <Pencil size={11} /> {bio ? "Edit" : "Add"}
+              </button>
+            )}
+          </div>
+          {editingBio ? (
+            <>
+              <textarea
+                value={bioDraft}
+                onChange={(e) => setBioDraft(e.target.value)}
+                maxLength={2000}
+                rows={3}
+                placeholder="Tell buyers what you sell and what makes your store worth trusting."
+                className="w-full bg-[#F5F2FC] rounded-xl px-3 py-2.5 text-[12.5px] text-[#1E1B4B] outline-none resize-none mb-2"
+              />
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={saveBio}
+                  disabled={savingBio}
+                  className={`text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl ${savingBio ? "opacity-60" : ""}`}
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {savingBio ? "Saving…" : "Save bio"}
+                </button>
+                <button onClick={() => setEditingBio(false)} disabled={savingBio} className="text-[12.5px] font-semibold text-[#6B6483]">
+                  Cancel
+                </button>
+              </div>
+            </>
+          ) : (
+            <p className="text-[12.5px] text-[#514B67] leading-relaxed">
+              {bio || "Buyers see this on your public profile and storefront. Add a short bio."}
+            </p>
+          )}
+        </div>
+      )}
+
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
+        <SectionHeader icon={Phone} label="Phone number" />
         <div className="space-y-3">
           <Field label="New phone number">
             <input type="tel" value={newPhone} onChange={(e) => setNewPhone(e.target.value)} className="input" />
@@ -159,8 +256,8 @@ export default function AccountDetails({
         </button>
       </div>
 
-      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4">
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Password</p>
+      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+        <SectionHeader icon={Lock} label="Password" />
         <div className="space-y-3">
           <Field label="Current password">
             <input

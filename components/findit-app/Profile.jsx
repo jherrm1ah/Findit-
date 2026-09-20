@@ -77,7 +77,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
     // A buyer can turn this same account into a seller account — phone numbers
     // are unique, so without this they'd need a second phone number to sell.
     ...(user.role === "buyer" ? [{ key: "becomeSeller", label: "Start selling on FindIt" }] : []),
-    { key: "accountDetails", label: "Account details" },
+    { key: "accountDetails", label: "Personal details" },
     { key: "notifPrefs", label: "Notification preferences" },
     { key: "help", label: "Help & support" },
     { key: "about", label: "About FindIt" },

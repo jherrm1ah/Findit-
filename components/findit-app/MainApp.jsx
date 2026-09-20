@@ -1392,8 +1392,6 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               onUpdateBranding={handleUpdateStoreBranding}
               savingBranding={savingBranding}
               verification={verification}
-              onUpdateDescription={handleUpdateSellerDescription}
-              savingDescription={savingDescription}
               payoutAccount={payoutAccount}
               banks={banks}
               onSavePayoutAccount={handleSavePayoutAccount}
@@ -1521,6 +1519,9 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             onUpdateBusinessName={handleUpdateBusinessName}
             onUpdatePhone={handleUpdatePhone}
             onUpdatePassword={handleUpdatePassword}
+            bio={verification?.description}
+            onUpdateBio={handleUpdateSellerDescription}
+            savingBio={savingDescription}
             showToast={showToast}
           />
         )}
