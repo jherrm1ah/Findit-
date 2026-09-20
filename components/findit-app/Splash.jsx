@@ -1,33 +1,33 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { motion } from "motion/react";
+import { DURATION, EASE, SPRING_SOFT } from "./motion";
 
 export default function Splash({ onDone }) {
-  const [visible, setVisible] = useState(false);
-
   useEffect(() => {
-    const showTimer = setTimeout(() => setVisible(true), 30);
     const doneTimer = setTimeout(onDone, 1800);
-    return () => { clearTimeout(showTimer); clearTimeout(doneTimer); };
+    return () => clearTimeout(doneTimer);
   }, [onDone]);
 
   return (
-    <div
+    <motion.div
       onClick={onDone}
+      exit={{ opacity: 0 }}
+      transition={{ duration: DURATION.base, ease: EASE }}
       className="fixed inset-0 z-50 flex items-center justify-center cursor-pointer"
       style={{ background: "#6D28D9" }}
     >
-      <span
+      <motion.span
+        initial={{ opacity: 0, y: 10, scale: 0.94 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={SPRING_SOFT}
         className="text-[32px] font-bold"
-        style={{
-          fontFamily: "Fraunces, serif",
-          opacity: visible ? 1 : 0,
-          transition: "opacity 0.4s ease",
-        }}
+        style={{ fontFamily: "Fraunces, serif" }}
       >
         <span className="text-white">Find</span>
         <span style={{ color: "#FCD34D" }}>It</span>
-      </span>
-    </div>
+      </motion.span>
+    </motion.div>
   );
 }

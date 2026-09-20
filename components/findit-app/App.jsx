@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MotionConfig } from "motion/react";
+import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
 import Onboarding from "./Onboarding";
 import Login from "./Login";
@@ -127,12 +127,13 @@ export default function App() {
 
   let content;
   if (phase === "splash") {
-    content = <Splash onDone={handleSplashDone} />;
+    content = <Splash key="splash" onDone={handleSplashDone} />;
   } else if (phase === "onboarding") {
-    content = <Onboarding onDone={handleOnboardingDone} />;
+    content = <Onboarding key="onboarding" onDone={handleOnboardingDone} />;
   } else if (phase === "login") {
     content = (
       <Login
+        key="login"
         onDone={(loggedInUser) => {
           setUser(loggedInUser);
           setPhase("main");
@@ -143,6 +144,7 @@ export default function App() {
   } else {
     content = (
       <MainApp
+        key="main"
         user={user}
         onLogout={handleLogout}
         showToast={showToast}
@@ -159,7 +161,11 @@ export default function App() {
     // needing its own check.
     <MotionConfig reducedMotion="user">
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
-      {content}
+      {/* splash -> onboarding -> login -> main is a one-way, one-time
+          sequence (per session/device) — a coordinated crossfade here
+          instead of an instant cut, matching the same treatment
+          MainApp's own internal screen switcher already has. */}
+      <AnimatePresence mode="wait">{content}</AnimatePresence>
     </MotionConfig>
   );
 }
