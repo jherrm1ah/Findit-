@@ -2,11 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
+import { motion, AnimatePresence } from "motion/react";
 import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open";
@@ -1280,21 +1282,35 @@ export default function SellerDashboard({
       {activeTab === "orders" && (
       <>
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Orders to fulfill</p>
-      <div className="space-y-3 mb-7">
+      <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
         {myOrders.length === 0 && (
           <p className="text-[12px] text-[#6B6483]">No orders under your business name yet.</p>
         )}
+        <AnimatePresence initial={false}>
         {myOrders.map((o) => {
           const nextStatus = nextSellerStep(o.status);
           const awaitingBuyer = !nextStatus && o.status !== "Delivered";
           return (
-            <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+            <motion.div key={o.id} layout="position" variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Package size={13} className="text-[#7C3AED] shrink-0" />
                   <p className="text-[13px] font-semibold text-[#1E1B4B]">{o.item}</p>
                 </div>
-                <Pill tone={statusTone(o.status)}>{o.status}</Pill>
+                {/* Crossfade instead of an instant swap when the seller's own
+                    "Mark as…" action (or a buyer/system change) moves the
+                    order to its next status. */}
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.span
+                    key={o.status}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: DURATION.fast, ease: EASE }}
+                  >
+                    <Pill tone={statusTone(o.status)}>{o.status}</Pill>
+                  </motion.span>
+                </AnimatePresence>
               </div>
               <p className="text-[11px] text-[#6B6483] mb-3">{o.id} · {naira(o.price)}</p>
               {/* The verified record for this sale, once it exists. Only
@@ -1321,44 +1337,60 @@ export default function SellerDashboard({
                   </div>
                 );
               })()}
-              <button
+              <motion.button
                 onClick={() => messageBuyer(o)}
                 disabled={messagingId !== null}
+                {...press}
                 className={`flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] mb-2.5 ${messagingId !== null ? "opacity-60" : ""}`}
               >
                 <MessageCircle size={13} /> {messagingId === o.id ? "Opening…" : "Message buyer"}
-              </button>
-              {o.paymentStatus !== "paid" ? (
-                <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
-              ) : nextStatus ? (
-                <button
-                  onClick={() => advance(o)}
-                  disabled={advancingId !== null}
-                  className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${advancingId !== null ? "opacity-60" : ""}`}
-                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              </motion.button>
+              {/* The fulfillment action itself crossfades between states
+                  (waiting on payment → "Mark as…" → waiting on the buyer →
+                  settled) instead of cutting instantly when an order moves. */}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: DURATION.fast, ease: EASE }}
                 >
-                  {advancingId === o.id ? "Updating…" : <>Mark as {nextStatus} <ArrowRight size={12} /></>}
-                </button>
-              ) : awaitingBuyer ? (
-                <div>
-                  <Pill tone="gold"><Clock size={11} /> Waiting for buyer to confirm</Pill>
-                  <p className="text-[11px] text-[#6B6483] mt-2">
-                    {o.escrowStatus === "disputed"
-                      ? "The buyer reported a problem — FindIt is reviewing it before releasing your payment."
-                      : "Your payment is released as soon as the buyer confirms the order arrived."}
-                  </p>
-                </div>
-              ) : o.escrowStatus === "refunded" ? (
-                <Pill tone="stone">Refunded to buyer</Pill>
-              ) : (
-                <div>
-                  <Pill tone="green"><CheckCircle2 size={11} /> Delivered — payment released</Pill>
-                </div>
-              )}
-            </div>
+                  {o.paymentStatus !== "paid" ? (
+                    <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
+                  ) : nextStatus ? (
+                    <motion.button
+                      onClick={() => advance(o)}
+                      disabled={advancingId !== null}
+                      {...press}
+                      className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${advancingId !== null ? "opacity-60" : ""}`}
+                      style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                    >
+                      {advancingId === o.id ? "Updating…" : <>Mark as {nextStatus} <ArrowRight size={12} /></>}
+                    </motion.button>
+                  ) : awaitingBuyer ? (
+                    <div>
+                      <Pill tone="gold"><Clock size={11} /> Waiting for buyer to confirm</Pill>
+                      <p className="text-[11px] text-[#6B6483] mt-2">
+                        {o.escrowStatus === "disputed"
+                          ? "The buyer reported a problem — FindIt is reviewing it before releasing your payment."
+                          : "Your payment is released as soon as the buyer confirms the order arrived."}
+                      </p>
+                    </div>
+                  ) : o.escrowStatus === "refunded" ? (
+                    <Pill tone="stone">Refunded to buyer</Pill>
+                  ) : (
+                    <div>
+                      <Pill tone="green"><CheckCircle2 size={11} /> Delivered — payment released</Pill>
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
+            </motion.div>
           );
         })}
-      </div>
+        </AnimatePresence>
+      </motion.div>
       </>
       )}
 

@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, CreditCard } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
+import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
 
 export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
@@ -103,19 +105,33 @@ export default function Account({ openProduct, orders, products, onReview, onCon
       <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>My orders</h1>
       <p className="text-[12px] text-[#6B6483] mb-5">Track deliveries, view history, and leave a review once an order arrives.</p>
 
-      <div className="space-y-3 mb-8">
+      <motion.div className="space-y-3 mb-8" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
         {orders.length === 0 && (
           <p className="text-[12px] text-[#6B6483]">No orders yet — browse the catalogue or request an item to get started.</p>
         )}
-        {orders.map((o) => (
-          <div key={o.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+        <AnimatePresence initial={false}>
+          {orders.map((o) => (
+          <motion.div key={o.id} layout="position" variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
             <div className="flex items-start justify-between mb-1">
               <div>
                 <p className="text-[12px] text-[#8A8372] font-mono">{o.id}</p>
                 <p className="text-[13px] font-semibold text-[#1E1B4B]">{o.item}</p>
                 <p className="text-[11px] text-[#6B6483]">{o.seller} · {new Date(o.createdAt).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}</p>
               </div>
-              <Pill tone={statusTone(o.status)}>{o.status}</Pill>
+              {/* Status changes (Awaiting payment → Seller preparing → Dispatched
+                  → …) crossfade in place instead of an instant text swap, so a
+                  refetch that moves an order forward actually reads as motion. */}
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={o.status}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: DURATION.fast, ease: EASE }}
+                >
+                  <Pill tone={statusTone(o.status)}>{o.status}</Pill>
+                </motion.span>
+              </AnimatePresence>
             </div>
             <p className="text-[14px] font-bold text-[#7C3AED] mt-2 mb-2">{naira(o.price)}</p>
 
@@ -172,16 +188,25 @@ export default function Account({ openProduct, orders, products, onReview, onCon
 
             {/* Where the money stands — the app promises this on every product
                 page and at checkout, so it has to be visible on the order too. */}
-            {(() => {
-              const escrow = ESCROW_COPY[o.escrowStatus] ?? ESCROW_COPY.held;
-              const EscrowIcon = escrow.icon;
-              return (
-                <div className={`flex items-center gap-1.5 text-[11px] mb-2.5 ${escrow.tone}`}>
-                  <EscrowIcon size={13} className="shrink-0" />
-                  <span>{escrow.text}</span>
-                </div>
-              );
-            })()}
+            <AnimatePresence mode="wait" initial={false}>
+              {(() => {
+                const escrow = ESCROW_COPY[o.escrowStatus] ?? ESCROW_COPY.held;
+                const EscrowIcon = escrow.icon;
+                return (
+                  <motion.div
+                    key={o.escrowStatus}
+                    initial={{ opacity: 0, y: -4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 4 }}
+                    transition={{ duration: DURATION.fast, ease: EASE }}
+                    className={`flex items-center gap-1.5 text-[11px] mb-2.5 ${escrow.tone}`}
+                  >
+                    <EscrowIcon size={13} className="shrink-0" />
+                    <span>{escrow.text}</span>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
 
             {canReportAfterConfirmation(o) && reporting !== o.id && (
               <button
@@ -197,80 +222,101 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 accepted request offer, which lands here still unpaid with
                 no other screen that offers to pay it. */}
             {o.paymentStatus !== "paid" && (
-              <button
+              <motion.button
                 onClick={() => pay(o.id)}
                 disabled={paying === o.id}
+                {...press}
                 className="w-full flex items-center justify-center gap-1.5 text-white text-[12.5px] font-semibold py-2.5 rounded-xl mb-2.5 disabled:opacity-60"
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
                 <CreditCard size={14} />
                 {paying === o.id ? "Starting checkout…" : `Pay ${naira(o.price)}`}
-              </button>
+              </motion.button>
             )}
 
             {/* Only the buyer can end an order. Until they tap this, the money
                 stays with FindIt no matter what the seller marked. */}
-            {awaitingConfirmation(o) && reporting !== o.id && (
-              <div className="mb-2">
-                <p className="text-[11px] text-[#6B6483] mb-2">
-                  {o.escrowStatus === "disputed"
-                    ? "We're reviewing your report. If it turns out fine, you can still confirm you received it."
-                    : "Has it arrived? Your payment only reaches the seller once you confirm."}
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => confirmDelivery(o.id)}
-                    disabled={confirming === o.id}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${confirming === o.id ? "opacity-60" : ""}`}
-                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-                  >
-                    <PackageCheck size={14} />
-                    {confirming === o.id ? "Confirming…" : "I received this"}
-                  </button>
-                  {o.escrowStatus !== "disputed" && (
-                    <button
-                      onClick={() => { setReporting(o.id); setIssueNote(""); }}
-                      className="px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl"
+            <AnimatePresence initial={false}>
+              {awaitingConfirmation(o) && reporting !== o.id && (
+                <motion.div
+                  key="confirm"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: DURATION.fast, ease: EASE }}
+                  className="mb-2 overflow-hidden"
+                >
+                  <p className="text-[11px] text-[#6B6483] mb-2">
+                    {o.escrowStatus === "disputed"
+                      ? "We're reviewing your report. If it turns out fine, you can still confirm you received it."
+                      : "Has it arrived? Your payment only reaches the seller once you confirm."}
+                  </p>
+                  <div className="flex gap-2">
+                    <motion.button
+                      onClick={() => confirmDelivery(o.id)}
+                      disabled={confirming === o.id}
+                      {...press}
+                      className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${confirming === o.id ? "opacity-60" : ""}`}
+                      style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                     >
-                      Report a problem
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
+                      <PackageCheck size={14} />
+                      {confirming === o.id ? "Confirming…" : "I received this"}
+                    </motion.button>
+                    {o.escrowStatus !== "disputed" && (
+                      <motion.button
+                        onClick={() => { setReporting(o.id); setIssueNote(""); }}
+                        {...press}
+                        className="px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl"
+                      >
+                        Report a problem
+                      </motion.button>
+                    )}
+                  </div>
+                </motion.div>
+              )}
 
-            {reporting === o.id && (
-              <div className="mt-2 pt-3 border-t border-[#ECE9F7]">
-                <p className="text-[11px] text-[#6B6483] mb-2">
-                  What went wrong? FindIt keeps holding your payment while we look into it.
-                </p>
-                <textarea
-                  value={issueNote}
-                  onChange={(e) => setIssueNote(e.target.value)}
-                  rows={3}
-                  placeholder="e.g. It never arrived, or it isn't what was described"
-                  className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => submitIssue(o.id)}
-                    disabled={submitting || issueNote.trim().length < 5}
-                    className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting || issueNote.trim().length < 5 ? "opacity-40" : ""}`}
-                    style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}
-                  >
-                    <AlertTriangle size={14} />
-                    {submitting ? "Sending…" : "Report problem"}
-                  </button>
-                  <button
-                    onClick={() => setReporting(null)}
-                    disabled={submitting}
-                    className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            )}
+              {reporting === o.id && (
+                <motion.div
+                  key="report-form"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: DURATION.fast, ease: EASE }}
+                  className="mt-2 pt-3 border-t border-[#ECE9F7] overflow-hidden"
+                >
+                  <p className="text-[11px] text-[#6B6483] mb-2">
+                    What went wrong? FindIt keeps holding your payment while we look into it.
+                  </p>
+                  <textarea
+                    value={issueNote}
+                    onChange={(e) => setIssueNote(e.target.value)}
+                    rows={3}
+                    placeholder="e.g. It never arrived, or it isn't what was described"
+                    className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
+                  />
+                  <div className="flex gap-2">
+                    <motion.button
+                      onClick={() => submitIssue(o.id)}
+                      disabled={submitting || issueNote.trim().length < 5}
+                      {...press}
+                      className={`flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting || issueNote.trim().length < 5 ? "opacity-40" : ""}`}
+                      style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}
+                    >
+                      <AlertTriangle size={14} />
+                      {submitting ? "Sending…" : "Report problem"}
+                    </motion.button>
+                    <motion.button
+                      onClick={() => setReporting(null)}
+                      disabled={submitting}
+                      {...press}
+                      className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}
+                    >
+                      Cancel
+                    </motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {o.reviewed && (
               <div className="flex items-center gap-1 text-[12px] text-[#6B6483]">
@@ -282,50 +328,61 @@ export default function Account({ openProduct, orders, products, onReview, onCon
             )}
 
             {o.canReview && !o.reviewed && reviewing !== o.id && (
-              <button onClick={() => { setReviewing(o.id); setRating(5); }} className="text-[12px] font-semibold px-3.5 py-2 rounded-full text-white" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+              <motion.button onClick={() => { setReviewing(o.id); setRating(5); }} {...press} className="text-[12px] font-semibold px-3.5 py-2 rounded-full text-white" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
                 Leave a review
-              </button>
+              </motion.button>
             )}
 
-            {reviewing === o.id && (
-              <div className="mt-2 pt-3 border-t border-[#ECE9F7]">
-                <p className="text-[11px] text-[#6B6483] mb-2">Rate {o.seller}</p>
-                <div className="flex gap-1 mb-3">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <button key={n} onClick={() => setRating(n)}>
-                      <StarFilled size={22} className={n <= rating ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#E4DFF5]"} />
-                    </button>
-                  ))}
-                </div>
-                <textarea
-                  value={comment}
-                  onChange={(e) => setComment(e.target.value)}
-                  rows={2}
-                  maxLength={1000}
-                  placeholder="Optional — how was the product and delivery?"
-                  className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
-                />
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => submitReview(o.id)}
-                    disabled={submitting}
-                    className={`flex-1 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting ? "opacity-60" : ""}`}
-                    style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-                  >
-                    {submitting ? "Submitting…" : "Submit review"}
-                  </button>
-                  <button onClick={() => setReviewing(null)} disabled={submitting} className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}>Cancel</button>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
+            <AnimatePresence initial={false}>
+              {reviewing === o.id && (
+                <motion.div
+                  key="review-form"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: DURATION.fast, ease: EASE }}
+                  className="mt-2 pt-3 border-t border-[#ECE9F7] overflow-hidden"
+                >
+                  <p className="text-[11px] text-[#6B6483] mb-2">Rate {o.seller}</p>
+                  <div className="flex gap-1 mb-3">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <motion.button key={n} onClick={() => setRating(n)} whileTap={{ scale: 0.8 }}>
+                        <StarFilled size={22} className={n <= rating ? "fill-[#F59E0B] text-[#F59E0B]" : "text-[#E4DFF5]"} />
+                      </motion.button>
+                    ))}
+                  </div>
+                  <textarea
+                    value={comment}
+                    onChange={(e) => setComment(e.target.value)}
+                    rows={2}
+                    maxLength={1000}
+                    placeholder="Optional — how was the product and delivery?"
+                    className="w-full border border-[#ECE9F7] rounded-xl px-3 py-2 text-[12px] outline-none resize-none mb-3"
+                  />
+                  <div className="flex gap-2">
+                    <motion.button
+                      onClick={() => submitReview(o.id)}
+                      disabled={submitting}
+                      {...press}
+                      className={`flex-1 text-white text-[12px] font-semibold py-2.5 rounded-xl ${submitting ? "opacity-60" : ""}`}
+                      style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                    >
+                      {submitting ? "Submitting…" : "Submit review"}
+                    </motion.button>
+                    <motion.button onClick={() => setReviewing(null)} disabled={submitting} {...press} className={`px-4 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl ${submitting ? "opacity-60" : ""}`}>Cancel</motion.button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
 
       <h2 className="text-[15px] font-bold text-[#1E1B4B] mb-3">Saved items</h2>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-5">
+      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" {...revealOnView}>
         {saved.map((p) => (
-          <button key={p.id} onClick={() => openProduct(p)} className="text-left">
+          <motion.button key={p.id} onClick={() => openProduct(p)} whileTap={{ scale: 0.96 }} transition={{ duration: DURATION.instant }} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
               <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-28 w-full" />
               <span className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">
@@ -334,12 +391,12 @@ export default function Account({ openProduct, orders, products, onReview, onCon
             </div>
             <p className="text-[12px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5">{p.name}</p>
             <p className="text-[13px] font-bold text-[#1E1B4B]">{naira(p.price)}</p>
-          </button>
+          </motion.button>
         ))}
         {saved.length === 0 && (
           <p className="col-span-2 text-[12px] text-[#6B6483]">Nothing saved yet — tap the heart on a product to save it here.</p>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }
