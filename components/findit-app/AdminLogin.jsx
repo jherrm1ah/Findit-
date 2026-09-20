@@ -1,9 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { ShieldCheck, ArrowLeft, Lock } from "lucide-react";
 import { Field } from "./shared";
 import { api } from "./api";
+import { DURATION, EASE, press } from "./motion";
 
 // Staff sign-in. Reaching the Admin Queue takes a second, explicit
 // authentication even for someone already logged in as an admin — the
@@ -44,14 +46,15 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
   };
 
   return (
-    <div className="px-5 pt-5 pb-10">
-      <button
+    <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-5 pb-10">
+      <motion.button
         onClick={onBack}
+        {...press}
         className="w-9 h-9 rounded-full bg-white border border-[#ECE9F7] flex items-center justify-center mb-6"
         aria-label="Go back"
       >
         <ArrowLeft size={16} className="text-[#1E1B4B]" />
-      </button>
+      </motion.button>
 
       <div
         className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
@@ -92,26 +95,40 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
               autoComplete="current-password"
               className="input pr-14"
             />
-            <button
+            <motion.button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
+              {...press}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[#7C3AED]"
             >
               {showPassword ? "Hide" : "Show"}
-            </button>
+            </motion.button>
           </div>
         </Field>
 
-        {error && <p className="text-[12px] text-[#E64980]">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="text-[12px] text-[#E64980]"
+            >
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
-        <button
+        <motion.button
           type="submit"
           disabled={!canSubmit}
+          {...press}
           className="w-full h-12 rounded-full text-white text-[14px] font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           <Lock size={15} /> {busy ? "Checking…" : "Open Admin Queue"}
-        </button>
+        </motion.button>
       </form>
 
       <div className="mt-6 bg-white border border-[#ECE9F7] rounded-[20px] p-4">
@@ -123,6 +140,6 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
           <li>Every sign-in is recorded in the admin activity log.</li>
         </ul>
       </div>
-    </div>
+    </motion.div>
   );
 }
