@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { motion, useAnimate } from "motion/react";
+import { DURATION, EASE } from "./motion";
 
 // Six separate auto-advancing digit boxes, matching how OTP entry looks
 // everywhere else. Supports paste (the whole code at once, from any box)
@@ -10,18 +12,26 @@ import { useEffect, useRef } from "react";
 // applies inside a native app shell, not this web app).
 export default function OtpInput({ value, onChange, length = 6, disabled, autoFocus = true }) {
   const refs = useRef([]);
+  const [scope, animate] = useAnimate();
 
   useEffect(() => {
     if (autoFocus) refs.current[0]?.focus();
   }, [autoFocus]);
 
   // When the code is cleared from outside (a rejected or resent code), put the
-  // caret back in the first box so the next attempt can just be typed.
+  // caret back in the first box so the next attempt can just be typed — and
+  // give the boxes a quick shake so a wrong code reads as a real "no" rather
+  // than the digits just silently vanishing.
   const previousValue = useRef(value);
   useEffect(() => {
-    if (previousValue.current !== "" && value === "") refs.current[0]?.focus();
+    if (previousValue.current !== "" && value === "") {
+      refs.current[0]?.focus();
+      if (scope.current) {
+        animate(scope.current, { x: [0, -8, 8, -6, 6, -3, 3, 0] }, { duration: 0.4, ease: EASE });
+      }
+    }
     previousValue.current = value;
-  }, [value]);
+  }, [value, animate, scope]);
 
   const setDigitAt = (index, char) => {
     // Pad with spaces (not "", which pads nothing) so a digit typed into a
@@ -73,9 +83,9 @@ export default function OtpInput({ value, onChange, length = 6, disabled, autoFo
   };
 
   return (
-    <div role="group" aria-label="Verification code" className="flex gap-2 justify-center" onPaste={handlePaste}>
+    <div ref={scope} role="group" aria-label="Verification code" className="flex gap-2 justify-center" onPaste={handlePaste}>
       {Array.from({ length }).map((_, i) => (
-        <input
+        <motion.input
           key={i}
           ref={(el) => (refs.current[i] = el)}
           type="text"
@@ -88,6 +98,8 @@ export default function OtpInput({ value, onChange, length = 6, disabled, autoFo
           onFocus={(e) => e.target.select()}
           disabled={disabled}
           aria-label={`Digit ${i + 1} of ${length}`}
+          whileFocus={{ scale: 1.06 }}
+          transition={{ duration: DURATION.instant }}
           className="w-11 h-[52px] text-center text-[18px] font-semibold rounded-xl border border-[#ECE9F7] text-[#1E1B4B] outline-none focus:border-[#7C3AED] disabled:opacity-50"
         />
       ))}

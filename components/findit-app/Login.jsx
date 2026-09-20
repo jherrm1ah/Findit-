@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { ArrowRight, User, Store } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { api } from "./api";
 import OtpInput from "./OtpInput";
+import { DURATION, EASE, SPRING_SNAPPY, press } from "./motion";
 
 function formatMMSS(totalSeconds) {
   const s = Math.max(0, totalSeconds);
@@ -174,7 +176,12 @@ export default function Login({ onDone, showToast }) {
 
   if (mode === "reset" && step === "form") {
     return (
-      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: DURATION.base, ease: EASE }}
+        className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
+      >
         <div className="flex flex-col items-center mb-8">
           <Logo size={44} />
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
@@ -195,11 +202,24 @@ export default function Login({ onDone, showToast }) {
           />
         </Field>
 
-        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="text-[12px] text-[#E64980] mt-3"
+            >
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
-        <button
+        <motion.button
           onClick={sendResetCode}
           disabled={phone.trim().length < 10 || loading}
+          {...press}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-6 mb-4 ${
             phone.trim().length < 10 || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
@@ -207,25 +227,31 @@ export default function Login({ onDone, showToast }) {
         >
           {loading ? "Sending…" : "Send code"}
           {!loading && <ArrowRight size={16} />}
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
           type="button"
           onClick={() => { setMode("login"); setError(null); }}
+          {...press}
           className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
         >
           ← Back to log in
-        </button>
+        </motion.button>
 
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
-      </div>
+      </motion.div>
     );
   }
 
   if (mode === "reset" && step === "newPassword") {
     const validNewPassword = newPassword.length >= 4 && newPassword === newPasswordConfirm;
     return (
-      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: DURATION.base, ease: EASE }}
+        className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
+      >
         <div className="flex flex-col items-center mb-8">
           <Logo size={44} />
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
@@ -254,14 +280,37 @@ export default function Login({ onDone, showToast }) {
           </Field>
         </div>
 
-        {newPassword && newPasswordConfirm && newPassword !== newPasswordConfirm && (
-          <p className="text-[12px] text-[#E64980] mt-3">Passwords don't match.</p>
-        )}
-        {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+        <AnimatePresence>
+          {newPassword && newPasswordConfirm && newPassword !== newPasswordConfirm && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="text-[12px] text-[#E64980] mt-3"
+            >
+              Passwords don't match.
+            </motion.p>
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="text-[12px] text-[#E64980] mt-3"
+            >
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
-        <button
+        <motion.button
           onClick={submitNewPassword}
           disabled={!validNewPassword || loading}
+          {...press}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mt-6 ${
             !validNewPassword || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
@@ -269,17 +318,22 @@ export default function Login({ onDone, showToast }) {
         >
           {loading ? "Saving…" : "Reset password"}
           {!loading && <ArrowRight size={16} />}
-        </button>
+        </motion.button>
 
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
-      </div>
+      </motion.div>
     );
   }
 
   if (step === "code") {
     const maskedPhone = phone.length > 4 ? `${phone.slice(0, -4).replace(/./g, "•")}${phone.slice(-4)}` : phone;
     return (
-      <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+      <motion.div
+        initial={{ opacity: 0, y: 16 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: DURATION.base, ease: EASE }}
+        className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
+      >
         <div className="flex flex-col items-center mb-8">
           <Logo size={44} />
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
@@ -296,26 +350,40 @@ export default function Login({ onDone, showToast }) {
           {codeExpired ? "This code has expired. Please request a new one." : `Code expires in ${formatMMSS(secondsLeft)}`}
         </p>
 
-        {error && <p className="text-[12px] text-[#E64980] text-center mt-3">{error}</p>}
+        <AnimatePresence>
+          {error && (
+            <motion.p
+              initial={{ opacity: 0, y: -4 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="text-[12px] text-[#E64980] text-center mt-3"
+            >
+              {error}
+            </motion.p>
+          )}
+        </AnimatePresence>
 
         <div className="text-center mt-3 mb-6">
           {resendSecondsLeft > 0 ? (
             <span className="text-[12px] text-[#8A8372]">Resend available in {formatMMSS(resendSecondsLeft)}</span>
           ) : (
-            <button
+            <motion.button
               type="button"
               onClick={resendCode}
               disabled={resending}
+              {...press}
               className="text-[12px] font-semibold text-[#7C3AED] disabled:opacity-40"
             >
               {resending ? "Resending…" : "Resend code"}
-            </button>
+            </motion.button>
           )}
         </div>
 
-        <button
+        <motion.button
           onClick={verifyCode}
           disabled={!/^\d{6}$/.test(otpCode) || loading || codeExpired}
+          {...press}
           className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${
             !/^\d{6}$/.test(otpCode) || loading || codeExpired ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"
           }`}
@@ -323,23 +391,29 @@ export default function Login({ onDone, showToast }) {
         >
           {loading ? "Verifying…" : mode === "reset" ? "Verify code" : "Verify & create account"}
           {!loading && <ArrowRight size={16} />}
-        </button>
+        </motion.button>
 
-        <button
+        <motion.button
           type="button"
           onClick={() => { setStep("form"); setOtpCode(""); setError(null); setExpiresAt(null); setResendAvailableAt(null); }}
+          {...press}
           className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
         >
           ← Change phone number
-        </button>
+        </motion.button>
 
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
-      </div>
+      </motion.div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto">
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: DURATION.base, ease: EASE }}
+      className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
+    >
       <div className="flex flex-col items-center mb-8">
         <Logo size={44} />
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
@@ -356,16 +430,18 @@ export default function Login({ onDone, showToast }) {
             ["buyer", "I'm buying", User],
             ["seller", "I'm selling", Store],
           ].map(([key, label, Icon]) => (
-            <button
+            <motion.button
               key={key}
               type="button"
               onClick={() => setRole(key)}
-              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 border text-[12.5px] font-medium ${
+              whileTap={{ scale: 0.97 }}
+              transition={SPRING_SNAPPY}
+              className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 border text-[12.5px] font-medium transition-colors duration-150 ${
                 role === key ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
               }`}
             >
               <Icon size={13} /> {label}
-            </button>
+            </motion.button>
           ))}
         </div>
       )}
@@ -410,44 +486,58 @@ export default function Login({ onDone, showToast }) {
               placeholder="Your password"
               className="input pr-10"
             />
-            <button type="button" onClick={() => setShowPassword((s) => !s)} className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[#7C3AED]">
+            <motion.button type="button" onClick={() => setShowPassword((s) => !s)} {...press} className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[#7C3AED]">
               {showPassword ? "Hide" : "Show"}
-            </button>
+            </motion.button>
           </div>
         </Field>
       </div>
 
-      {error && <p className="text-[12px] text-[#E64980] mb-3">{error}</p>}
+      <AnimatePresence>
+        {error && (
+          <motion.p
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: DURATION.fast, ease: EASE }}
+            className="text-[12px] text-[#E64980] mb-3"
+          >
+            {error}
+          </motion.p>
+        )}
+      </AnimatePresence>
 
       {mode === "login" && (
-        <button
+        <motion.button
           type="button"
           onClick={() => { setMode("reset"); setStep("form"); setError(null); }}
+          {...press}
           className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end"
         >
           Forgot password?
-        </button>
+        </motion.button>
       )}
       {mode === "signup" && <div className="mb-6" />}
 
-      <button
+      <motion.button
         onClick={submit}
         disabled={!valid || loading}
+        {...press}
         className={`w-full text-white text-[14px] font-semibold py-3.5 rounded-xl flex items-center justify-center gap-2 mb-4 ${!valid || loading ? "opacity-40" : "shadow-lg shadow-[#7C3AED]/25"}`}
         style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
       >
         {loading ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
         {!loading && <ArrowRight size={16} />}
-      </button>
+      </motion.button>
 
       <p className="text-center text-[13px] text-[#6B6483] mt-auto">
         {mode === "login" ? "New to FindIt?" : "Already have an account?"}{" "}
-        <button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} className="font-semibold text-[#7C3AED]">
+        <motion.button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} {...press} className="font-semibold text-[#7C3AED]">
           {mode === "login" ? "Create account" : "Log in"}
-        </button>
+        </motion.button>
       </p>
 
       <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
-    </div>
+    </motion.div>
   );
 }
