@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  Home as HomeIcon, Search, ShoppingCart, LayoutDashboard, ShieldCheck, User, ChevronLeft,
+  Home as HomeIcon, Search, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate, IconButton } from "./shared";
 import { api, setAdminLockedHandler } from "./api";
 import { getStoredLocation, requestBrowserLocation } from "./location";
+import { getStoredCart, storeCart } from "./cart";
 import { applyCategoryOverrides } from "./data";
 import Home from "./Home";
 import Browse from "./Browse";
@@ -27,6 +28,7 @@ import Account from "./Account";
 import Notifications from "./Notifications";
 import Checkout from "./Checkout";
 import ProductDetail from "./ProductDetail";
+import Cart from "./Cart";
 import Messages from "./Messages";
 import Thread from "./Thread";
 import SellerProfile from "./SellerProfile";
@@ -41,7 +43,7 @@ function tabsFor(role) {
   return [
     { key: "home", label: "Home", icon: HomeIcon },
     { key: "browse", label: "Search", icon: Search },
-    { key: "request", label: "Request", icon: ShoppingCart },
+    { key: "request", label: "Request", icon: PackageSearch },
     middle,
     { key: "profile", label: "Profile", icon: User },
   ];
@@ -66,6 +68,12 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   const [viewedSellerLoading, setViewedSellerLoading] = useState(false);
   const [viewedSellerError, setViewedSellerError] = useState(null);
   const [checkoutOrder, setCheckoutOrder] = useState(null);
+  // Lives on this device only (see cart.js) — loaded from localStorage once
+  // the component has mounted (line below, not in this initializer, so the
+  // very first render matches server output and there's no hydration
+  // mismatch), then kept in sync with it on every change.
+  const [cart, setCart] = useState([]);
+  const [checkingOutCart, setCheckingOutCart] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
   const [products, setProducts] = useState([]);
@@ -190,6 +198,17 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       );
     }
   };
+
+  // Loaded once, client-side only — the initializer above intentionally
+  // doesn't read localStorage directly, so the very first render matches
+  // what the server would have produced and there's no hydration mismatch.
+  useEffect(() => {
+    setCart(getStoredCart());
+  }, []);
+
+  useEffect(() => {
+    storeCart(cart);
+  }, [cart]);
 
   useEffect(() => {
     // Real, admin-editable categories (lib/categoryCatalog.ts) — fetched
@@ -428,6 +447,65 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       go("checkout");
     } catch (err) {
       showToast(err.message || "Couldn't place that order — try again.", "error");
+    }
+  };
+
+  const handleAddToCart = async (prod, qty) => {
+    setCart((c) => {
+      const existing = c.find((it) => it.productId === prod.id);
+      if (existing) {
+        return c.map((it) => (it.productId === prod.id ? { ...it, qty: it.qty + qty } : it));
+      }
+      return [...c, { productId: prod.id, qty, addedAt: Date.now() }];
+    });
+    showToast("Added to cart.");
+  };
+
+  const handleUpdateCartQty = (productId, qty) => {
+    setCart((c) =>
+      qty <= 0
+        ? c.filter((it) => it.productId !== productId)
+        : c.map((it) => (it.productId === productId ? { ...it, qty } : it))
+    );
+  };
+
+  const handleRemoveFromCart = (productId) => {
+    setCart((c) => c.filter((it) => it.productId !== productId));
+  };
+
+  // One createOrder call per line, same as a direct "Buy now" — a cart is
+  // just a staging list, not a new kind of order. Each order can already be
+  // paid individually from My orders (Account.jsx), so there's no separate
+  // multi-item payment flow to build here.
+  const handleCartCheckout = async () => {
+    setCheckingOutCart(true);
+    const createdOrders = [];
+    const remaining = [...cart];
+    try {
+      for (const item of cart) {
+        const order = await api.createOrder({ productId: item.productId, qty: item.qty });
+        createdOrders.push(order);
+        remaining.shift(); // this line succeeded — it's a real order now, not still "in the cart"
+      }
+      setCart([]);
+      showToast(`${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed — pay from My orders.`);
+      go("account");
+    } catch (err) {
+      // A failure partway through must never lose a line that already
+      // became a real order, and must never re-attempt one that did —
+      // only what's still unprocessed goes back into the cart.
+      setCart(remaining);
+      showToast(
+        createdOrders.length > 0
+          ? `${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed. The rest couldn't be — ${err.message || "try again"}.`
+          : err.message || "Couldn't complete checkout — try again.",
+        "error"
+      );
+    } finally {
+      if (createdOrders.length > 0) {
+        setOrders((os) => [...createdOrders, ...os]);
+      }
+      setCheckingOutCart(false);
     }
   };
 
@@ -1275,6 +1353,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // moderationStatus) — 'under_review' still shows (it's only a soft flag
   // for a human to look at), 'removed' doesn't.
   const buyerVisibleProducts = products.filter((p) => p.active !== false && p.moderationStatus !== "removed");
+  const cartCount = cart.reduce((sum, it) => sum + it.qty, 0);
 
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
@@ -1305,6 +1384,19 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             role={user?.role}
             orders={orders}
             myRequests={myRequests}
+            cartCount={cartCount}
+          />
+        )}
+        {screen === "cart" && (
+          <Cart
+            cart={cart}
+            products={buyerVisibleProducts}
+            onBack={() => go("home")}
+            go={go}
+            onUpdateQty={handleUpdateCartQty}
+            onRemove={handleRemoveFromCart}
+            onCheckout={handleCartCheckout}
+            checkingOut={checkingOutCart}
           />
         )}
         {screen === "browse" && (
@@ -1583,6 +1675,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
           onClose={() => setProduct(null)}
           go={go}
           onBuyNow={buyNow}
+          onAddToCart={handleAddToCart}
           onContact={handleContactSeller}
           onViewSeller={handleViewSeller}
           savedIds={savedIds}

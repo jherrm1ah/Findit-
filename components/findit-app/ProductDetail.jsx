@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  ChevronLeft, ShoppingBag, Heart, User, BadgeCheck, Star,
+  ChevronLeft, ShoppingBag, ShoppingCart, Heart, User, BadgeCheck, Star,
   Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
 import { categoryGroup, naira } from "./data";
@@ -21,11 +21,12 @@ const REPORT_REASONS = [
   { value: "other", label: "Other" },
 ];
 
-export default function ProductDetail({ product, onClose, go, onBuyNow, onContact, onViewSeller, savedIds, onToggleSaved, myLocation, onReportProduct, showToast }) {
+export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToCart, onContact, onViewSeller, savedIds, onToggleSaved, myLocation, onReportProduct, showToast }) {
   const [qty, setQty] = useState(1);
   const [photoIndex, setPhotoIndex] = useState(0);
   const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
+  const [addingToCart, setAddingToCart] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState(REPORT_REASONS[0].value);
   const [reportDetails, setReportDetails] = useState("");
@@ -253,26 +254,45 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onContac
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ECE9F7] px-5 py-4 flex items-center justify-between z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-[#ECE9F7] px-5 py-4 flex items-center justify-between gap-3 z-50">
         <div>
           <p className="text-[11px] text-[#8A8372]">Total price</p>
           <p className="text-[19px] font-bold text-[#1E1B4B]">{naira(total)}</p>
         </div>
-        <button
-          onClick={async () => {
-            setBuying(true);
-            try {
-              await onBuyNow(product, qty);
-            } finally {
-              setBuying(false);
-            }
-          }}
-          disabled={buying || product.qty === 0}
-          className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
-          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-        >
-          <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          {onAddToCart && (
+            <button
+              onClick={async () => {
+                setAddingToCart(true);
+                try {
+                  await onAddToCart(product, qty);
+                } finally {
+                  setAddingToCart(false);
+                }
+              }}
+              disabled={addingToCart || product.qty === 0}
+              aria-label="Add to cart"
+              className={`w-12 h-12 rounded-full border border-[#7C3AED]/30 flex items-center justify-center shrink-0 ${addingToCart || product.qty === 0 ? "opacity-40" : ""}`}
+            >
+              <ShoppingCart size={18} className="text-[#7C3AED]" />
+            </button>
+          )}
+          <button
+            onClick={async () => {
+              setBuying(true);
+              try {
+                await onBuyNow(product, qty);
+              } finally {
+                setBuying(false);
+              }
+            }}
+            disabled={buying || product.qty === 0}
+            className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
+          </button>
+        </div>
       </div>
     </div>
   );
