@@ -73,7 +73,7 @@ export default function TermsPage() {
           <section>
             <h2 className="text-[15px] font-semibold text-[#1E1B4B] mb-2">Selling on FindIt</h2>
             <ul className="list-disc pl-5 space-y-1.5">
-              <li>Sellers go through a verification review before their store is trusted with a &ldquo;Verified&rdquo; badge, and must keep their listings accurate — real photos, honest condition (New/Used), and a real price.</li>
+              <li>FindIt is a new-condition marketplace — new listings must be new, real photos, and a real price. Sellers go through a verification review before their store is trusted with a &ldquo;Verified&rdquo; badge.</li>
               <li>Prohibited items, counterfeit goods, scams, and spam are not allowed. FindIt reviews listings against these rules and buyer reports, and may flag, remove, or require changes to a listing that violates them.</li>
               <li>Sellers are paid out to their registered bank account once a buyer confirms delivery (or an admin resolves a dispute in the seller&rsquo;s favor), minus FindIt&rsquo;s platform fee.</li>
               <li>Some storefront features (a dedicated store link, branding, featured placement) are part of paid Store subscription plans, billed monthly or yearly. You can cancel anytime; a plan change takes effect at your next billing period unless stated otherwise.</li>
