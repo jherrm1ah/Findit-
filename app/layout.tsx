@@ -47,10 +47,20 @@ export const metadata: Metadata = {
 
 // Colors the mobile browser's own chrome (address bar / status bar) to
 // match the app rather than defaulting to plain white/black around it.
+//
+// colorScheme: "light" tells the browser this page is light-only — without
+// it, a device/browser in dark mode (notably iOS Safari and Chrome's
+// "auto-dark for websites" on Android) force-styles native form controls,
+// including the text color INSIDE <input>/<textarea> elements, overriding
+// whatever color Tailwind set on them. Every input in this app already sets
+// an explicit light-mode text color, so under that forced-dark styling the
+// text renders in a color close to the input's own light background —
+// effectively invisible while typing, even though the field itself works.
 export const viewport: Viewport = {
   themeColor: "#6D28D9",
   width: "device-width",
   initialScale: 1,
+  colorScheme: "light",
 };
 
 export default function RootLayout({
