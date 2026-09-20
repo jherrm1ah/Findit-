@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
-  ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
+  ListOrdered, Bell, Menu, ShoppingBag, ShoppingCart, Heart, SlidersHorizontal,
   LayoutDashboard, MapPin, Store, Tag,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
@@ -19,7 +19,7 @@ const BANNERS = [
 export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
-  orders = [], myRequests = [],
+  orders = [], myRequests = [], cartCount = 0,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -68,6 +68,7 @@ export default function Home({
     { label: "Home", screen: "home", icon: HomeIcon },
     { label: "Browse catalogue", screen: "browse", icon: Search },
     { label: "Browse sellers", screen: "sellers", icon: Store },
+    { label: "Cart", screen: "cart", icon: ShoppingCart },
     { label: "Request an item", screen: "request", icon: PackageSearch },
     { label: "My orders & saved items", screen: "account", icon: ListOrdered },
     { label: "Notifications", screen: "notifications", icon: Bell },
@@ -90,6 +91,7 @@ export default function Home({
         </div>
         <div className="flex items-center gap-2">
           <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined} aria-label="Notifications"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
+          <IconButton onClick={() => go("cart")} badge={cartCount > 0 ? String(cartCount) : undefined} aria-label="Cart"><ShoppingCart size={17} className="text-[#1E1B4B]" /></IconButton>
           <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
         </div>
 
