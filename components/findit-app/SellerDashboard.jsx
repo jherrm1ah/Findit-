@@ -315,74 +315,6 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
   );
 }
 
-// The bio shown on the public profile/storefront (SellerProfile.jsx,
-// /store/[slug]) — free on every plan and, unlike the rest of this data,
-// editable regardless of verification_status. It's a plain sellers.description
-// column: submitVerification also writes it, but that path resets
-// verification_status to 'pending' on every save. This is the lightweight
-// path that touches nothing else, so fixing a typo never costs a seller
-// their Verified/Trusted badge.
-function BioCard({ description, onSave, saving }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(description ?? "");
-
-  const startEditing = () => {
-    setDraft(description ?? "");
-    setEditing(true);
-  };
-
-  const save = async () => {
-    try {
-      await onSave(draft);
-      setEditing(false);
-    } catch {
-      // MainApp already surfaced a toast — stay in edit mode so nothing is lost.
-    }
-  };
-
-  return (
-    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Your bio</p>
-        {!editing && (
-          <button onClick={startEditing} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
-            <Pencil size={11} /> {description ? "Edit" : "Add"}
-          </button>
-        )}
-      </div>
-      {editing ? (
-        <>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            maxLength={2000}
-            rows={3}
-            placeholder="Tell buyers what you sell and what makes your store worth trusting."
-            className="w-full bg-[#F5F2FC] rounded-xl px-3 py-2.5 text-[12.5px] text-[#1E1B4B] outline-none resize-none mb-2"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              onClick={save}
-              disabled={saving}
-              className={`text-[11.5px] font-semibold text-white px-3.5 py-1.5 rounded-lg ${saving ? "opacity-60" : ""}`}
-              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-            >
-              {saving ? "Saving…" : "Save"}
-            </button>
-            <button onClick={() => setEditing(false)} disabled={saving} className="text-[11.5px] font-semibold text-[#6B6483]">
-              Cancel
-            </button>
-          </div>
-        </>
-      ) : (
-        <p className="text-[12.5px] text-[#514B67] leading-relaxed">
-          {description || "Buyers see this on your public profile. Add a short bio."}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // Real backing for the plan's "customization" benefit — a Free/Basic seller
 // sees exactly why this is locked and what unlocks it; a Business/Pro
 // seller can actually set the images that show on their public storefront
@@ -856,7 +788,7 @@ export default function SellerDashboard({
   myLocation,
   storePlan, go,
   storeBranding, onUpdateBranding, savingBranding,
-  verification, onUpdateDescription, savingDescription,
+  verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
   myStore, onClaimStore, claimingStore,
@@ -1071,8 +1003,6 @@ export default function SellerDashboard({
           <span className="text-[11px] font-semibold text-[#7C3AED] shrink-0">Manage</span>
         </button>
       )}
-
-      <BioCard description={verification?.description} onSave={onUpdateDescription} saving={savingDescription} />
 
       {/* The seller's dedicated public storefront. Eligibility is decided
           server-side from the live subscription (lib/store.ts); this card

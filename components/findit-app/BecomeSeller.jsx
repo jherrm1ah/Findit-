@@ -51,7 +51,7 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
           />
         </Field>
         <p className="text-[11px] text-[#6B6483] mt-2">
-          This is the name buyers see on your listings and offers. You can change it later in Account details.
+          This is the name buyers see on your listings and offers. You can change it later in Personal details.
         </p>
       </div>
 
