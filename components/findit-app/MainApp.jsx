@@ -250,6 +250,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       // have to open Messages blind to find out you have unread chats.
       api.getConversations().then(setConversations).catch(() => {});
       api.getMyTickets().then(setTickets).catch(() => {});
+      // Same reasoning: fetched here (not just on navigating to My requests)
+      // so Home's "your activity" card can surface a waiting offer up front —
+      // a buyer would otherwise only find out by opening My requests blind.
+      api.getMyRequests().then(setMyRequests).catch(() => {});
     } else {
       setSavedIds([]);
     }
@@ -1299,6 +1303,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
             locationStatus={locationStatus}
             onEnableLocation={handleEnableLocation}
             role={user?.role}
+            orders={orders}
+            myRequests={myRequests}
           />
         )}
         {screen === "browse" && (

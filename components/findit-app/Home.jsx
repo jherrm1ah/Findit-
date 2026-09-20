@@ -5,7 +5,7 @@ import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
   ListOrdered, Bell, Menu, ShoppingBag, Heart, SlidersHorizontal,
-  LayoutDashboard, MapPin, Store,
+  LayoutDashboard, MapPin, Store, Tag,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { IconButton, Logo, ArtBlock } from "./shared";
@@ -19,11 +19,24 @@ const BANNERS = [
 export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
+  orders = [], myRequests = [],
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [sellerSearch, setSellerSearch] = useState("");
+
+  // The one thing this screen used to have no room for: what's actually
+  // happening with the buyer's own stuff, as opposed to generic browsing.
+  // Only the two states that need a decision or are worth a status check —
+  // an order still in flight, or a request with an offer waiting to be
+  // reviewed — not every order ever placed or every request ever sent.
+  const activeOrder = [...orders]
+    .filter((o) => o.status !== "Delivered")
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  const requestWithOffers = [...myRequests]
+    .filter((r) => r.status === "open" && r.offers?.length > 0)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
 
   // With a real location, show the newest listings sorted nearest-first;
   // without one, fall back to plain recency (the API's default order) —
@@ -122,6 +135,43 @@ export default function Home({
           <button onClick={() => setBannerDismissed(true)} aria-label="Dismiss" className="shrink-0">
             <X size={14} className="text-[#8A8372]" />
           </button>
+        </div>
+      )}
+
+      {(activeOrder || requestWithOffers) && (
+        <div className="space-y-2 mb-6">
+          {activeOrder && (
+            <button
+              onClick={() => go("account")}
+              className="w-full flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[16px] px-4 py-3 text-left shadow-sm shadow-[#4C1D95]/5"
+            >
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+                <Truck size={15} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">Order from {activeOrder.seller}</p>
+                <p className="text-[10.5px] text-[#6B6483]">{activeOrder.status}</p>
+              </div>
+              <ChevronRight size={16} className="text-[#7C3AED] shrink-0" />
+            </button>
+          )}
+          {requestWithOffers && (
+            <button
+              onClick={() => go("myRequests")}
+              className="w-full flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[16px] px-4 py-3 text-left shadow-sm shadow-[#4C1D95]/5"
+            >
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0 bg-[#F5F2FC]">
+                <Tag size={15} className="text-[#7C3AED]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{requestWithOffers.title}</p>
+                <p className="text-[10.5px] text-[#6B6483]">
+                  {requestWithOffers.offers.length} offer{requestWithOffers.offers.length === 1 ? "" : "s"} waiting for you
+                </p>
+              </div>
+              <ChevronRight size={16} className="text-[#7C3AED] shrink-0" />
+            </button>
+          )}
         </div>
       )}
 
