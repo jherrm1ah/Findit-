@@ -27,6 +27,9 @@ const REPORT_REASONS = [
 export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToCart, onContact, onViewSeller, savedIds, onToggleSaved, myLocation, onReportProduct, showToast }) {
   const [qty, setQty] = useState(1);
   const [photoIndex, setPhotoIndex] = useState(0);
+  // +1 = advancing to the next photo, -1 = going back — drives which side
+  // the incoming photo slides in from, for both swipe and tap navigation.
+  const [photoDirection, setPhotoDirection] = useState(0);
   const [contacting, setContacting] = useState(false);
   const [buying, setBuying] = useState(false);
   const [addingToCart, setAddingToCart] = useState(false);
@@ -67,6 +70,26 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
   const photos = product.images?.length ? product.images : product.imageUrl ? [product.imageUrl] : [];
   const activePhoto = photos[photoIndex] ?? null;
 
+  const stepPhoto = (delta) => {
+    if (photos.length < 2) return;
+    setPhotoDirection(delta);
+    setPhotoIndex((i) => (i + delta + photos.length) % photos.length);
+  };
+  const goToPhoto = (i) => {
+    if (i === photoIndex) return;
+    setPhotoDirection(i > photoIndex ? 1 : -1);
+    setPhotoIndex(i);
+  };
+  // Distance + speed both count, so a fast flick that only travels a short
+  // distance still advances the photo — matches how swipe feels everywhere
+  // else on a phone, not just a slow drag past a fixed pixel threshold.
+  const handlePhotoDragEnd = (e, info) => {
+    const distance = info.offset.x;
+    const velocity = info.velocity.x;
+    if (distance < -60 || velocity < -500) stepPhoto(1);
+    else if (distance > 60 || velocity > 500) stepPhoto(-1);
+  };
+
   return (
     <motion.div
       className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-28"
@@ -86,32 +109,41 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: DURATION.base, ease: EASE, delay: 0.03 }}
-          className={`relative rounded-[20px] overflow-hidden ${photos.length > 1 ? "mb-3" : "mb-5"}`}
+          className={`relative rounded-[20px] overflow-hidden h-64 ${photos.length > 1 ? "mb-3" : "mb-5"}`}
+          role={photos.length > 1 ? "group" : undefined}
+          aria-label={photos.length > 1 ? "Product photos" : undefined}
         >
-          <ArtBlock icon={Icon} art={product.art} imageUrl={activePhoto} className="h-64 w-full" />
-          {/* Tap the left/right third of the photo to step through the
-              gallery — no swipe library, just two transparent hit zones. */}
-          {photos.length > 1 && (
-            <>
-              <button
-                onClick={() => setPhotoIndex((i) => (i - 1 + photos.length) % photos.length)}
-                aria-label="Previous photo"
-                className="absolute left-0 top-0 bottom-0 w-1/3"
-              />
-              <button
-                onClick={() => setPhotoIndex((i) => (i + 1) % photos.length)}
-                aria-label="Next photo"
-                className="absolute right-0 top-0 bottom-0 w-1/3"
-              />
-            </>
-          )}
+          <AnimatePresence initial={false} custom={photoDirection}>
+            <motion.div
+              key={photoIndex}
+              custom={photoDirection}
+              initial={(dir) => ({ x: dir < 0 ? "-100%" : "100%", opacity: 0 })}
+              animate={{ x: 0, opacity: 1 }}
+              exit={(dir) => ({ x: dir < 0 ? "100%" : "-100%", opacity: 0 })}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              drag={photos.length > 1 ? "x" : false}
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.7}
+              onDragEnd={handlePhotoDragEnd}
+              onClick={(e) => {
+                if (photos.length < 2) return;
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                if (x < rect.width / 3) stepPhoto(-1);
+                else if (x > (rect.width * 2) / 3) stepPhoto(1);
+              }}
+              className="absolute inset-0"
+            >
+              <ArtBlock icon={Icon} art={product.art} imageUrl={activePhoto} className="h-64 w-full" />
+            </motion.div>
+          </AnimatePresence>
         </motion.div>
         {photos.length > 1 && (
           <div className="flex justify-center gap-1.5 mb-5">
             {photos.map((_, i) => (
               <button
                 key={i}
-                onClick={() => setPhotoIndex(i)}
+                onClick={() => goToPhoto(i)}
                 aria-label={`Photo ${i + 1} of ${photos.length}`}
                 aria-current={i === photoIndex}
                 className={`h-1.5 rounded-full transition-all ${i === photoIndex ? "w-5 bg-[#7C3AED]" : "w-1.5 bg-[#D9D2EF]"}`}
