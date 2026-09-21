@@ -6,7 +6,7 @@ import { CheckCircle2, ArrowRight, ListOrdered, Sparkles, MapPin } from "lucide-
 import { Field } from "./shared";
 import { GROUPS } from "./data";
 import { api } from "./api";
-import { DURATION, EASE, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, wiggleIn, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
 export default function RequestForm({ go, showToast, myLocation }) {
   const [stage, setStage] = useState("form");
@@ -71,9 +71,9 @@ export default function RequestForm({ go, showToast, myLocation }) {
     return (
       <div className="px-5 pt-6 pb-10 flex flex-col items-center text-center min-h-[70vh] justify-center">
         <motion.div
-          initial={{ scale: 0.6, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={SPRING_SOFT}
+          initial={wiggleIn.initial}
+          animate={wiggleIn.animate}
+          transition={wiggleIn.transition}
           className="w-16 h-16 rounded-full flex items-center justify-center mb-5"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >

@@ -7,7 +7,17 @@ import { GROUPS, categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
 import { FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
-import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, SPRING_SOFT, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// A bouncier stagger for this grid's card entrances — screen-local, like
+// Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
+// themselves. Kept slightly tighter (0.05) than Home's since this grid can
+// hold the full catalogue rather than a fixed 8-item shelf.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation, go }) {
   const [group, setGroup] = useState(initialGroup || "all");
@@ -55,14 +65,16 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
           />
           {query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={14} className="text-[#8A8372]" /></button>}
         </div>
-        <button
-          onClick={() => setShowFilters((s) => !s)}
-          aria-label={showFilters ? "Hide filters" : "Show filters"}
-          aria-pressed={showFilters}
-          className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 ${showFilters ? "bg-[#7C3AED] border-[#7C3AED]" : "bg-white border-[#ECE9F7]"}`}
-        >
-          <SlidersHorizontal size={16} className={showFilters ? "text-white" : "text-[#7C3AED]"} />
-        </button>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY}>
+          <button
+            onClick={() => setShowFilters((s) => !s)}
+            aria-label={showFilters ? "Hide filters" : "Show filters"}
+            aria-pressed={showFilters}
+            className={`w-11 h-11 rounded-xl border flex items-center justify-center shrink-0 ${showFilters ? "bg-[#7C3AED] border-[#7C3AED]" : "bg-white border-[#ECE9F7]"}`}
+          >
+            <SlidersHorizontal size={16} className={showFilters ? "text-white" : "text-[#7C3AED]"} />
+          </button>
+        </motion.div>
       </div>
 
       {showFilters && (
@@ -77,15 +89,17 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
       )}
 
       <div className="flex gap-2 overflow-x-auto pb-1 mb-4 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
-        {["all", ...Object.keys(GROUPS)].map((k) => {
+        {["all", ...Object.keys(GROUPS)].map((k, i) => {
           const g = k === "all" ? null : GROUPS[k];
           const active = group === k;
           return (
             <motion.button
               key={k}
               onClick={() => setGroup(k)}
-              whileTap={{ scale: 0.93 }}
-              transition={SPRING_SNAPPY}
+              initial={{ opacity: 0, scale: 0.6, rotate: -10 }}
+              animate={{ opacity: 1, scale: 1, rotate: 0 }}
+              transition={{ ...SPRING_BOUNCY, delay: i * 0.03 }}
+              whileTap={{ scale: 0.88, rotate: i % 2 === 0 ? -6 : 6 }}
               className={`relative shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border flex items-center gap-1 ${active ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
             >
               {/* A single shared background that slides/morphs between
@@ -116,17 +130,17 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
         })}
       </div>
 
-      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         <AnimatePresence>
-          {list.map((p) => (
+          {list.map((p, i) => (
             <motion.div
               key={p.id}
               layout="position"
-              variants={STAGGER_ITEM}
+              variants={BOUNCE_ITEM}
               exit={{ opacity: 0, scale: 0.92, transition: { duration: DURATION.fast, ease: EASE } }}
               className="relative text-left"
             >
-              <motion.button onClick={() => openProduct(p)} whileTap={{ scale: 0.96 }} transition={SPRING_SNAPPY} className="block w-full text-left" aria-label={`View ${p.name}`}>
+              <motion.button onClick={() => openProduct(p)} whileTap={{ scale: 0.94, rotate: i % 2 === 0 ? -2 : 2 }} transition={SPRING_BOUNCY} className="block w-full text-left" aria-label={`View ${p.name}`}>
                 <div className="relative rounded-[20px] overflow-hidden mb-2">
                   <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
                   {p.verified && (

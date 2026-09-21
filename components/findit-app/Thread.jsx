@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, Send } from "lucide-react";
 import { IconButton } from "./sharedMotion";
-import { DURATION, EASE, press } from "./motion";
+import { DURATION, EASE, SPRING_SOFT, wiggleIn, press } from "./motion";
 
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });
@@ -83,7 +83,9 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
           tracking above is kept as a belt-and-suspenders improvement on
           browsers that DO support it, not as the thing this relies on. */}
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 pt-4 pb-3 flex items-center gap-3">
-        <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={wiggleIn.transition}>
+          <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        </motion.div>
         <p className="text-[15px] font-bold text-[#1E1B4B]">{displayName}</p>
       </div>
 
@@ -108,9 +110,9 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
             <motion.div
               key={m.id}
               layout="position"
-              initial={{ opacity: 0, y: 10, scale: 0.98 }}
+              initial={{ opacity: 0, y: 14, scale: 0.94 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: DURATION.fast, ease: EASE }}
+              transition={SPRING_SOFT}
               className={`flex ${m.mine ? "justify-end" : "justify-start"}`}
             >
               <div

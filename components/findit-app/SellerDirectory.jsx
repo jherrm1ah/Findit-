@@ -7,7 +7,16 @@ import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown, ChevronLeft } 
 import { IconButton } from "./sharedMotion";
 import { api } from "./api";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
-import { DURATION, EASE, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, wiggleIn } from "./motion";
+
+// A bouncier stagger for the seller list's entrance — screen-local, like
+// Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
+// themselves. Kept tight (0.05) since this list isn't capped like Home's grid.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldCheck };
 
@@ -65,9 +74,11 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-3 mb-1">
         {onBack && (
-          <IconButton onClick={onBack} aria-label="Back">
-            <ChevronLeft size={18} className="text-[#1E1B4B]" />
-          </IconButton>
+          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+            <IconButton onClick={onBack} aria-label="Back">
+              <ChevronLeft size={18} className="text-[#1E1B4B]" />
+            </IconButton>
+          </motion.div>
         )}
         <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
           Sellers
@@ -94,8 +105,8 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
 
       <motion.button
         onClick={() => setVerifiedOnly((v) => !v)}
-        whileTap={{ scale: 0.97 }}
-        transition={{ duration: DURATION.instant }}
+        whileTap={{ scale: 0.9, rotate: -4 }}
+        transition={SPRING_BOUNCY}
         className="flex items-center gap-1.5 text-[12px] text-[#514B67] mb-4"
       >
         <div
@@ -116,20 +127,20 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
       {!loading && error && <p className="text-[13px] text-[#6B6483] py-10 text-center">{error}</p>}
 
       {!loading && !error && (
-        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
           <AnimatePresence initial={false}>
-          {list.map((s) => {
+          {list.map((s, i) => {
             const copy = VERIFICATION_LEVEL_COPY[s.verificationLevel] ?? VERIFICATION_LEVEL_COPY.new;
             const LevelIcon = LEVEL_ICON[s.verificationLevel] ?? BadgeCheck;
             return (
               <motion.button
                 key={s.id}
                 layout="position"
-                variants={STAGGER_ITEM}
+                variants={BOUNCE_ITEM}
                 exit={{ opacity: 0, scale: 0.96, transition: { duration: DURATION.fast, ease: EASE } }}
                 onClick={() => onViewSeller(s.id)}
-                whileTap={{ scale: 0.98 }}
-                transition={SPRING_SNAPPY}
+                whileTap={{ scale: 0.96, rotate: i % 2 === 0 ? -2 : 2 }}
+                transition={SPRING_BOUNCY}
                 className="w-full flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3.5 text-left shadow-sm shadow-[#4C1D95]/5"
               >
                 <div

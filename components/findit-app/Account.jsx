@@ -5,7 +5,19 @@ import { motion, AnimatePresence } from "motion/react";
 import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, CreditCard } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press } from "./motion";
+
+// A bouncier stagger for this screen's own lists (orders, saved items) —
+// matching Home's browsing-surface treatment rather than a change to
+// STAGGER_ITEM/CONTAINER themselves. The payment-adjacent controls inside
+// each card (pay, confirm delivery, report, review) keep the restrained
+// `press` feedback — only the cards' own entrance and the saved-item tiles
+// (pure browsing, not money-moving) pick up the bounce.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 20, scale: 0.85, rotate: -3 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
@@ -105,13 +117,13 @@ export default function Account({ openProduct, orders, products, onReview, onCon
       <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>My orders</h1>
       <p className="text-[12px] text-[#6B6483] mb-5">Track deliveries, view history, and leave a review once an order arrives.</p>
 
-      <motion.div className="space-y-3 mb-8" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="space-y-3 mb-8" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {orders.length === 0 && (
           <p className="text-[12px] text-[#6B6483]">No orders yet — browse the catalogue or request an item to get started.</p>
         )}
         <AnimatePresence initial={false}>
           {orders.map((o) => (
-          <motion.div key={o.id} layout="position" variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+          <motion.div key={o.id} layout="position" variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
             <div className="flex items-start justify-between mb-1">
               <div>
                 <p className="text-[12px] text-[#8A8372] font-mono">{o.id}</p>
@@ -380,9 +392,9 @@ export default function Account({ openProduct, orders, products, onReview, onCon
       </motion.div>
 
       <h2 className="text-[15px] font-bold text-[#1E1B4B] mb-3">Saved items</h2>
-      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" {...revealOnView}>
-        {saved.map((p) => (
-          <motion.button key={p.id} onClick={() => openProduct(p)} whileTap={{ scale: 0.96 }} transition={{ duration: DURATION.instant }} className="text-left">
+      <motion.div className="grid grid-cols-2 gap-x-3 gap-y-5" initial="hidden" whileInView="visible" viewport={{ once: true, margin: "-60px" }} variants={BOUNCE_CONTAINER}>
+        {saved.map((p, i) => (
+          <motion.button key={p.id} variants={BOUNCE_ITEM} onClick={() => openProduct(p)} whileTap={{ scale: 0.94, rotate: i % 2 === 0 ? -2 : 2 }} transition={SPRING_BOUNCY} className="text-left">
             <div className="relative rounded-[20px] overflow-hidden mb-2">
               <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-28 w-full" />
               <span className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 flex items-center justify-center">

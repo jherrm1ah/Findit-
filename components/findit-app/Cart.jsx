@@ -5,7 +5,16 @@ import { ChevronLeft, Minus, Plus, X, ShoppingCart } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
 import { IconButton } from "./sharedMotion";
-import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// A bouncier stagger for the cart line items' entrance — screen-local, like
+// Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
+// themselves.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove, onCheckout, checkingOut }) {
   // A cart line can outlive its product (deactivated, removed, or the
@@ -23,7 +32,9 @@ export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 flex flex-col">
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3 shrink-0">
-        <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+          <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        </motion.div>
         <p className="text-[15px] font-bold text-[#1E1B4B]">Cart</p>
       </div>
 
@@ -50,13 +61,13 @@ export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove
             </motion.button>
           </motion.div>
         ) : (
-          <motion.div className="space-y-3 pb-6" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+          <motion.div className="space-y-3 pb-6" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
             <AnimatePresence>
               {lines.map((l) => (
                 <motion.div
                   key={l.productId}
                   layout="position"
-                  variants={STAGGER_ITEM}
+                  variants={BOUNCE_ITEM}
                   exit={{ opacity: 0, x: -40, transition: { duration: DURATION.fast, ease: EASE } }}
                   className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[18px] p-3 shadow-sm shadow-[#4C1D95]/5"
                 >

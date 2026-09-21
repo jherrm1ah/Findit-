@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "motion/react";
 import { User, Store, FileText, Phone, Lock, Pencil } from "lucide-react";
 import { Field } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
-import { DURATION, EASE, press } from "./motion";
+import { DURATION, EASE, wiggleIn, press } from "./motion";
 
 // A section card's header row — icon + uppercase label — matching the
 // pattern already used across the seller dashboard (BrandingCard, "Your
@@ -136,7 +136,10 @@ export default function AccountDetails({
       </p>
 
       <div className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5">
-        <div
+        <motion.div
+          initial={wiggleIn.initial}
+          animate={wiggleIn.animate}
+          transition={wiggleIn.transition}
           className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
@@ -145,7 +148,7 @@ export default function AccountDetails({
           ) : (
             <User size={20} className="text-white" />
           )}
-        </div>
+        </motion.div>
         <div className="min-w-0">
           <p className="text-[14px] font-bold text-[#1E1B4B] truncate">{user.name}</p>
           <p className="text-[11.5px] text-[#6B6483]">

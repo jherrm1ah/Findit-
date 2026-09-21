@@ -2,7 +2,16 @@
 
 import { motion, AnimatePresence } from "motion/react";
 import { MessageCircle, ChevronRight } from "lucide-react";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
+
+// A bouncier stagger for this screen's conversation rows — matching Home's
+// browsing-surface treatment rather than a change to STAGGER_ITEM/CONTAINER
+// themselves.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 18, scale: 0.88, rotate: -3 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 function timeAgoShort(iso) {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -30,18 +39,18 @@ export default function Messages({ conversations, onOpenThread }) {
         </motion.p>
       )}
 
-      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         <AnimatePresence initial={false}>
-          {conversations.map((c) => {
+          {conversations.map((c, i) => {
             const displayName = c.otherParty.businessName || c.otherParty.name;
             return (
               <motion.button
                 key={c.id}
                 layout="position"
-                variants={STAGGER_ITEM}
+                variants={BOUNCE_ITEM}
                 onClick={() => onOpenThread(c.id, c.otherParty)}
-                whileTap={{ scale: 0.98 }}
-                transition={{ duration: DURATION.instant }}
+                whileTap={{ scale: 0.96, rotate: i % 2 === 0 ? -2 : 2 }}
+                transition={SPRING_BOUNCY}
                 className={`w-full flex items-center gap-3 rounded-[20px] p-3.5 text-left border transition-colors duration-200 ${c.unreadCount > 0 ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
               >
                 <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-[14px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
