@@ -8,7 +8,19 @@ import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 import { ADMIN_ROLES, hasAdminPermission } from "@/lib/adminRolesLevels";
-import { DURATION, SPRING_SNAPPY, press } from "./motion";
+import { SPRING_BOUNCY, wiggleIn } from "./motion";
+
+// AdminQueue is an admin tool (Group B) — entrances and icon pop get a
+// livelier SPRING_BOUNCY curve for personality, but scale-only (no rotate),
+// and every approve/reject/suspend/promote/demote action below keeps its
+// plain press feedback untouched — this screen changes real account and
+// moderation state.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 14, scale: 0.9 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: SPRING_BOUNCY },
+};
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 function describeAction(a) {
   if (a.action === "seller.approved") return `Approved seller "${a.detail?.sellerName ?? a.targetId}"`;
@@ -268,9 +280,9 @@ function ReportedProblems({ orders, onResolve }) {
   }
 
   return (
-    <div className="space-y-3 mb-7">
+    <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
       {orders.map((o) => (
-        <div key={o.id} className="bg-white border border-[#F5D9A8] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+        <motion.div key={o.id} variants={BOUNCE_ITEM} className="bg-white border border-[#F5D9A8] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
           <div className="flex items-start justify-between mb-1">
             <div>
               <p className="text-[13px] font-semibold text-[#1E1B4B]">{o.item}</p>
@@ -299,9 +311,9 @@ function ReportedProblems({ orders, onResolve }) {
               Pay the seller
             </button>
           </div>
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -466,9 +478,9 @@ function VerificationSubmissions({ submissions, onReview, showToast }) {
   }
 
   return (
-    <div className="space-y-3 mb-7">
+    <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
       {submissions.map(({ sellerId, sellerName, phone, overview }) => (
-        <div key={sellerId} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+        <motion.div key={sellerId} variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
           <div className="flex items-center justify-between mb-1">
             <p className="text-[13px] font-semibold text-[#1E1B4B]">{sellerName}</p>
             {overview.status === "needs_info" ? (
@@ -564,9 +576,9 @@ function VerificationSubmissions({ submissions, onReview, showToast }) {
               </button>
             </div>
           )}
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -601,9 +613,9 @@ function SellerAccountList({ sellers, onStatusChange }) {
   };
 
   return (
-    <div className="space-y-3 mb-7">
+    <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
       {sellers.map((s) => (
-        <div key={s.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+        <motion.div key={s.id} variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
           <div className="flex items-center justify-between mb-1">
             <p className="text-[13px] font-semibold text-[#1E1B4B]">{s.name}</p>
             {STATUS_PILL[s.status]}
@@ -671,9 +683,9 @@ function SellerAccountList({ sellers, onStatusChange }) {
               )}
             </div>
           )}
-        </div>
+        </motion.div>
       ))}
-    </div>
+    </motion.div>
   );
 }
 
@@ -685,10 +697,12 @@ function SellerAccountList({ sellers, onStatusChange }) {
 // there; a stat with nowhere real to send an admin (like the 30-day churn
 // counts below) renders as a plain number instead of a dead link.
 function StatCard({ label, value, onClick }) {
-  const Tag = onClick ? "button" : "div";
+  const MotionTag = onClick ? motion.button : motion.div;
   return (
-    <Tag
+    <MotionTag
       onClick={onClick}
+      variants={BOUNCE_ITEM}
+      {...(onClick ? bouncyPress : {})}
       className={`bg-white border border-[#ECE9F7] rounded-xl px-3.5 py-3 text-left ${onClick ? "hover:border-[#D8CFF5] cursor-pointer" : ""}`}
     >
       <div className="flex items-center justify-between gap-1">
@@ -696,7 +710,7 @@ function StatCard({ label, value, onClick }) {
         {onClick && <ChevronRight size={14} className="text-[#A79FC7]" />}
       </div>
       <p className="text-[10.5px] text-[#6B6483] mt-0.5">{label}</p>
-    </Tag>
+    </MotionTag>
   );
 }
 
@@ -706,7 +720,9 @@ function OverviewSection({ icon: Icon, title, children }) {
       <p className="text-[11px] font-semibold text-[#8A8372] uppercase tracking-wide mb-2 flex items-center gap-1.5">
         <Icon size={12} /> {title}
       </p>
-      <div className="grid grid-cols-2 gap-2.5">{children}</div>
+      <motion.div className="grid grid-cols-2 gap-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
+        {children}
+      </motion.div>
     </div>
   );
 }
@@ -876,10 +892,10 @@ function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
         <p className="text-[12px] text-[#6B6483]">No accounts match.</p>
       )}
 
-      <div className="space-y-3 mb-4">
+      <motion.div className="space-y-3 mb-4" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {!loading &&
           data?.users.map((u) => (
-            <div key={u.id} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+            <motion.div key={u.id} variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-[13px] font-semibold text-[#1E1B4B]">{u.name}</p>
                 {u.suspended ? (
@@ -951,9 +967,9 @@ function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
                   )}
                 </div>
               )}
-            </div>
+            </motion.div>
           ))}
-      </div>
+      </motion.div>
 
       {data && data.totalPages > 1 && (
         <div className="flex items-center justify-between">
@@ -2333,11 +2349,13 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
       {!tickets && <p className="text-[12px] text-[#6B6483]">Loading tickets…</p>}
       {tickets && tickets.length === 0 && <p className="text-[12px] text-[#6B6483]">No support tickets match.</p>}
 
-      <div className="space-y-2.5">
+      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {tickets?.map((t) => (
-          <button
+          <motion.button
             key={t.id}
+            variants={BOUNCE_ITEM}
             onClick={() => open(t)}
+            {...bouncyPress}
             className={`w-full text-left bg-white border rounded-[20px] p-4 flex items-center justify-between gap-3 ${
               t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"
             }`}
@@ -2350,9 +2368,9 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
               {t.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
               <ChevronRight size={14} className="text-[#B7AFD6]" />
             </div>
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -2448,7 +2466,9 @@ export default function AdminQueue({
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-4">
-        <ClipboardList size={17} className="text-[#7C3AED]" />
+        <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
+          <ClipboardList size={17} className="text-[#7C3AED]" />
+        </motion.span>
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Admin dashboard</h1>
         {currentAdminRole && !isSuperAdmin && (
           <span className="text-[10px] font-semibold text-[#7C3AED] bg-[#F5F2FC] px-2 py-1 rounded-full">
@@ -2458,7 +2478,7 @@ export default function AdminQueue({
         {onLeaveAdmin && (
           <motion.button
             onClick={onLeaveAdmin}
-            {...press}
+            {...bouncyPress}
             className="ml-auto flex items-center gap-1.5 text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-full border border-[#ECE9F7] bg-white shrink-0"
           >
             <LogOut size={11} /> Leave admin
@@ -2472,7 +2492,7 @@ export default function AdminQueue({
             key={t.key}
             onClick={() => setTab(t.key)}
             whileTap={{ scale: 0.95 }}
-            transition={SPRING_SNAPPY}
+            transition={SPRING_BOUNCY}
             className={`flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full whitespace-nowrap shrink-0 transition-colors duration-150 ${
               activeTab === t.key ? "text-white" : "text-[#514B67] bg-white border border-[#ECE9F7]"
             }`}

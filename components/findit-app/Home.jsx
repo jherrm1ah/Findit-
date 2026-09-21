@@ -12,12 +12,22 @@ import { GROUPS, categoryGroup, naira } from "./data";
 import { Logo, ArtBlock } from "./shared";
 import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm } from "@/lib/geo";
-import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
+import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, SPRING_BOUNCY, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press, floatLoop, wiggleIn } from "./motion";
 
 const BANNERS = [
   { tag: "Request-first", title: "Can't find it?\nAsk FindIt.", cta: "Request now", action: "request" },
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
+
+// Home is the one browsing surface this app leans playful on — checkout,
+// payment and forms elsewhere keep the base system's restrained feel (see
+// motion.jsx). A bouncier stagger just for this screen's product grid, not
+// a change to STAGGER_ITEM/CONTAINER themselves.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 // A subtle pulse on the cart glyph itself, plus the badge popping in/out
 // and its number counting rather than jumping — the "cart icon responds"
@@ -70,6 +80,15 @@ export default function Home({
   const [menuOpen, setMenuOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [sellerSearch, setSellerSearch] = useState("");
+
+  // The promo banner used to only change on a manual dot tap — auto-advance
+  // makes the loudest moment on the screen actually keep moving, the way a
+  // carousel is expected to. A manual tap (the dot buttons below) still
+  // works and just resets this same timer via the effect's own dependency.
+  useEffect(() => {
+    const id = setInterval(() => setBanner((b) => (b + 1) % BANNERS.length), 4500);
+    return () => clearInterval(id);
+  }, [banner]);
 
   // The one thing this screen used to have no room for: what's actually
   // happening with the buyer's own stuff, as opposed to generic browsing.
@@ -125,9 +144,11 @@ export default function Home({
     <div className="px-5 pt-4 pb-10">
       {/* floating icon header */}
       <div className="flex items-center justify-between mb-5 relative">
-        <IconButton onClick={() => setMenuOpen((m) => !m)} aria-label={menuOpen ? "Close menu" : "Open menu"}>
-          {menuOpen ? <X size={18} className="text-[#1E1B4B]" /> : <Menu size={18} className="text-[#1E1B4B]" />}
-        </IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+          <IconButton onClick={() => setMenuOpen((m) => !m)} aria-label={menuOpen ? "Close menu" : "Open menu"}>
+            {menuOpen ? <X size={18} className="text-[#1E1B4B]" /> : <Menu size={18} className="text-[#1E1B4B]" />}
+          </IconButton>
+        </motion.div>
         <div className="flex items-center gap-1.5">
           <Logo size={22} />
           <span className="text-[11px] uppercase tracking-[0.15em] text-[#6B6483] font-medium">
@@ -135,9 +156,15 @@ export default function Home({
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined} aria-label="Notifications"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
-          <CartIconButton count={cartCount} onClick={() => go("cart")} />
-          <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
+          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.06 }}>
+            <IconButton onClick={() => go("notifications")} badge={unreadCount > 0 ? String(unreadCount) : undefined} aria-label="Notifications"><Bell size={17} className="text-[#1E1B4B]" /></IconButton>
+          </motion.div>
+          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.12 }}>
+            <CartIconButton count={cartCount} onClick={() => go("cart")} />
+          </motion.div>
+          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.18 }}>
+            <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
+          </motion.div>
         </div>
 
         <AnimatePresence>
@@ -253,18 +280,28 @@ export default function Home({
         style={{ background: "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)", minHeight: 190 }}
         onClick={() => go(BANNERS[banner].action)}
       >
-        <div className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
-        <div className="absolute right-10 top-4 w-16 h-16 rounded-full bg-[#F59E0B]/25" />
-        <span className="inline-block bg-white/15 backdrop-blur text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4">{BANNERS[banner].tag}</span>
-        <h2 className="text-[24px] font-bold leading-[1.15] mb-6 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
-          {BANNERS[banner].title}
-        </h2>
-        <span className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
+        <motion.div {...floatLoop(14, 4)} className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
+        <motion.div {...floatLoop(10, 3)} className="absolute right-10 top-4 w-16 h-16 rounded-full bg-[#F59E0B]/25" />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={banner}
+            initial={{ opacity: 0, x: 24 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -24 }}
+            transition={SPRING_BOUNCY}
+          >
+            <span className="inline-block bg-white/15 backdrop-blur text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4 relative">{BANNERS[banner].tag}</span>
+            <h2 className="text-[24px] font-bold leading-[1.15] mb-6 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
+              {BANNERS[banner].title}
+            </h2>
+          </motion.div>
+        </AnimatePresence>
+        <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
           {BANNERS[banner].cta}
           <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
             <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
           </span>
-        </span>
+        </motion.span>
         <div className="absolute bottom-4 right-6 flex gap-1.5">
           {BANNERS.map((_, i) => (
             <button
@@ -284,8 +321,16 @@ export default function Home({
         <button onClick={() => go("browse")} className="text-[12px] text-[#7C3AED] font-medium">See all</button>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-1 mb-7 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
-        {Object.entries(GROUPS).slice(0, 8).map(([k, g]) => (
-          <motion.button key={k} onClick={() => go("browse", k)} whileTap={{ scale: 0.92 }} transition={SPRING_SNAPPY} className="flex flex-col items-center gap-2 shrink-0 w-[76px]">
+        {Object.entries(GROUPS).slice(0, 8).map(([k, g], i) => (
+          <motion.button
+            key={k}
+            onClick={() => go("browse", k)}
+            initial={{ opacity: 0, scale: 0.6, rotate: -10 }}
+            animate={{ opacity: 1, scale: 1, rotate: 0 }}
+            transition={{ ...SPRING_BOUNCY, delay: i * 0.04 }}
+            whileTap={{ scale: 0.88, rotate: -6 }}
+            className="flex flex-col items-center gap-2 shrink-0 w-[76px]"
+          >
             <div className="w-[68px] h-[68px] rounded-2xl flex items-center justify-center" style={{ background: "linear-gradient(135deg,#F0EAFC,#E4D9FA)" }}>
               <g.icon size={24} className="text-[#7C3AED]" strokeWidth={1.6} />
             </div>
@@ -303,14 +348,14 @@ export default function Home({
         className="grid grid-cols-2 gap-x-3 gap-y-5 mb-7"
         initial="hidden"
         animate="visible"
-        variants={STAGGER_CONTAINER}
+        variants={BOUNCE_CONTAINER}
       >
-        {trending.map((p) => (
-          <motion.div key={p.id} variants={STAGGER_ITEM} className="relative text-left">
+        {trending.map((p, i) => (
+          <motion.div key={p.id} variants={BOUNCE_ITEM} className="relative text-left">
             <motion.button
               onClick={() => openProduct(p)}
-              whileTap={{ scale: 0.96 }}
-              transition={SPRING_SNAPPY}
+              whileTap={{ scale: 0.94, rotate: i % 2 === 0 ? -2 : 2 }}
+              transition={SPRING_BOUNCY}
               className="block w-full text-left"
               aria-label={`View ${p.name}`}
             >
@@ -417,9 +462,14 @@ export default function Home({
           ["Receive it, confirm delivery", Truck],
         ].map(([label, Icon], i) => (
           <motion.div key={i} variants={STAGGER_ITEM} className="flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+            <motion.div
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.25 }}
+              className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+            >
               <Icon size={15} className="text-white" />
-            </div>
+            </motion.div>
             <p className="text-[13px] text-[#1E1B4B]">{label}</p>
           </motion.div>
         ))}

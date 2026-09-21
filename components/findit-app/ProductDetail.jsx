@@ -10,7 +10,7 @@ import { categoryGroup, naira } from "./data";
 import { ArtBlock, Pill } from "./shared";
 import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
-import { DURATION, EASE, SPRING_SNAPPY, press, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
+import { DURATION, EASE, SPRING_SNAPPY, SPRING_BOUNCY, press, wiggleIn, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
 // Matches lib/productReports.ts#REPORT_REASON_LABELS (migration 027) — kept
 // as a small duplicated client-side list rather than a network round trip
@@ -99,9 +99,13 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
       transition={{ duration: DURATION.base, ease: EASE }}
     >
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/90 backdrop-blur px-5 pt-4 pb-3 flex items-center justify-between">
-        <IconButton onClick={onClose} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+          <IconButton onClick={onClose} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        </motion.div>
         <p className="text-[15px] font-bold text-[#1E1B4B]">Details</p>
-        <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={17} className="text-[#1E1B4B]" /></IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.06 }}>
+          <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={17} className="text-[#1E1B4B]" /></IconButton>
+        </motion.div>
       </div>
 
       <div className="px-5">

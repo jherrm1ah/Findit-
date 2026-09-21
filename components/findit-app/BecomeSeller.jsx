@@ -4,7 +4,17 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Store, ShieldCheck, ClipboardList, Package } from "lucide-react";
 import { Field } from "./shared";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// BecomeSeller is a browsing/marketing screen (Group A) — a local bouncy
+// stagger for the "what happens next" list, same spirit as Home's
+// BOUNCE_CONTAINER/ITEM. The submit button below stays a plain press — it
+// changes a real account into a seller account.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 22, scale: 0.88, rotate: -2 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 // A buyer turning their existing account into a seller account. Before this
 // existed, the only way to start selling was to sign up again — and since a
@@ -32,12 +42,12 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
 
   return (
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-6 pb-10">
-      <div className="flex items-center gap-2 mb-1">
+      <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex items-center gap-2 mb-1">
         <Store size={18} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
           Start selling on FindIt
         </h1>
-      </div>
+      </motion.div>
       <p className="text-[12px] text-[#6B6483] mb-5">
         Keep the same account and phone number — {user.name}, you&apos;ll just gain a seller dashboard.
       </p>
@@ -58,16 +68,20 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
       </div>
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">What happens next</p>
-      <motion.div className="space-y-3 mb-6" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="space-y-3 mb-6" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {[
           [ClipboardList, "A FindIt admin reviews your account", "Usually the same day. You keep buying as normal in the meantime."],
           [Package, "Then you can list products and answer requests", "Your dashboard shows orders to fulfil and requests that match what you sell."],
           [ShieldCheck, "Buyers' payments are held until they confirm delivery", "That protection runs both ways — it's why buyers trust ordering from someone new."],
-        ].map(([Icon, title, body]) => (
-          <motion.div key={title} variants={STAGGER_ITEM} className="flex gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4">
-            <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+        ].map(([Icon, title, body], i) => (
+          <motion.div key={title} variants={BOUNCE_ITEM} className="flex gap-3 bg-white border border-[#ECE9F7] rounded-[20px] p-4">
+            <motion.div
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut", delay: i * 0.25 }}
+              className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0"
+            >
               <Icon size={16} className="text-[#7C3AED]" />
-            </div>
+            </motion.div>
             <div>
               <p className="text-[13px] font-semibold text-[#1E1B4B] mb-0.5">{title}</p>
               <p className="text-[11px] text-[#6B6483] leading-relaxed">{body}</p>

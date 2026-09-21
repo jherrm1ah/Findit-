@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { DURATION, EASE, SPRING_SNAPPY } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
 
 export default function NotificationPreferences({ user, onToggle, showToast }) {
   const [enabled, setEnabled] = useState(user.notificationsEnabled);
@@ -30,7 +30,12 @@ export default function NotificationPreferences({ user, onToggle, showToast }) {
       </h1>
       <p className="text-[12px] text-[#6B6483] mb-6">Control whether FindIt sends you in-app notifications.</p>
 
-      <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 flex items-center justify-between gap-3">
+      <motion.div
+        initial={{ opacity: 0, y: 16, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={SPRING_BOUNCY}
+        className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 flex items-center justify-between gap-3"
+      >
         <div className="flex-1">
           <p className="text-[13px] font-semibold text-[#1E1B4B]">Order & offer updates</p>
           <p className="text-[11.5px] text-[#6B6483] mt-0.5">
@@ -40,7 +45,8 @@ export default function NotificationPreferences({ user, onToggle, showToast }) {
         <motion.button
           onClick={toggle}
           disabled={saving}
-          whileTap={{ scale: 0.94 }}
+          whileTap={{ scale: 0.92 }}
+          transition={SPRING_BOUNCY}
           aria-label={enabled ? "Turn off notifications" : "Turn on notifications"}
           aria-pressed={enabled}
           className="w-11 h-6 rounded-full shrink-0 relative transition-colors duration-200 disabled:opacity-60"
@@ -49,10 +55,10 @@ export default function NotificationPreferences({ user, onToggle, showToast }) {
           <motion.span
             className="absolute top-0.5 w-5 h-5 rounded-full bg-white shadow"
             animate={{ left: enabled ? 22 : 2 }}
-            transition={SPRING_SNAPPY}
+            transition={SPRING_BOUNCY}
           />
         </motion.button>
-      </div>
+      </motion.div>
 
       <AnimatePresence>
         {!enabled && (

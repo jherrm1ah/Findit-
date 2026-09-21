@@ -6,7 +6,14 @@ import { ArrowRight, User, Store } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { api } from "./api";
 import OtpInput from "./OtpInput";
-import { DURATION, EASE, SPRING_SNAPPY, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// Login is an auth screen (Group B) — the logo and role-selector chips get
+// a livelier scale-only pop for personality, but every submit action below
+// (log in, create account, verify code, reset password) keeps its plain
+// press feedback untouched, same reasoning as this session's Checkout.jsx
+// edits.
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 function formatMMSS(totalSeconds) {
   const s = Math.max(0, totalSeconds);
@@ -183,7 +190,9 @@ export default function Login({ onDone, showToast }) {
         className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
       >
         <div className="flex flex-col items-center mb-8">
-          <Logo size={44} />
+          <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
+            <Logo size={44} />
+          </motion.div>
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
             Reset your password
           </h1>
@@ -232,7 +241,7 @@ export default function Login({ onDone, showToast }) {
         <motion.button
           type="button"
           onClick={() => { setMode("login"); setError(null); }}
-          {...press}
+          {...bouncyPress}
           className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
         >
           ← Back to log in
@@ -253,7 +262,9 @@ export default function Login({ onDone, showToast }) {
         className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
       >
         <div className="flex flex-col items-center mb-8">
-          <Logo size={44} />
+          <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
+            <Logo size={44} />
+          </motion.div>
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
             Choose a new password
           </h1>
@@ -335,7 +346,9 @@ export default function Login({ onDone, showToast }) {
         className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
       >
         <div className="flex flex-col items-center mb-8">
-          <Logo size={44} />
+          <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
+            <Logo size={44} />
+          </motion.div>
           <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
             Verify your phone
           </h1>
@@ -396,7 +409,7 @@ export default function Login({ onDone, showToast }) {
         <motion.button
           type="button"
           onClick={() => { setStep("form"); setOtpCode(""); setError(null); setExpiresAt(null); setResendAvailableAt(null); }}
-          {...press}
+          {...bouncyPress}
           className="text-center text-[13px] font-semibold text-[#7C3AED] mt-auto"
         >
           ← Change phone number
@@ -415,7 +428,9 @@ export default function Login({ onDone, showToast }) {
       className="fixed inset-0 z-50 bg-[#FAFAFF] flex flex-col px-6 pt-10 pb-8 overflow-y-auto"
     >
       <div className="flex flex-col items-center mb-8">
-        <Logo size={44} />
+        <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
+          <Logo size={44} />
+        </motion.div>
         <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
           {mode === "login" ? "Welcome back" : "Create your account"}
         </h1>
@@ -434,8 +449,7 @@ export default function Login({ onDone, showToast }) {
               key={key}
               type="button"
               onClick={() => setRole(key)}
-              whileTap={{ scale: 0.97 }}
-              transition={SPRING_SNAPPY}
+              {...bouncyPress}
               className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2.5 border text-[12.5px] font-medium transition-colors duration-150 ${
                 role === key ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
               }`}
@@ -511,7 +525,7 @@ export default function Login({ onDone, showToast }) {
         <motion.button
           type="button"
           onClick={() => { setMode("reset"); setStep("form"); setError(null); }}
-          {...press}
+          {...bouncyPress}
           className="text-[12px] font-medium text-[#7C3AED] text-right mb-6 self-end"
         >
           Forgot password?
@@ -532,7 +546,7 @@ export default function Login({ onDone, showToast }) {
 
       <p className="text-center text-[13px] text-[#6B6483] mt-auto">
         {mode === "login" ? "New to FindIt?" : "Already have an account?"}{" "}
-        <motion.button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} {...press} className="font-semibold text-[#7C3AED]">
+        <motion.button onClick={() => { setMode((m) => (m === "login" ? "signup" : "login")); setError(null); }} {...bouncyPress} className="font-semibold text-[#7C3AED]">
           {mode === "login" ? "Create account" : "Log in"}
         </motion.button>
       </p>

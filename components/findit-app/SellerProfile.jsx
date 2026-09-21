@@ -9,7 +9,7 @@ import { ArtBlock, Pill } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, STAGGER_CONTAINER, STAGGER_ITEM, revealOnView, press, wiggleIn } from "./motion";
 
 const LEVEL_TONE = { new: "stone", verified: "brand", trusted: "green" };
 const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldCheck };
@@ -93,7 +93,9 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
         className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto"
       >
         <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
-          <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+            <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+          </motion.div>
           <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
         </div>
         <div className="px-5 py-16 text-center">
@@ -114,7 +116,9 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
       className="fixed inset-0 bg-[#FAFAFF] z-40 overflow-y-auto pb-10"
     >
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur px-5 pt-4 pb-3 flex items-center gap-3">
-        <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
+          <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
+        </motion.div>
         <p className="text-[15px] font-bold text-[#1E1B4B] truncate">Seller</p>
       </div>
 
@@ -238,8 +242,16 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
           <Package size={13} className="text-[#7C3AED]" /> Listings
         </motion.p>
         <motion.div variants={STAGGER_ITEM} className="grid grid-cols-2 gap-x-3 gap-y-5">
-          {listings.map((p) => (
-            <motion.button key={p.id} onClick={() => onOpenProduct(p)} whileTap={{ scale: 0.96 }} transition={{ duration: DURATION.instant }} className="text-left">
+          {listings.map((p, i) => (
+            <motion.button
+              key={p.id}
+              onClick={() => onOpenProduct(p)}
+              initial={{ opacity: 0, y: 26, scale: 0.75, rotate: -4 }}
+              animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+              transition={{ ...SPRING_BOUNCY, delay: i * 0.05 }}
+              whileTap={{ scale: 0.94, rotate: i % 2 === 0 ? -2 : 2 }}
+              className="text-left"
+            >
               <div className="relative rounded-[20px] overflow-hidden mb-2">
                 <ArtBlock icon={categoryGroup(p.category).icon} art={p.art} imageUrl={p.imageUrl} className="h-32 w-full" />
               </div>

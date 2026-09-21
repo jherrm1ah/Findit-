@@ -5,7 +5,17 @@ import { motion, AnimatePresence } from "motion/react";
 import { ListOrdered, Star, BadgeCheck, Clock } from "lucide-react";
 import { naira, GROUPS } from "./data";
 import { Pill } from "./shared";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press } from "./motion";
+
+// A bouncier stagger for this screen's request and offer cards — matching
+// Home's browsing-surface treatment. The money-moving controls inside each
+// card (accept offer & pay, cancel) keep the restrained `press` feedback;
+// only the cards' own entrance picks up the bounce.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 20, scale: 0.85, rotate: -3 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open budget";
@@ -57,10 +67,10 @@ export default function MyRequests({ requests, onAcceptOffer, onCancelRequest })
         </p>
       )}
 
-      <motion.div className="space-y-4" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="space-y-4" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         <AnimatePresence initial={false}>
           {requests.map((r) => (
-            <motion.div key={r.id} layout="position" variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+            <motion.div key={r.id} layout="position" variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-start justify-between mb-1">
                 <p className="text-[14px] font-semibold text-[#1E1B4B] pr-2">{r.title}</p>
                 <AnimatePresence mode="wait" initial={false}>
@@ -93,10 +103,10 @@ export default function MyRequests({ requests, onAcceptOffer, onCancelRequest })
               {r.offers.length === 0 ? (
                 <p className="text-[12px] text-[#6B6483]">No offers yet — check back soon.</p>
               ) : (
-                <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+                <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
                   <AnimatePresence initial={false}>
                     {r.offers.map((o) => (
-                      <motion.div key={o.id} layout="position" variants={STAGGER_ITEM} className="bg-[#F5F2FC] rounded-xl p-3">
+                      <motion.div key={o.id} layout="position" variants={BOUNCE_ITEM} className="bg-[#F5F2FC] rounded-xl p-3">
                         <div className="flex items-start justify-between mb-1.5">
                           <div>
                             <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1">

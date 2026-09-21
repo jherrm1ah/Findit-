@@ -3,7 +3,16 @@
 import { motion, AnimatePresence } from "motion/react";
 import { Bell } from "lucide-react";
 import { NOTIFICATION_ICONS } from "./data";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, floatLoop } from "./motion";
+
+// A bouncier stagger for this screen's notification rows — matching Home's
+// browsing-surface treatment rather than a change to STAGGER_ITEM/CONTAINER
+// themselves.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 18, scale: 0.88, rotate: -3 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 export default function Notifications({ notifications, onMarkRead, onMarkAllRead }) {
   const unreadCount = notifications.filter((n) => n.unread).length;
@@ -35,17 +44,17 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
           transition={{ duration: DURATION.base, ease: EASE }}
           className="flex flex-col items-center text-center pt-16"
         >
-          <div className="w-14 h-14 rounded-full bg-[#F5F2FC] flex items-center justify-center mb-4">
+          <motion.div {...floatLoop(8, 3)} className="w-14 h-14 rounded-full bg-[#F5F2FC] flex items-center justify-center mb-4">
             <Bell size={22} className="text-[#7C3AED]" />
-          </div>
+          </motion.div>
           <p className="text-[14px] font-semibold text-[#1E1B4B] mb-1">Nothing yet</p>
           <p className="text-[12px] text-[#6B6483] max-w-[240px]">
             Order updates, offers on your requests, and account activity will show up here.
           </p>
         </motion.div>
       ) : (
-      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
-        {notifications.map((n) => {
+      <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
+        {notifications.map((n, i) => {
           // Falls back to Bell rather than crashing the whole screen on a
           // notification type this map doesn't know yet — see the map's own
           // comment in data.js for the two real cases this already hit.
@@ -54,10 +63,10 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
             <motion.button
               key={n.id}
               layout="position"
-              variants={STAGGER_ITEM}
+              variants={BOUNCE_ITEM}
               onClick={() => onMarkRead(n.id)}
-              whileTap={{ scale: 0.98 }}
-              transition={{ duration: DURATION.instant }}
+              whileTap={{ scale: 0.96, rotate: i % 2 === 0 ? -2 : 2 }}
+              transition={SPRING_BOUNCY}
               className={`w-full flex items-start gap-3 rounded-[20px] p-3.5 text-left border transition-colors duration-200 ${n.unread ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
             >
               <div

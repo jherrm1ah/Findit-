@@ -5,7 +5,13 @@ import { motion, AnimatePresence } from "motion/react";
 import { ShieldCheck, ArrowLeft, Lock } from "lucide-react";
 import { Field } from "./shared";
 import { api } from "./api";
-import { DURATION, EASE, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// AdminLogin is an auth screen (Group B) — the back button and shield icon
+// get a livelier scale-only pop for personality, but the sign-in submit
+// button below keeps its plain press feedback untouched — this is a login
+// action, same reasoning as this session's Checkout.jsx edits.
+const bouncyPress = { whileTap: { scale: 0.94 }, transition: SPRING_BOUNCY };
 
 // Staff sign-in. Reaching the Admin Queue takes a second, explicit
 // authentication even for someone already logged in as an admin — the
@@ -49,19 +55,22 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-5 pb-10">
       <motion.button
         onClick={onBack}
-        {...press}
+        {...bouncyPress}
         className="w-9 h-9 rounded-full bg-white border border-[#ECE9F7] flex items-center justify-center mb-6"
         aria-label="Go back"
       >
         <ArrowLeft size={16} className="text-[#1E1B4B]" />
       </motion.button>
 
-      <div
+      <motion.div
+        initial={wiggleIn.initial}
+        animate={wiggleIn.animate}
+        transition={SPRING_BOUNCY}
         className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
         style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
       >
         <ShieldCheck size={22} className="text-white" />
-      </div>
+      </motion.div>
 
       <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-1.5" style={{ fontFamily: "Fraunces, serif" }}>
         Staff sign-in
@@ -98,7 +107,7 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
             <motion.button
               type="button"
               onClick={() => setShowPassword((s) => !s)}
-              {...press}
+              {...bouncyPress}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-medium text-[#7C3AED]"
             >
               {showPassword ? "Hide" : "Show"}

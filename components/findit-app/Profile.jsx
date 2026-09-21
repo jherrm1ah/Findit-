@@ -6,7 +6,15 @@ import { motion } from "motion/react";
 import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle, Crown } from "lucide-react";
 import { Pill } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
-import { DURATION, SPRING_SNAPPY, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { SPRING_BOUNCY, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
+
+// Profile is a browsing/account-overview screen (Group A) — a local bouncy
+// stagger for its card lists, same spirit as Home's BOUNCE_CONTAINER/ITEM.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 20, scale: 0.9, rotate: -2 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 const SELLER_STATUS_META = {
   pending: { label: "Pending review", tone: "gold", icon: Clock },
@@ -92,8 +100,8 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploadingAvatar}
-          whileTap={{ scale: 0.93 }}
-          transition={SPRING_SNAPPY}
+          whileTap={{ scale: 0.9 }}
+          transition={SPRING_BOUNCY}
           aria-label="Change profile photo"
           className="w-14 h-14 rounded-full flex items-center justify-center shrink-0 overflow-hidden relative"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
@@ -136,7 +144,8 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
         </div>
         <motion.button
           onClick={onLogout}
-          {...press}
+          whileTap={{ scale: 0.94 }}
+          transition={SPRING_BOUNCY}
           className="flex items-center gap-1.5 text-[12px] font-semibold text-[#7C3AED] px-3 py-2 rounded-full border border-[#ECE9F7] shrink-0"
         >
           <LogOut size={12} /> Log out
@@ -144,13 +153,14 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
       </motion.div>
 
       <motion.p variants={STAGGER_ITEM} className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Management</motion.p>
-      <motion.div variants={STAGGER_ITEM} className="space-y-3 mb-7">
-        {CARDS.map((c) => (
+      <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
+        {CARDS.map((c, i) => (
           <motion.button
             key={c.key}
+            variants={BOUNCE_ITEM}
             onClick={() => go(c.key)}
-            whileTap={{ scale: 0.98 }}
-            transition={SPRING_SNAPPY}
+            whileTap={{ scale: 0.96, rotate: i % 2 === 0 ? -2 : 2 }}
+            transition={SPRING_BOUNCY}
             className={`w-full flex items-center gap-3 rounded-[20px] p-4 text-left border ${c.primary ? "border-transparent text-white" : "bg-white border-[#ECE9F7]"}`}
             style={c.primary ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
           >
@@ -172,8 +182,8 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
           <motion.button
             key={row.key}
             onClick={() => go(row.key)}
-            whileTap={{ scale: 0.98, backgroundColor: "rgba(124,58,237,0.04)" }}
-            transition={{ duration: DURATION.instant }}
+            whileTap={{ scale: 0.97, backgroundColor: "rgba(124,58,237,0.04)" }}
+            transition={SPRING_BOUNCY}
             className={`w-full flex items-center justify-between px-4 py-3.5 text-left ${i !== SETTINGS_ROWS.length - 1 ? "border-b border-[#ECE9F7]" : ""}`}
           >
             <p className="text-[13px] text-[#1E1B4B]">{row.label}</p>

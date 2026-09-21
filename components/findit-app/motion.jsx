@@ -31,6 +31,30 @@ export const SPRING_SNAPPY = { type: "spring", stiffness: 500, damping: 32, mass
 // For things that enter on their own (cards, sheets) — a touch softer.
 export const SPRING_SOFT = { type: "spring", stiffness: 300, damping: 28 };
 
+// A deliberately playful spring with real overshoot — for the handful of
+// screens (Home's browsing surface, not checkout/payment/forms) that should
+// feel bouncy and alive rather than "premium and understated." Kept as an
+// opt-in addition rather than changed in place on SPRING_SNAPPY/SOFT above,
+// so nothing already relying on those defaults (press feedback across the
+// whole app, including money-moving screens) changes shape underneath it.
+export const SPRING_BOUNCY = { type: "spring", stiffness: 420, damping: 14, mass: 0.7 };
+
+// A slow, continuous up/down drift for decorative shapes — loops forever,
+// so it's only for background elements nothing else depends on the exact
+// position of.
+export const floatLoop = (offset = 10, duration = 3.2) => ({
+  animate: { y: [0, -offset, 0] },
+  transition: { duration, repeat: Infinity, ease: "easeInOut" },
+});
+
+// A small rotational wiggle, meant as a one-shot mount flourish (icons,
+// emoji-like glyphs) rather than a loop.
+export const wiggleIn = {
+  initial: { opacity: 0, scale: 0.5, rotate: -12 },
+  animate: { opacity: 1, scale: 1, rotate: 0 },
+  transition: SPRING_BOUNCY,
+};
+
 // A press state every tappable surface in the app can share — scales down
 // very slightly on press, back on release. Deliberately subtle (0.97, not
 // 0.9) so it reads as "responsive," not "bouncy." Spread onto any
