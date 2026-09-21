@@ -1154,32 +1154,49 @@ export default function SellerDashboard({
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My listings</p>
         {!adding && !atListingLimit && (
-          <button onClick={() => setAdding(true)} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+          <motion.button onClick={() => setAdding(true)} {...press} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
             <Plus size={13} /> Add listing
-          </button>
+          </motion.button>
         )}
       </div>
       <div className="space-y-3 mb-7">
-        {atListingLimit && !adding && (
-          <div className="bg-[#F5F2FC] rounded-[20px] p-4">
-            <p className="text-[12.5px] font-semibold text-[#1E1B4B] mb-1">
-              You&apos;ve reached the {plan.name} plan&apos;s limit of {plan.productLimit} active products.
-            </p>
-            <p className="text-[11px] text-[#6B6483] mb-3">Upgrade for more room to list — your existing listings are safe either way.</p>
-            <button
-              onClick={() => go?.("storePlans")}
-              className="text-white text-[11.5px] font-semibold px-3.5 py-2 rounded-xl"
-              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        <AnimatePresence initial={false}>
+          {atListingLimit && !adding && (
+            <motion.div
+              key="limit-upsell"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="bg-[#F5F2FC] rounded-[20px] p-4"
             >
-              See upgrade options
-            </button>
-          </div>
-        )}
-        {adding && (
-          <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5">
-            <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} onUploadImage={onUploadImage} />
-          </div>
-        )}
+              <p className="text-[12.5px] font-semibold text-[#1E1B4B] mb-1">
+                You&apos;ve reached the {plan.name} plan&apos;s limit of {plan.productLimit} active products.
+              </p>
+              <p className="text-[11px] text-[#6B6483] mb-3">Upgrade for more room to list — your existing listings are safe either way.</p>
+              <motion.button
+                onClick={() => go?.("storePlans")}
+                {...press}
+                className="text-white text-[11.5px] font-semibold px-3.5 py-2 rounded-xl"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                See upgrade options
+              </motion.button>
+            </motion.div>
+          )}
+          {adding && (
+            <motion.div
+              key="add-form"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: DURATION.fast, ease: EASE }}
+              className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5"
+            >
+              <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} onUploadImage={onUploadImage} />
+            </motion.div>
+          )}
+        </AnimatePresence>
         {myListings.length === 0 && !adding && (
           <p className="text-[12px] text-[#6B6483]">No listings yet — add your first product above.</p>
         )}
