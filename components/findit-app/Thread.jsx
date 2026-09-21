@@ -10,11 +10,39 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" });
 }
 
+// The `interactive-widget=resizes-content` viewport meta tag (set in
+// app/layout.tsx) is the standards-track fix for the on-screen keyboard
+// covering a `fixed` bottom bar, but it's a newer directive — plenty of
+// real Android browsers still ignore it and leave the layout viewport at
+// its original height, so a `fixed inset-0` panel keeps its full height
+// and the keyboard simply overlaps its bottom edge (the message input,
+// here). `visualViewport` is the older, far more broadly supported API for
+// the same problem: it reports the actual visible area, shrinking live as
+// the keyboard opens. Tracking it directly and sizing this panel to match
+// works even on browsers that never adopted the meta tag.
+function useVisualViewportHeight() {
+  const [height, setHeight] = useState(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setHeight(vv.height);
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return height;
+}
+
 export default function Thread({ conversationId, otherParty, messages, onBack, onSend, loading }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef(null);
   const displayName = otherParty?.businessName || otherParty?.name || "Seller";
+  const viewportHeight = useVisualViewportHeight();
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -41,7 +69,8 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: DURATION.base, ease: EASE }}
-      className="fixed inset-0 bg-[#FAFAFF] z-40 flex flex-col"
+      className="fixed top-0 left-0 right-0 bg-[#FAFAFF] z-40 flex flex-col"
+      style={{ height: viewportHeight != null ? viewportHeight : "100dvh" }}
     >
       <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 pt-4 pb-3 flex items-center gap-3 shrink-0">
         <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
