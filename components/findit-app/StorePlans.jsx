@@ -4,9 +4,21 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { Check, Clock, Crown, Store, Loader2 } from "lucide-react";
 import { naira } from "./data";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { SPRING_BOUNCY, wiggleIn } from "./motion";
 
 const TIER_ICONS = { store_free: Store, store_basic: Store, store_business: Store, store_pro: Crown };
+
+// StorePlans is a browsing/marketing screen (Group A) — a local bouncy
+// stagger for the plan cards, same spirit as Home's BOUNCE_CONTAINER/ITEM.
+// The actual upgrade/switch/cancel buttons below keep a plain scale-only
+// press (no rotate) — they change a real subscription, same reasoning as
+// this session's Checkout.jsx edits.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 22, scale: 0.9, rotate: -2 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 // Every row here is either live today (real, backend-enforced functionality
 // — see the dashboard's Store analytics/branding cards and the public
@@ -64,7 +76,9 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
-        <Store size={17} className="text-[#7C3AED]" />
+        <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
+          <Store size={17} className="text-[#7C3AED]" />
+        </motion.span>
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Store plans</h1>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-1">
@@ -77,7 +91,7 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
       )}
       {storePlan.subscription.status !== "trialing" && <div className="mb-5" />}
 
-      <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="space-y-3" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {plans.map((plan) => {
           const Icon = TIER_ICONS[plan.id] || Store;
           const isCurrent = plan.id === currentPlan.id;
@@ -85,16 +99,16 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
           return (
             <motion.div
               key={plan.id}
-              variants={STAGGER_ITEM}
+              variants={BOUNCE_ITEM}
               className={`bg-white rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 border-2 transition-colors duration-200 ${
                 isCurrent ? "border-[#7C3AED]" : "border-[#ECE9F7]"
               }`}
             >
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+                  <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="w-8 h-8 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
                     <Icon size={15} className="text-[#7C3AED]" />
-                  </div>
+                  </motion.div>
                   <div>
                     <p className="text-[14px] font-bold text-[#1E1B4B]">{plan.name}</p>
                     <p className="text-[10.5px] text-[#8A8372] uppercase tracking-wide">{TIER_TAGLINE[plan.id]}</p>
@@ -130,7 +144,7 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
                 <motion.button
                   onClick={() => choose(plan.id)}
                   disabled={changing}
-                  {...press}
+                  {...bouncyPress}
                   className={`w-full text-white text-[12.5px] font-semibold py-2.5 rounded-xl ${changing ? "opacity-50" : ""}`}
                   style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                 >
@@ -141,7 +155,7 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
                 <motion.button
                   onClick={onCancelPlan}
                   disabled={changing}
-                  {...press}
+                  {...bouncyPress}
                   className="w-full text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl py-2.5 disabled:opacity-50"
                 >
                   Cancel — back to Free
@@ -152,7 +166,7 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
         })}
       </motion.div>
 
-      <motion.button onClick={() => go("seller")} {...press} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
+      <motion.button onClick={() => go("seller")} {...bouncyPress} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
         Back to dashboard
       </motion.button>
     </div>

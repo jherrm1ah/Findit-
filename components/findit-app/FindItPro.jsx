@@ -4,7 +4,14 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Crown, Check, Clock, Loader2 } from "lucide-react";
 import { naira } from "./data";
-import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, press } from "./motion";
+import { AnimatedNumber, DURATION, SPRING_BOUNCY, SPRING_SOFT, wiggleIn } from "./motion";
+
+// FindIt Pro is a browsing/celebratory screen (Group A) — a livelier
+// SPRING_BOUNCY curve for the card entrance, active badge and billing
+// toggle. The actual subscribe/cancel button keeps a plain scale-only press
+// (no rotate) — it changes a real subscription, same reasoning as this
+// session's Checkout.jsx edits.
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 // Same honesty rule as StorePlans.jsx: a feature only appears here if it's
 // genuinely backed by something real elsewhere in the app. FindIt Pro's
@@ -45,18 +52,18 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
 
   return (
     <div className="px-5 pt-6 pb-10">
-      <div className="flex items-center gap-2 mb-1">
+      <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex items-center gap-2 mb-1">
         <Crown size={17} className="text-[#7C3AED]" />
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>FindIt Pro</h1>
-      </div>
+      </motion.div>
       <p className="text-[12px] text-[#6B6483] mb-5">
         An account-wide membership, separate from a seller&apos;s own Store plan.
       </p>
 
       <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: DURATION.base, ease: EASE }}
+        initial={{ opacity: 0, y: 22, scale: 0.9 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        transition={SPRING_BOUNCY}
         className="bg-white rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 border-2 border-[#7C3AED]"
       >
         <div className="flex items-start justify-between mb-1">
@@ -68,9 +75,9 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
           </div>
           {isActive && (
             <motion.span
-              initial={{ opacity: 0, scale: 0.8 }}
+              initial={{ opacity: 0, scale: 0.5 }}
               animate={{ opacity: 1, scale: 1 }}
-              transition={SPRING_SOFT}
+              transition={SPRING_BOUNCY}
               className="text-[10px] font-semibold text-white bg-[#7C3AED] px-2 py-1 rounded-full shrink-0"
             >
               Active
@@ -94,7 +101,7 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
                   key={period}
                   onClick={() => setBillingPeriod(period)}
                   whileTap={{ scale: 0.95 }}
-                  transition={SPRING_SNAPPY}
+                  transition={SPRING_BOUNCY}
                   className={`relative text-[11.5px] font-semibold px-3 py-1.5 rounded-full ${
                     billingPeriod === period ? "text-white" : "text-[#514B67] bg-[#F5F2FC]"
                   }`}
@@ -138,7 +145,7 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
           <motion.button
             onClick={onCancel}
             disabled={changing}
-            {...press}
+            {...bouncyPress}
             className="w-full text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl py-2.5 disabled:opacity-50"
           >
             {changing ? "Working…" : "Cancel FindIt Pro"}
@@ -147,7 +154,7 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
           <motion.button
             onClick={() => onSubscribe(displayPlan.id, billingPeriod)}
             disabled={changing}
-            {...press}
+            {...bouncyPress}
             className={`w-full text-white text-[12.5px] font-semibold py-2.5 rounded-xl ${changing ? "opacity-50" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
@@ -156,7 +163,7 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
         )}
       </motion.div>
 
-      <motion.button onClick={() => go("profile")} {...press} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
+      <motion.button onClick={() => go("profile")} {...bouncyPress} className="mt-6 text-[12px] font-semibold text-[#7C3AED]">
         Back to profile
       </motion.button>
     </div>

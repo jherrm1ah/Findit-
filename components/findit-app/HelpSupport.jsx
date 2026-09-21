@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Mail, ShoppingBag, Search, Store, MessageCircle, ChevronRight, Plus } from "lucide-react";
-import { DURATION, EASE, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// A browsing/support screen (Group A) — local bouncy stagger for the FAQ
+// and tickets lists, same spirit as Home's BOUNCE_CONTAINER/ITEM.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 20, scale: 0.88, rotate: -2 },
+  visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
+};
 
 const FAQS = [
   {
@@ -62,23 +70,28 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
       </h1>
       <p className="text-[12px] text-[#6B6483] mb-6">Common questions, and how to reach us.</p>
 
-      <div className="space-y-3 mb-7">
-        {FAQS.map((f) => (
-          <div key={f.q} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4">
+      <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
+        {FAQS.map((f, i) => (
+          <motion.div key={f.q} variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4">
             <div className="flex items-center gap-2.5 mb-1.5">
-              <div className="w-8 h-8 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
+              <motion.div
+                initial={wiggleIn.initial}
+                animate={wiggleIn.animate}
+                transition={{ ...SPRING_BOUNCY, delay: i * 0.06 }}
+                className="w-8 h-8 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0"
+              >
                 <f.icon size={14} className="text-[#7C3AED]" />
-              </div>
+              </motion.div>
               <p className="text-[13px] font-semibold text-[#1E1B4B]">{f.q}</p>
             </div>
             <p className="text-[12px] text-[#6B6483] leading-relaxed">{f.a}</p>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My tickets</p>
-        <motion.button onClick={() => setOpening((v) => !v)} {...press} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+        <motion.button onClick={() => setOpening((v) => !v)} whileTap={{ scale: 0.94, rotate: -3 }} transition={SPRING_BOUNCY} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
           <Plus size={13} /> New ticket
         </motion.button>
       </div>
@@ -121,14 +134,17 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
         )}
       </AnimatePresence>
 
-      <div className="space-y-2.5 mb-7">
+      <motion.div className="space-y-2.5 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {tickets.length === 0 && !opening && (
           <p className="text-[12px] text-[#6B6483]">No support tickets yet — tap "New ticket" if you need help with something specific.</p>
         )}
-        {tickets.map((t) => (
-          <button
+        {tickets.map((t, i) => (
+          <motion.button
             key={t.id}
+            variants={BOUNCE_ITEM}
             onClick={() => onOpenTicket(t.id)}
+            whileTap={{ scale: 0.96, rotate: i % 2 === 0 ? -1.5 : 1.5 }}
+            transition={SPRING_BOUNCY}
             className={`w-full flex items-center gap-3 rounded-[20px] p-3.5 text-left border ${t.userHasUnread ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
           >
             <div className="w-9 h-9 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
@@ -146,13 +162,15 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
                 <ChevronRight size={14} className="text-[#B7AFD6]" />
               )}
             </div>
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">Still need help?</p>
-      <a
+      <motion.a
         href="mailto:virttechnologies.official@outlook.com"
+        whileTap={{ scale: 0.97, rotate: -1.5 }}
+        transition={SPRING_BOUNCY}
         className="flex items-center gap-3 rounded-[20px] p-4 bg-white border border-[#ECE9F7]"
       >
         <div className="w-10 h-10 rounded-full bg-[#F5F2FC] flex items-center justify-center shrink-0">
@@ -162,7 +180,7 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
           <p className="text-[13px] font-semibold text-[#1E1B4B]">Email support</p>
           <p className="text-[11.5px] text-[#6B6483]">virttechnologies.official@outlook.com</p>
         </div>
-      </a>
+      </motion.a>
     </div>
   );
 }

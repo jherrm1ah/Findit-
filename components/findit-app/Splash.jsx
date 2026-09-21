@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { motion } from "motion/react";
-import { DURATION, EASE, SPRING_SOFT } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
 
 export default function Splash({ onDone }) {
   useEffect(() => {
@@ -19,9 +19,9 @@ export default function Splash({ onDone }) {
       style={{ background: "#6D28D9" }}
     >
       <motion.span
-        initial={{ opacity: 0, y: 10, scale: 0.94 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={SPRING_SOFT}
+        initial={{ opacity: 0, y: 14, scale: 0.6, rotate: -6 }}
+        animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+        transition={SPRING_BOUNCY}
         className="text-[32px] font-bold"
         style={{ fontFamily: "Fraunces, serif" }}
       >

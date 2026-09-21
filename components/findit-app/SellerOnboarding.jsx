@@ -11,7 +11,19 @@ import { GROUPS } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 import { requestBrowserLocation } from "./location";
 import { api } from "./api";
-import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+
+// SellerOnboarding is a browsing/celebratory screen (Group A) for its
+// review list and success moment — a local bouncy variant, same spirit as
+// Home's BOUNCE_ITEM. Step navigation (Back/Continue/Submit) and the
+// business-type/location chips keep a plain scale-only press: they drive
+// this verification form, not a decorative browsing surface.
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_ITEM = {
+  hidden: { opacity: 0, y: 16, scale: 0.9 },
+  visible: { opacity: 1, y: 0, scale: 1, transition: SPRING_BOUNCY },
+};
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 const STEPS = ["business", "location", "verification", "review"];
 const STEP_LABELS = { business: "Business", location: "Location", verification: "Verification", review: "Review" };
@@ -102,13 +114,13 @@ function PhotoPicker({ label, files, onChange, hint }) {
     <div>
       <p className="text-[11.5px] font-medium text-[#514B67] mb-1.5">{label}</p>
       {hint && <p className="text-[10.5px] text-[#8A8372] mb-2">{hint}</p>}
-      <motion.div className="flex flex-wrap gap-2" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+      <motion.div className="flex flex-wrap gap-2" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         <AnimatePresence initial={false}>
           {files.map((f, i) => (
             <motion.div
               key={i}
               layout
-              variants={STAGGER_ITEM}
+              variants={BOUNCE_ITEM}
               exit={{ opacity: 0, scale: 0.8, transition: { duration: DURATION.fast, ease: EASE } }}
               className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]"
             >
@@ -274,9 +286,9 @@ export default function SellerOnboarding({ go, showToast, userId }) {
     return (
       <div className="px-5 pt-16 pb-10 flex flex-col items-center text-center">
         <motion.div
-          initial={{ scale: 0.6, opacity: 0 }}
-          animate={{ scale: 1, opacity: 1 }}
-          transition={SPRING_SOFT}
+          initial={{ scale: 0.5, opacity: 0, rotate: -12 }}
+          animate={{ scale: 1, opacity: 1, rotate: 0 }}
+          transition={SPRING_BOUNCY}
           className="w-16 h-16 rounded-full flex items-center justify-center mb-5"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
@@ -317,7 +329,9 @@ export default function SellerOnboarding({ go, showToast, userId }) {
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
-        <ShieldCheck size={17} className="text-[#7C3AED]" />
+        <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
+          <ShieldCheck size={17} className="text-[#7C3AED]" />
+        </motion.span>
         <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Seller verification</h1>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">
@@ -356,8 +370,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
                   key={t.value}
                   type="button"
                   onClick={() => set({ sellerType: t.value })}
-                  whileTap={{ scale: 0.97 }}
-                  transition={SPRING_SNAPPY}
+                  {...bouncyPress}
                   className={`text-left px-3 py-2.5 rounded-xl border text-[12px] font-medium transition-colors duration-150 ${
                     form.sellerType === t.value ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
                   }`}
@@ -411,8 +424,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
                   key={String(val)}
                   type="button"
                   onClick={() => set({ hasPhysicalStore: val })}
-                  whileTap={{ scale: 0.97 }}
-                  transition={SPRING_SNAPPY}
+                  {...bouncyPress}
                   className={`flex-1 px-3 py-2.5 rounded-xl border text-[12px] font-medium transition-colors duration-150 ${
                     form.hasPhysicalStore === val ? "border-[#7C3AED] bg-[#F5F2FC] text-[#7C3AED]" : "border-[#ECE9F7] text-[#514B67]"
                   }`}
@@ -496,7 +508,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
       )}
 
       {step === "review" && (
-        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
+        <motion.div className="space-y-3" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
           {[
             ["Seller type", SELLER_TYPES.find((t) => t.value === form.sellerType)?.label || "—"],
             ["What you sell", GROUPS[form.category]?.label || form.category],
@@ -504,12 +516,12 @@ export default function SellerOnboarding({ go, showToast, userId }) {
             ["Physical store", form.hasPhysicalStore === null ? "—" : form.hasPhysicalStore ? "Yes" : "No"],
             ["Evidence", `${evidenceCount} item${evidenceCount === 1 ? "" : "s"}`],
           ].map(([label, value]) => (
-            <motion.div key={label} variants={STAGGER_ITEM} className="flex items-center justify-between bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
+            <motion.div key={label} variants={BOUNCE_ITEM} className="flex items-center justify-between bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
               <p className="text-[11.5px] text-[#8A8372]">{label}</p>
               <p className="text-[12px] font-semibold text-[#1E1B4B] text-right">{value}</p>
             </motion.div>
           ))}
-          <motion.p variants={STAGGER_ITEM} className="text-[11px] text-[#6B6483] pt-2">
+          <motion.p variants={BOUNCE_ITEM} className="text-[11px] text-[#6B6483] pt-2">
             An admin will review this before your Verified badge appears. You can keep selling on FindIt while it's under review.
           </motion.p>
         </motion.div>
