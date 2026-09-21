@@ -142,7 +142,7 @@ function PhotoPicker({ label, files, onChange, hint }) {
   );
 }
 
-export default function SellerOnboarding({ go, showToast }) {
+export default function SellerOnboarding({ go, showToast, userId }) {
   const [loaded, setLoaded] = useState(false);
   const [step, setStep] = useState("business");
   const [form, setForm] = useState(EMPTY_FORM);
@@ -210,7 +210,7 @@ export default function SellerOnboarding({ go, showToast }) {
   const useMyLocation = async () => {
     setLocating(true);
     try {
-      const loc = await requestBrowserLocation();
+      const loc = await requestBrowserLocation(userId);
       set({ lat: loc.lat, lng: loc.lng });
       showToast?.("Location added — only used for verification.", "success");
     } catch {
