@@ -1585,9 +1585,13 @@ function rowToSeller(row: Row): Seller {
 
 export async function listSellers(): Promise<Seller[]> {
   const db = getDb();
+  // sellers has two foreign keys into users (user_id, and
+  // verification_reviewed_by) — an unqualified `users(phone)` embed is
+  // ambiguous and PostgREST rejects the whole query rather than guessing,
+  // so this whole call (the admin Sellers tab) threw on every real load.
   const result = await db
     .from("sellers")
-    .select("*, users(phone)")
+    .select("*, users!sellers_user_id_fkey(phone)")
     .order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing sellers") as Row[];
   return rows.map(rowToSeller);
@@ -1747,11 +1751,17 @@ export async function setSellerStatus(id: string, status: SellerStatus, reason: 
     throw new ValidationError("Give the seller a reason — never a silent rejection or suspension.");
   }
   const db = getDb();
+  // Same ambiguous-embed issue as listSellers above, but worse here: the
+  // embed is resolved as part of the SAME request as the update (Postgrest's
+  // `return=representation`), so an unqualified `users(phone)` didn't just
+  // break what came back — it rejected the whole PATCH, meaning approving,
+  // rejecting, or suspending a seller through this path never actually
+  // applied the status change at all.
   const result = await db
     .from("sellers")
     .update({ status, status_reason: status === "approved" || status === "pending" ? null : reason!.trim() })
     .eq("id", id)
-    .select("*, users(phone)")
+    .select("*, users!sellers_user_id_fkey(phone)")
     .maybeSingle();
   const row = assertNoError(result, "updating seller status") as Row | null;
   if (!row) return null;

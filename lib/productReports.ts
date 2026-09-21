@@ -140,11 +140,18 @@ export async function reportProduct(input: {
 // Admin-facing — every open report, newest first, with just enough listing
 // and reporter identity to act without a second lookup (same shape as
 // lib/support.ts#listTicketsForAdmin's users(name, phone) join).
+//
+// product_reports has TWO foreign keys into users (reporter_id, and
+// resolved_by) — an unqualified `users(name, phone)` embed is ambiguous and
+// PostgREST rejects the whole query rather than guessing, so this whole
+// call (the admin moderation queue) threw on every real report.
+// `!product_reports_reporter_id_fkey` pins it to who filed the report, not
+// whichever admin (if any) later resolved it.
 export async function listOpenProductReportsForAdmin(): Promise<AdminProductReport[]> {
   const db = getDb();
   const result = await db
     .from("product_reports")
-    .select("*, products(name, seller, image_url, moderation_status), users(name, phone)")
+    .select("*, products(name, seller, image_url, moderation_status), users!product_reports_reporter_id_fkey(name, phone)")
     .eq("status", "open")
     .order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing product reports") as Row[];

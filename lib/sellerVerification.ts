@@ -259,9 +259,15 @@ export async function getVerificationQueueCounts(): Promise<{ pending: number; n
 
 export async function listPendingVerifications(): Promise<Array<{ sellerId: string; sellerName: string; phone: string | null; overview: VerificationOverview }>> {
   const db = getDb();
+  // sellers has TWO foreign keys into users (user_id, and
+  // verification_reviewed_by) — an unqualified `users(phone)` embed is
+  // ambiguous and PostgREST rejects the whole query with PGRST201 rather
+  // than guessing, so this whole call (and therefore the admin
+  // Verification tab) threw on every real submission. `!sellers_user_id_fkey`
+  // pins it to the seller's own account, not whichever admin reviewed it.
   const result = await db
     .from("sellers")
-    .select("id, name, verification_status, users(phone)")
+    .select("id, name, verification_status, users!sellers_user_id_fkey(phone)")
     .in("verification_status", ["pending", "needs_info"])
     .order("verification_submitted_at", { ascending: true });
   const rows = assertNoError(result, "listing seller verification submissions") as Row[];
