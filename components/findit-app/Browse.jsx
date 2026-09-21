@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, X, SlidersHorizontal, CheckCircle2, BadgeCheck, Star, MapPin } from "lucide-react";
+import { Search, X, SlidersHorizontal, CheckCircle2, BadgeCheck, Star, MapPin, PackageSearch } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
 import { FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
-import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
+import { DURATION, EASE, SPRING_SNAPPY, SPRING_SOFT, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
-export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation }) {
+export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation, go }) {
   const [group, setGroup] = useState(initialGroup || "all");
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
@@ -155,9 +155,30 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
           ))}
         </AnimatePresence>
         {list.length === 0 && (
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="col-span-2 text-center text-[13px] text-[#6B6483] py-10">
-            No matches — try requesting this item instead.
-          </motion.p>
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: DURATION.base, ease: EASE }}
+            className="col-span-2 flex flex-col items-center text-center py-10 px-4"
+          >
+            <div className="w-12 h-12 rounded-full bg-[#F5F2FC] flex items-center justify-center mb-3">
+              <PackageSearch size={20} className="text-[#7C3AED]" />
+            </div>
+            <p className="text-[13px] font-semibold text-[#1E1B4B] mb-1">No matches</p>
+            <p className="text-[12px] text-[#6B6483] mb-4 max-w-[220px]">
+              Nothing here yet — post what you're looking for and let sellers come to you.
+            </p>
+            {go && (
+              <motion.button
+                onClick={() => go("request")}
+                {...press}
+                className="text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
+                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+              >
+                Request this item
+              </motion.button>
+            )}
+          </motion.div>
         )}
       </motion.div>
     </div>
