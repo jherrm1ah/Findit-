@@ -81,6 +81,11 @@ export default function App() {
       if (!userRef.current) return;
       userRef.current = null;
       sessionRef.current = Promise.resolve(null);
+      // Same reasoning as handleLogout — this is a separate logout path
+      // (triggered by any 401) that must not leave the departed account's
+      // preloaded orders/notifications sitting in mainDataRef for
+      // whoever logs in next.
+      mainDataRef.current = null;
       setUser(null);
       setPhase("login");
       showToast("Your session expired — please log in again.", "error");
@@ -121,6 +126,15 @@ export default function App() {
     } catch {
       // best-effort
     }
+    // mainDataRef is a plain ref, not state — nothing else ever clears it.
+    // Without this, it keeps holding whichever account's orders/
+    // notifications were preloaded when the page first loaded (only set
+    // once, for an already-logged-in return visit — see the effect above).
+    // The NEXT login in this same tab, by any account, would otherwise
+    // pass that stale, already-resolved promise straight into MainApp as
+    // preloadedMainData and briefly render a completely different
+    // account's real orders and notifications.
+    mainDataRef.current = null;
     setUser(null);
     setPhase("login");
   };

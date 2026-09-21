@@ -174,7 +174,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
       setLocationStatus("granted");
       return;
     }
-    const stored = getStoredLocation();
+    const stored = getStoredLocation(user?.id);
     if (stored) {
       setMyLocation({ lat: stored.lat, lng: stored.lng });
       setLocationStatus("granted");
@@ -184,7 +184,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   const handleEnableLocation = async () => {
     setLocationStatus("requesting");
     try {
-      const loc = await requestBrowserLocation();
+      const loc = await requestBrowserLocation(user?.id);
       setMyLocation(loc);
       setLocationStatus("granted");
       if (user) {
@@ -205,12 +205,15 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // Loaded once, client-side only — the initializer above intentionally
   // doesn't read localStorage directly, so the very first render matches
   // what the server would have produced and there's no hydration mismatch.
+  // Scoped to this user's id (see cart.js) — MainApp mounts fresh on every
+  // login, so `[]` deps is fine here, but the cart itself must not be
+  // whichever account was last signed in on this device.
   useEffect(() => {
-    setCart(getStoredCart());
+    setCart(getStoredCart(user?.id));
   }, []);
 
   useEffect(() => {
-    storeCart(cart);
+    storeCart(user?.id, cart);
   }, [cart]);
 
   useEffect(() => {
@@ -1483,7 +1486,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
         )}
         {screen === "sellerOnboarding" && (
           isSeller ? (
-            <SellerOnboarding go={go} showToast={showToast} />
+            <SellerOnboarding go={go} showToast={showToast} userId={user?.id} />
           ) : (
             <RoleGate
               title="Seller access needed"
