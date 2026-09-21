@@ -69,15 +69,25 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: 16 }}
       transition={{ duration: DURATION.base, ease: EASE }}
-      className="fixed top-0 left-0 right-0 bg-[#FAFAFF] z-40 flex flex-col"
+      className="fixed top-0 left-0 right-0 bg-[#FAFAFF] z-40 overflow-y-auto"
       style={{ height: viewportHeight != null ? viewportHeight : "100dvh" }}
     >
-      <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 pt-4 pb-3 flex items-center gap-3 shrink-0">
+      {/* Header and message input are `sticky`, not split into a separate
+          fixed-height flex footer, and THIS div (not an inner one) is the
+          scrollable element. That's deliberate: a focused <input> only gets
+          a mobile browser's native "scroll me above the keyboard" behavior
+          when it sits inside an actually-scrollable ancestor. Every browser
+          does that natively, with no JS and no dependence on `visualViewport`
+          firing (see useVisualViewportHeight above — real phones exist where
+          it doesn't) or on `interactive-widget` being honored. The height
+          tracking above is kept as a belt-and-suspenders improvement on
+          browsers that DO support it, not as the thing this relies on. */}
+      <div className="sticky top-0 z-10 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 pt-4 pb-3 flex items-center gap-3">
         <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         <p className="text-[15px] font-bold text-[#1E1B4B]">{displayName}</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+      <div className="px-5 py-4 space-y-3">
         {loading && <p className="text-[12px] text-[#6B6483] text-center">Loading…</p>}
         {!loading && messages.length === 0 && (
           <motion.p
@@ -116,7 +126,7 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
         <div ref={bottomRef} />
       </div>
 
-      <form onSubmit={submit} className="shrink-0 bg-white border-t border-[#ECE9F7] px-4 py-3 flex items-center gap-2">
+      <form onSubmit={submit} className="sticky bottom-0 bg-white border-t border-[#ECE9F7] px-4 py-3 flex items-center gap-2">
         <input
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
