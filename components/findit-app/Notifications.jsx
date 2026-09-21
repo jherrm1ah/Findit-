@@ -28,6 +28,22 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
         </AnimatePresence>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">Order updates, offers, and account activity.</p>
+      {notifications.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: DURATION.base, ease: EASE }}
+          className="flex flex-col items-center text-center pt-16"
+        >
+          <div className="w-14 h-14 rounded-full bg-[#F5F2FC] flex items-center justify-center mb-4">
+            <Bell size={22} className="text-[#7C3AED]" />
+          </div>
+          <p className="text-[14px] font-semibold text-[#1E1B4B] mb-1">Nothing yet</p>
+          <p className="text-[12px] text-[#6B6483] max-w-[240px]">
+            Order updates, offers on your requests, and account activity will show up here.
+          </p>
+        </motion.div>
+      ) : (
       <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
         {notifications.map((n) => {
           // Falls back to Bell rather than crashing the whole screen on a
@@ -70,6 +86,7 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
           );
         })}
       </motion.div>
+      )}
     </div>
   );
 }
