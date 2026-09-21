@@ -58,6 +58,24 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Every /api/* response is either session-scoped (an authenticated
+        // user's own orders/notifications/etc.) or cheap to recompute
+        // (categories, products) — none of it should ever be served from a
+        // browser's (or an intermediary's) HTTP cache. Route Handlers here
+        // read the request directly (NextRequest, not next/headers'
+        // cookies()), which keeps Next's own server-side Data/Route Cache
+        // out of the picture, but that says nothing about the BROWSER's
+        // cache: with no Cache-Control header at all, that's left to
+        // implicit, unaudited per-browser defaults. On a device shared
+        // between accounts — this app's now-confirmed real risk (see the
+        // cart/location/mainDataRef fixes) — an HTTP-cache hit would be the
+        // exact same class of leak at a layer the app-level fixes can't
+        // reach. no-store is unconditional and explicit, so it doesn't
+        // depend on getting a per-route allowlist right.
+        source: "/api/:path*",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+      {
         source: "/:path*",
         headers: [
           { key: "Content-Security-Policy", value: CSP },
