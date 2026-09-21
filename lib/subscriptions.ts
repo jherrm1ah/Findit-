@@ -272,6 +272,12 @@ async function resolveEffectiveSubscription(sub: Subscription): Promise<Subscrip
 // that status as "not currently Pro."
 async function expirePlatformSubscription(sub: Subscription, reason: "trial_ended" | "expired" | "cancelled"): Promise<Subscription> {
   const db = getDb();
+  // Conditioned on status still matching what the caller read (resolving a
+  // lapse, or an explicit cancel) — this also runs from plain read paths
+  // (resolveEffectiveSubscription, via getPlatformSubscription), so a lost
+  // race here must not throw the way an explicit user action would; on a
+  // miss, someone else already wrote this row since we read it, so re-read
+  // and return their result instead of silently overwriting it.
   const updateResult = await db
     .from("subscriptions")
     .update({
@@ -281,15 +287,27 @@ async function expirePlatformSubscription(sub: Subscription, reason: "trial_ende
       updated_at: new Date().toISOString(),
     })
     .eq("id", sub.id)
+    .eq("status", sub.status)
     .select()
-    .single();
-  const row = assertNoError(updateResult, "expiring platform subscription") as Row;
+    .maybeSingle();
+  const row = assertNoError(updateResult, "expiring platform subscription") as Row | null;
+  if (!row) {
+    const latest = await getRawSubscription(sub.ownerType, sub.ownerId);
+    if (!latest) throw new Error(`Subscription ${sub.id} disappeared mid-update`);
+    return latest;
+  }
   await logEvent(sub.id, reason, { fromPlanId: sub.planId, wasTrial: sub.status === "trialing" });
   return rowToSubscription(row);
 }
 
 async function downgradeToFree(sub: Subscription, reason: "trial_ended" | "expired" | "cancelled"): Promise<Subscription> {
   const db = getDb();
+  // Same conditioned-write reasoning as expirePlatformSubscription above:
+  // this also runs from plain read paths (resolveEffectiveSubscription via
+  // getSellerSubscription), so a lost race re-reads and returns the other
+  // writer's result instead of throwing or silently overwriting it — e.g.
+  // a lapse-driven downgrade must not stomp an upgrade a webhook just
+  // applied to this same row moments earlier.
   const updateResult = await db
     .from("subscriptions")
     .update({
@@ -304,9 +322,16 @@ async function downgradeToFree(sub: Subscription, reason: "trial_ended" | "expir
       updated_at: new Date().toISOString(),
     })
     .eq("id", sub.id)
+    .eq("plan_id", sub.planId)
+    .eq("status", sub.status)
     .select()
-    .single();
-  const row = assertNoError(updateResult, "reverting subscription to Free") as Row;
+    .maybeSingle();
+  const row = assertNoError(updateResult, "reverting subscription to Free") as Row | null;
+  if (!row) {
+    const latest = await getRawSubscription(sub.ownerType, sub.ownerId);
+    if (!latest) throw new Error(`Subscription ${sub.id} disappeared mid-update`);
+    return latest;
+  }
   await logEvent(sub.id, reason, { fromPlanId: sub.planId, wasTrial: sub.status === "trialing" });
   if (sub.ownerType === "store") {
     const freePlan = await getPlan(FREE_STORE_PLAN_ID);
@@ -453,6 +478,13 @@ export async function changePlatformSubscription(
   // path below, not a second insert.
   const existingRaw = await getRawSubscription("platform", userId);
   if (existingRaw) {
+    // Conditioned on plan_id/status still matching exactly what this call
+    // just read — not just the row id. Without this, the Paystack webhook
+    // confirming a paid upgrade and a concurrent cancel/another change both
+    // read the same pre-write row and race: whichever write lands second
+    // silently overwrites the other with no error, no refund, nothing —
+    // e.g. a just-charged upgrade getting clobbered back to a prior plan.
+    // Same pattern as confirmDelivery/reportOrderIssue in lib/repo.ts.
     const updateResult = await db
       .from("subscriptions")
       .update({
@@ -467,9 +499,14 @@ export async function changePlatformSubscription(
         updated_at: new Date().toISOString(),
       })
       .eq("id", existingRaw.id)
+      .eq("plan_id", existingRaw.planId)
+      .eq("status", existingRaw.status)
       .select()
-      .single();
-    const row = assertNoError(updateResult, "changing platform subscription") as Row;
+      .maybeSingle();
+    const row = assertNoError(updateResult, "changing platform subscription") as Row | null;
+    if (!row) {
+      throw new ValidationError("Your subscription just changed — refresh and try again.");
+    }
     await logEvent(existingRaw.id, "renewed", { planId: newPlan.id, status });
     return rowToSubscription(row);
   }
@@ -675,6 +712,14 @@ export async function changeStorePlan(
     );
   }
 
+  // Conditioned on plan_id/status still matching what this call just read —
+  // not just the row id. Without this, a paid upgrade confirmed by the
+  // Paystack webhook and a concurrent cancel/plan change (a retried client
+  // action, a double-submit) both read the same pre-write row, and
+  // whichever write lands second silently overwrites the other: a seller's
+  // just-charged upgrade could get clobbered back to a prior plan with no
+  // error and no refund triggered. Same pattern as confirmDelivery/
+  // reportOrderIssue in lib/repo.ts.
   const updateResult = await db
     .from("subscriptions")
     .update({
@@ -689,9 +734,14 @@ export async function changeStorePlan(
       updated_at: new Date().toISOString(),
     })
     .eq("id", current.id)
+    .eq("plan_id", current.planId)
+    .eq("status", current.status)
     .select()
-    .single();
-  const row = assertNoError(updateResult, "changing store plan") as Row;
+    .maybeSingle();
+  const row = assertNoError(updateResult, "changing store plan") as Row | null;
+  if (!row) {
+    throw new ValidationError("Your store's subscription just changed — refresh and try again.");
+  }
 
   const direction = newPlan.sortOrder > currentPlan.sortOrder ? "upgraded" : newPlan.sortOrder < currentPlan.sortOrder ? "downgraded" : "changed";
   await logEvent(current.id, direction, { fromPlanId: currentPlan.id, toPlanId: newPlan.id, status });
