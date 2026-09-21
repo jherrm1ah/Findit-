@@ -145,7 +145,19 @@ export default async function StorePage({ params }: { params: { slug: string } }
         // eslint-disable-next-line react/no-danger -- JSON.stringify of our
         // own server-built object above, not user HTML; this is the
         // standard Next.js pattern for embedding JSON-LD.
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        //
+        // jsonLd.name/description/address embed a seller's own business
+        // name/description/location verbatim — real user input, stored with
+        // no HTML stripping (see lib/auth.ts#becomeSeller). JSON.stringify
+        // does NOT escape "<", so a business name containing
+        // "</script><script>…" would close this tag early and inject a
+        // real, executing <script> into every visitor's page — a stored
+        // XSS reachable by anyone who views this seller's public store, not
+        // just the seller. Escaping "<" to its unicode form is the standard
+        // mitigation for embedding JSON inside a <script> tag: it's a no-op
+        // for JSON-LD parsers (still valid, still decodes to the same "<"),
+        // but the raw HTML can no longer contain a literal "</script>".
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
       />
       {profile.bannerUrl ? (
         <div className="relative h-36 sm:h-48 w-full overflow-hidden bg-[#EDE9FB]">
