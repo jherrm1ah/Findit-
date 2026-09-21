@@ -4,7 +4,12 @@ import { useState } from "react";
 import { motion } from "motion/react";
 import { CreditCard, ShieldCheck, CheckCircle2 } from "lucide-react";
 import { STEPS, naira } from "./data";
-import { DURATION, EASE, SPRING_SOFT, press } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
+
+// A touch bouncier than the shared `press` — scale only, no rotate/tilt.
+// This screen handles real money, so it keeps the playful-elsewhere tilt
+// out entirely, but a livelier press still reads as "fun," not "unstable."
+const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 // Real payment, not a claim — the order sits "Awaiting payment" (see
 // order.paymentStatus) until this screen's "Pay now" actually completes a
@@ -75,7 +80,7 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
             <motion.div
               initial={{ scale: 0.6, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              transition={SPRING_SOFT}
+              transition={SPRING_BOUNCY}
               className="relative w-20 h-20 rounded-full flex items-center justify-center shadow-lg shadow-[#7C3AED]/30"
               style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
             >
@@ -153,7 +158,7 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
           <motion.button
             onClick={pay}
             disabled={paying}
-            {...press}
+            {...bouncyPress}
             className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl mb-6 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
@@ -196,10 +201,10 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
       )}
 
       <div className="flex gap-2">
-        <motion.button onClick={() => go("account")} {...press} className="flex-1 text-white text-[13px] font-semibold py-3 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+        <motion.button onClick={() => go("account")} {...bouncyPress} className="flex-1 text-white text-[13px] font-semibold py-3 rounded-xl" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           Track in My orders
         </motion.button>
-        <motion.button onClick={() => go("home")} {...press} className="px-5 text-[13px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl">
+        <motion.button onClick={() => go("home")} {...bouncyPress} className="px-5 text-[13px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl">
           Home
         </motion.button>
       </div>

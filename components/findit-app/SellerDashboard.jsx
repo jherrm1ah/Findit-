@@ -8,7 +8,16 @@ import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
-import { DURATION, EASE, STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
+import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
+
+// A bouncier mount pop for this dashboard's listing/order cards — scale
+// only, no rotate/tilt. This screen manages real inventory and payouts, so
+// it stays a notch more grounded than Home's card grid (which does tilt).
+const bounceCard = { initial: { opacity: 0, y: 10, scale: 0.96 }, animate: { opacity: 1, y: 0, scale: 1 }, transition: SPRING_BOUNCY };
+const ORDER_ITEM = { hidden: { opacity: 0, y: 14, scale: 0.97 }, visible: { opacity: 1, y: 0, scale: 1, transition: SPRING_BOUNCY } };
+// For positive/promotional actions only (add listing, boost) — delete/edit
+// keep the plain `press` feedback so destructive actions never feel playful.
+const bouncyPress = { whileTap: { scale: 0.93 }, transition: SPRING_BOUNCY };
 
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open";
@@ -1154,7 +1163,7 @@ export default function SellerDashboard({
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">My listings</p>
         {!adding && !atListingLimit && (
-          <motion.button onClick={() => setAdding(true)} {...press} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
+          <motion.button onClick={() => setAdding(true)} {...bouncyPress} className="flex items-center gap-1 text-[11px] font-semibold text-[#7C3AED]">
             <Plus size={13} /> Add listing
           </motion.button>
         )}
@@ -1201,7 +1210,7 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No listings yet — add your first product above.</p>
         )}
         {myListings.map((p) => (
-          <div key={p.id} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false || p.moderationStatus === "removed" ? "opacity-60" : ""}`}>
+          <motion.div key={p.id} {...bounceCard} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false || p.moderationStatus === "removed" ? "opacity-60" : ""}`}>
             {editingId === p.id ? (
               <ListingForm
                 initial={{
@@ -1295,7 +1304,7 @@ export default function SellerDashboard({
                               key={bp.id}
                               onClick={() => boostListing(p.id, bp.id)}
                               disabled={boostingId !== null}
-                              {...press}
+                              {...bouncyPress}
                               className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
                               style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                             >
@@ -1309,7 +1318,7 @@ export default function SellerDashboard({
                 </AnimatePresence>
               </>
             )}
-          </div>
+          </motion.div>
         ))}
       </div>
       </>
@@ -1340,7 +1349,7 @@ export default function SellerDashboard({
           const nextStatus = nextSellerStep(o.status);
           const awaitingBuyer = !nextStatus && o.status !== "Delivered";
           return (
-            <motion.div key={o.id} layout="position" variants={STAGGER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
+            <motion.div key={o.id} layout="position" variants={ORDER_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <Package size={13} className="text-[#7C3AED] shrink-0" />
