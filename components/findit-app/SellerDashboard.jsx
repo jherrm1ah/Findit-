@@ -1236,46 +1236,60 @@ export default function SellerDashboard({
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {p.active !== false && p.moderationStatus !== "removed" && (
-                      <button
+                      <motion.button
                         onClick={() => setBoostPickerId(boostPickerId === p.id ? null : p.id)}
                         aria-label={`Boost ${p.name}`}
+                        aria-expanded={boostPickerId === p.id}
+                        {...press}
                         className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center"
                       >
                         <TrendingUp size={13} className="text-[#7C3AED]" />
-                      </button>
+                      </motion.button>
                     )}
-                    <button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
+                    <motion.button onClick={() => setEditingId(p.id)} aria-label={`Edit ${p.name}`} {...press} className="w-8 h-8 rounded-lg bg-[#F5F2FC] flex items-center justify-center">
                       <Pencil size={13} className="text-[#7C3AED]" />
-                    </button>
-                    <button
+                    </motion.button>
+                    <motion.button
                       onClick={() => remove(p.id)}
                       disabled={deletingId !== null}
                       aria-label={`Delete ${p.name}`}
+                      {...press}
                       className="w-8 h-8 rounded-lg bg-[#FDF0F4] flex items-center justify-center disabled:opacity-50"
                     >
                       <Trash2 size={13} className="text-[#E64980]" />
-                    </button>
+                    </motion.button>
                   </div>
                 </div>
-                {boostPickerId === p.id && (
-                  <div className="mt-2 pt-2.5 border-t border-[#ECE9F7] px-1">
-                    <p className="text-[11px] text-[#6B6483] mb-2">Pay to move this listing to the front of Home & Browse:</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {boostPlans.length === 0 && <p className="text-[11px] text-[#8A8372]">Boosting isn&apos;t available right now.</p>}
-                      {boostPlans.map((bp) => (
-                        <button
-                          key={bp.id}
-                          onClick={() => boostListing(p.id, bp.id)}
-                          disabled={boostingId !== null}
-                          className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
-                          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-                        >
-                          {boostingId === p.id ? "Working…" : `${bp.durationDays}d — ${naira(bp.price)}`}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                <AnimatePresence initial={false}>
+                  {boostPickerId === p.id && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: "auto" }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: DURATION.fast, ease: EASE }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-2 pt-2.5 border-t border-[#ECE9F7] px-1">
+                        <p className="text-[11px] text-[#6B6483] mb-2">Pay to move this listing to the front of Home & Browse:</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {boostPlans.length === 0 && <p className="text-[11px] text-[#8A8372]">Boosting isn&apos;t available right now.</p>}
+                          {boostPlans.map((bp) => (
+                            <motion.button
+                              key={bp.id}
+                              onClick={() => boostListing(p.id, bp.id)}
+                              disabled={boostingId !== null}
+                              {...press}
+                              className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                              style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                            >
+                              {boostingId === p.id ? "Working…" : `${bp.durationDays}d — ${naira(bp.price)}`}
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </>
             )}
           </div>
