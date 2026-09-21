@@ -376,11 +376,21 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     navigateTo(previous || "home");
   };
 
+  // A ref, not state — this only needs to gate re-entrancy inside the
+  // handler itself, never to trigger a render. Without it, a fast double-tap
+  // on the same heart fires both toggles from the same pre-response
+  // `savedIds`, so they read the same `wasSaved` and send save+unsave (or
+  // unsave+save) concurrently; whichever response lands last silently wins,
+  // leaving the UI out of sync with the server until the next full reload.
+  const pendingSaveToggles = useRef(new Set()).current;
+
   const handleToggleSaved = async (productId) => {
     if (!user) {
       showToast("Log in to save items.", "error");
       return;
     }
+    if (pendingSaveToggles.has(productId)) return;
+    pendingSaveToggles.add(productId);
     const wasSaved = savedIds.includes(productId);
     setSavedIds((ids) => (wasSaved ? ids.filter((id) => id !== productId) : [...ids, productId]));
     try {
@@ -392,6 +402,8 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     } catch (err) {
       setSavedIds((ids) => (wasSaved ? [...ids, productId] : ids.filter((id) => id !== productId)));
       showToast(err.message || "Couldn't update your saved items — try again.", "error");
+    } finally {
+      pendingSaveToggles.delete(productId);
     }
   };
 
@@ -1503,6 +1515,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               onUploadImage={handleUploadImage}
               onMessageBuyer={handleMessageBuyer}
               myLocation={myLocation}
+              showToast={showToast}
               storePlan={storePlan}
               storeBranding={storeBranding}
               onUpdateBranding={handleUpdateStoreBranding}

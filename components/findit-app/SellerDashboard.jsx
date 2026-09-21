@@ -543,7 +543,8 @@ function ReviewRow({ review, onReply }) {
       setReplying(false);
       setText("");
     } catch {
-      // MainApp already surfaced a toast; keep the box open so they can retry
+      // ReviewsCard's reply() already surfaced a toast; keep the box open
+      // (and the typed text) so they can retry without losing what they wrote.
     } finally {
       setSending(false);
     }
@@ -606,7 +607,7 @@ function ReviewRow({ review, onReply }) {
 // lib/reviews.ts table (GET/PATCH /api/sellers/me/reviews). Self-fetching,
 // same pattern as SellerDirectory.jsx, since nothing else on this screen
 // needs a seller's reviews.
-function ReviewsCard() {
+function ReviewsCard({ showToast }) {
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -627,8 +628,13 @@ function ReviewsCard() {
   }, []);
 
   const reply = async (reviewId, text) => {
-    const updated = await api.replyToReview(reviewId, text);
-    setReviews((rs) => rs.map((r) => (r.id === reviewId ? updated : r)));
+    try {
+      const updated = await api.replyToReview(reviewId, text);
+      setReviews((rs) => rs.map((r) => (r.id === reviewId ? updated : r)));
+    } catch (err) {
+      showToast?.(err.message || "Couldn't send your reply — try again.", "error");
+      throw err;
+    }
   };
 
   if (loading || reviews.length === 0) return null;
@@ -799,6 +805,7 @@ export default function SellerDashboard({
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
   onMessageBuyer,
   myLocation,
+  showToast,
   storePlan, go,
   storeBranding, onUpdateBranding, savingBranding,
   verification,
@@ -1279,7 +1286,7 @@ export default function SellerDashboard({
 
       {activeTab === "store" && (
       <>
-      <ReviewsCard />
+      <ReviewsCard showToast={showToast} />
       <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
       <PayoutAccountCard
         payoutAccount={payoutAccount}
