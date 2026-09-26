@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
 import Onboarding from "./Onboarding";
+import Welcome from "./Welcome";
 import Login from "./Login";
 import MainApp from "./MainApp";
 import ToastHost from "./Toast";
@@ -34,8 +35,13 @@ function markOnboardingSeen() {
 }
 
 export default function App() {
-  const [phase, setPhase] = useState("splash"); // splash → onboarding → login → main
+  const [phase, setPhase] = useState("splash"); // splash → onboarding → welcome → login → main
   const [user, setUser] = useState(null);
+  // Which of Login's own modes (its `mode` state, default "login") to open
+  // into — set by which of Welcome's two buttons was tapped, so "Get
+  // Started" and "I already have an account" actually lead somewhere
+  // different instead of both landing on the same screen.
+  const [loginMode, setLoginMode] = useState("login");
   const sessionRef = useRef(null);
   // Products/orders/notifications for a returning, already-signed-in user —
   // kicked off as soon as the session check below resolves, so it overlaps
@@ -115,9 +121,33 @@ export default function App() {
     }
   };
 
-  const handleOnboardingDone = () => {
+  // Distinct from goToMainOrLogin (still used by handleSplashDone and by
+  // every later "no session" case — session-expiry, logout): those are a
+  // RETURNING visitor's paths, who should never see the first-run "Get
+  // Started" choice again just to log back in. This one runs exactly once
+  // per device, right after the tutorial, and only for a genuinely new
+  // visitor with no live session — an already-signed-in one (session found
+  // at the very first page load, tutorial never seen yet either) skips
+  // straight to main, same as goToMainOrLogin would.
+  const handleOnboardingDone = async () => {
     markOnboardingSeen();
-    goToMainOrLogin();
+    const sessionUser = await sessionRef.current;
+    if (sessionUser) {
+      setUser(sessionUser);
+      setPhase("main");
+    } else {
+      setPhase("welcome");
+    }
+  };
+
+  const handleGetStarted = () => {
+    setLoginMode("signup");
+    setPhase("login");
+  };
+
+  const handleHaveAccount = () => {
+    setLoginMode("login");
+    setPhase("login");
   };
 
   const handleLogout = async () => {
@@ -144,10 +174,13 @@ export default function App() {
     content = <Splash key="splash" onDone={handleSplashDone} />;
   } else if (phase === "onboarding") {
     content = <Onboarding key="onboarding" onDone={handleOnboardingDone} />;
+  } else if (phase === "welcome") {
+    content = <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} />;
   } else if (phase === "login") {
     content = (
       <Login
         key="login"
+        initialMode={loginMode}
         onDone={(loggedInUser) => {
           setUser(loggedInUser);
           setPhase("main");
