@@ -22,8 +22,8 @@ function formatMMSS(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
-export default function Login({ onDone, showToast }) {
-  const [mode, setMode] = useState("login"); // login | signup | reset
+export default function Login({ onDone, showToast, initialMode = "login" }) {
+  const [mode, setMode] = useState(initialMode); // login | signup | reset
   const [step, setStep] = useState("form"); // form | code | newPassword
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");

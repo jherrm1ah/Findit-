@@ -2,7 +2,8 @@
 
 import { useEffect } from "react";
 import { motion } from "motion/react";
-import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
+import Image from "next/image";
+import { DURATION, EASE } from "./motion";
 
 export default function Splash({ onDone }) {
   useEffect(() => {
@@ -15,19 +16,9 @@ export default function Splash({ onDone }) {
       onClick={onDone}
       exit={{ opacity: 0 }}
       transition={{ duration: DURATION.base, ease: EASE }}
-      className="fixed inset-0 z-50 flex items-center justify-center cursor-pointer"
-      style={{ background: "#6D28D9" }}
+      className="fixed inset-0 z-50 cursor-pointer"
     >
-      <motion.span
-        initial={{ opacity: 0, y: 14, scale: 0.6, rotate: -6 }}
-        animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
-        transition={SPRING_BOUNCY}
-        className="text-[32px] font-bold"
-        style={{ fontFamily: "Fraunces, serif" }}
-      >
-        <span className="text-white">Find</span>
-        <span style={{ color: "#FCD34D" }}>It</span>
-      </motion.span>
+      <Image src="/splash-brand.png" alt="FindIt" fill priority sizes="100vw" className="object-cover" />
     </motion.div>
   );
 }
