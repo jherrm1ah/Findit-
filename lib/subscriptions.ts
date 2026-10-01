@@ -606,6 +606,11 @@ export async function getStorePlanOverview(sellerId: string) {
     plan,
     usage: { activeProducts: activeCount, label: formatUsageLabel(activeCount, plan.productLimit) },
     plans,
+    // The dashboard's storefront-template picker reads this directly off
+    // the same "everything my Store plan screen needs" call it already
+    // makes — see storeTemplatesForLevel above for why each entry carries
+    // its own `locked` flag rather than this just being the unlocked subset.
+    storeTemplates: storeTemplatesForLevel(plan.customizationLevel),
   };
 }
 
@@ -693,6 +698,131 @@ export async function assertCanCustomizeStore(sellerId: string): Promise<void> {
     const next = plans.find((p) => p.sortOrder > plan.sortOrder && p.customizationLevel !== "none");
     const suggestion = next ? ` Available on ${next.name} and above.` : "";
     throw new ValidationError(`Store branding isn't available on the ${plan.name} plan.${suggestion}`);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Storefront layout templates (migration 031)                               */
+/*                                                                            */
+/*  customizationLevel has always had four named tiers (none/basic/advanced/ */
+/*  full), but until now every tier above "none" unlocked the exact same    */
+/*  thing (a logo/banner upload) — the tiers themselves did nothing. This    */
+/*  catalog is what finally makes basic/advanced/full mean something        */
+/*  different from each other: which storefront LAYOUTS a seller can pick.  */
+/* -------------------------------------------------------------------------- */
+
+export type StoreTemplateId = "classic" | "compact" | "gallery" | "showcase";
+
+export type StoreTemplate = {
+  id: StoreTemplateId;
+  name: string;
+  description: string;
+  minCustomizationLevel: SubscriptionPlan["customizationLevel"];
+};
+
+// Ordered so a plain array `.find`/comparison by index would already work,
+// but kept explicit (a rank map) rather than relying on array order, so
+// reordering STORE_TEMPLATES below can never silently change who unlocks
+// what.
+const CUSTOMIZATION_LEVEL_RANK: Record<SubscriptionPlan["customizationLevel"], number> = {
+  none: 0,
+  basic: 1,
+  advanced: 2,
+  full: 3,
+};
+
+// 'classic' is deliberately the ONE template every plan (including Free)
+// can render — it's the layout that already existed before this feature,
+// not a new design. The other three are real, structurally different
+// layouts (see app/store/[slug]/StoreTemplate.tsx), not just recolors.
+export const STORE_TEMPLATES: StoreTemplate[] = [
+  {
+    id: "classic",
+    name: "Classic",
+    description: "The standard FindIt storefront — banner, logo, and a clean product grid.",
+    minCustomizationLevel: "none",
+  },
+  {
+    id: "compact",
+    name: "Compact",
+    description: "A tighter layout that gets buyers to your products faster, with less scrolling.",
+    minCustomizationLevel: "basic",
+  },
+  {
+    id: "gallery",
+    name: "Gallery",
+    description: "Product-forward — a larger, image-led grid takes center stage right under your header.",
+    minCustomizationLevel: "advanced",
+  },
+  {
+    id: "showcase",
+    name: "Showcase",
+    description: "An editorial, premium layout with a full-width banner and a featured About section.",
+    minCustomizationLevel: "full",
+  },
+];
+
+export const DEFAULT_STORE_TEMPLATE: StoreTemplateId = "classic";
+
+export function isStoreTemplateId(value: string): value is StoreTemplateId {
+  return STORE_TEMPLATES.some((t) => t.id === value);
+}
+
+function templateRequiredRank(id: StoreTemplateId): number {
+  // STORE_TEMPLATES always has an entry for every StoreTemplateId (the type
+  // is derived from it), so this lookup cannot miss.
+  return CUSTOMIZATION_LEVEL_RANK[STORE_TEMPLATES.find((t) => t.id === id)!.minCustomizationLevel];
+}
+
+// Pure — the one rule for "does this plan level actually unlock this
+// template." Used both to gate the WRITE (assertCanUseStoreTemplate below)
+// and to decide what the PUBLIC store page renders for a seller whose plan
+// has since lapsed (see lib/sellerPublicProfile.ts) — same "never trust a
+// stored value past what the live plan currently allows" rule
+// getStorePlanDisplayMap/isSubscriptionLapsed already apply to the Pro
+// badge and featured placement above.
+export function isTemplateUnlockedAtLevel(id: StoreTemplateId, level: SubscriptionPlan["customizationLevel"]): boolean {
+  return CUSTOMIZATION_LEVEL_RANK[level] >= templateRequiredRank(id);
+}
+
+// What the PUBLIC store page should actually render. Falls back to the
+// universal default rather than ever rendering a template the seller's
+// CURRENT plan doesn't unlock, even when that's what's stored on their row
+// — e.g. they picked Showcase on Pro, then their subscription lapsed back
+// to Free. An unrecognized stored value (should never happen, but this is
+// a plain text column with no DB-level enum) falls back the same way.
+export function effectiveStoreTemplate(stored: string | null, level: SubscriptionPlan["customizationLevel"]): StoreTemplateId {
+  if (stored && isStoreTemplateId(stored) && isTemplateUnlockedAtLevel(stored, level)) return stored;
+  return DEFAULT_STORE_TEMPLATE;
+}
+
+// What the seller's OWN dashboard shows as choices — the full catalog,
+// each annotated with whether their CURRENT plan actually unlocks it. A
+// locked template is shown (with what it needs), never silently hidden —
+// the same "show the locked state, don't hide it" pattern StorePlans.jsx
+// and BrandingCard already use for every other plan-gated feature.
+export function storeTemplatesForLevel(
+  level: SubscriptionPlan["customizationLevel"]
+): Array<StoreTemplate & { locked: boolean }> {
+  return STORE_TEMPLATES.map((t) => ({ ...t, locked: !isTemplateUnlockedAtLevel(t.id, level) }));
+}
+
+// Real server-side gate for the WRITE, same spirit as assertCanCustomizeStore
+// above but specific to which template was asked for, not just "any
+// customization at all" — a Basic seller sending "showcase" directly to the
+// API must be rejected here even though they pass assertCanCustomizeStore.
+export async function assertCanUseStoreTemplate(sellerId: string, templateId: string): Promise<void> {
+  if (!isStoreTemplateId(templateId)) {
+    throw new ValidationError("Unknown store template.");
+  }
+  const { plan } = await getSellerSubscription(sellerId);
+  if (!isTemplateUnlockedAtLevel(templateId, plan.customizationLevel)) {
+    const template = STORE_TEMPLATES.find((t) => t.id === templateId)!;
+    const requiredRank = templateRequiredRank(templateId);
+    const plans = await listPlans("store");
+    const next = plans.find((p) => CUSTOMIZATION_LEVEL_RANK[p.customizationLevel] >= requiredRank);
+    const suggestion = next ? ` Available on ${next.name} and above.` : "";
+    throw new ValidationError(`The "${template.name}" template isn't available on the ${plan.name} plan.${suggestion}`);
   }
 }
 

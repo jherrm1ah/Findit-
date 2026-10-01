@@ -32,7 +32,7 @@ const FEATURE_ROWS = (plan) =>
       ? { text: "Unlimited active products", live: true }
       : { text: `Up to ${plan.productLimit} active products`, live: true },
     plan.analyticsLevel !== "none" ? { text: `${cap(plan.analyticsLevel)} store analytics`, live: true } : null,
-    plan.customizationLevel !== "none" ? { text: "Store logo & banner customization", live: true } : null,
+    plan.customizationLevel !== "none" ? { text: "Store logo, banner & storefront layout templates", live: true } : null,
     plan.featuredListingAccess ? { text: "Featured placement on Home & Browse", live: true } : null,
     plan.proBadge ? { text: "Pro Store badge", live: true } : null,
     plan.prioritySupport ? { text: "Priority support", live: false } : null,

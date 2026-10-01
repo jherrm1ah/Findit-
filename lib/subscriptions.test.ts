@@ -1,5 +1,14 @@
 import { describe, it, expect } from "vitest";
-import { selectProductsToDeactivate, formatUsageLabel, isSubscriptionLapsed, normalizedMonthlyRevenue, hasConsumedTrial } from "./subscriptions";
+import {
+  selectProductsToDeactivate,
+  formatUsageLabel,
+  isSubscriptionLapsed,
+  normalizedMonthlyRevenue,
+  hasConsumedTrial,
+  isTemplateUnlockedAtLevel,
+  effectiveStoreTemplate,
+  storeTemplatesForLevel,
+} from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
 // lib/subscriptions.ts (getSellerSubscription, changeStorePlan, etc.) need a
@@ -156,5 +165,76 @@ describe("hasConsumedTrial", () => {
 
   it("treats a missing/null detail as no match rather than throwing", () => {
     expect(hasConsumedTrial([{ type: "cancelled", detail: null }], "store_pro")).toBe(false);
+  });
+});
+
+// Basic/advanced/full used to all unlock the identical thing (a logo/
+// banner upload) — these are the rules that finally make the four
+// customizationLevel tiers mean something different from each other.
+describe("isTemplateUnlockedAtLevel", () => {
+  it("classic is unlocked at every level, including none (Free)", () => {
+    expect(isTemplateUnlockedAtLevel("classic", "none")).toBe(true);
+    expect(isTemplateUnlockedAtLevel("classic", "full")).toBe(true);
+  });
+
+  it("compact needs at least basic", () => {
+    expect(isTemplateUnlockedAtLevel("compact", "none")).toBe(false);
+    expect(isTemplateUnlockedAtLevel("compact", "basic")).toBe(true);
+    expect(isTemplateUnlockedAtLevel("compact", "advanced")).toBe(true);
+  });
+
+  it("gallery needs at least advanced — basic alone isn't enough", () => {
+    expect(isTemplateUnlockedAtLevel("gallery", "basic")).toBe(false);
+    expect(isTemplateUnlockedAtLevel("gallery", "advanced")).toBe(true);
+    expect(isTemplateUnlockedAtLevel("gallery", "full")).toBe(true);
+  });
+
+  it("showcase is exclusive to full — advanced isn't enough", () => {
+    expect(isTemplateUnlockedAtLevel("showcase", "advanced")).toBe(false);
+    expect(isTemplateUnlockedAtLevel("showcase", "full")).toBe(true);
+  });
+});
+
+// The exact trust failure this guards against: a seller picks Showcase on
+// Pro, then their subscription lapses back to Free — the PUBLIC page must
+// never keep rendering Showcase just because that's still what's stored on
+// the row, the same "never show a lapsed seller anything but their real
+// plan" rule getStorePlanDisplayMap already applies to the Pro badge.
+describe("effectiveStoreTemplate", () => {
+  it("renders the stored template when the current plan still unlocks it", () => {
+    expect(effectiveStoreTemplate("gallery", "advanced")).toBe("gallery");
+    expect(effectiveStoreTemplate("showcase", "full")).toBe("showcase");
+  });
+
+  it("falls back to classic once the live plan no longer unlocks the stored template", () => {
+    expect(effectiveStoreTemplate("showcase", "basic")).toBe("classic");
+    expect(effectiveStoreTemplate("gallery", "none")).toBe("classic");
+  });
+
+  it("falls back to classic for null, empty, or an unrecognized stored value", () => {
+    expect(effectiveStoreTemplate(null, "full")).toBe("classic");
+    expect(effectiveStoreTemplate("", "full")).toBe("classic");
+    expect(effectiveStoreTemplate("some_removed_template", "full")).toBe("classic");
+  });
+});
+
+describe("storeTemplatesForLevel", () => {
+  it("locks nothing for full (Pro) — every template is available", () => {
+    const templates = storeTemplatesForLevel("full");
+    expect(templates.every((t) => !t.locked)).toBe(true);
+    expect(templates.map((t) => t.id)).toEqual(["classic", "compact", "gallery", "showcase"]);
+  });
+
+  it("Free (none) sees every template listed, but only classic unlocked", () => {
+    const templates = storeTemplatesForLevel("none");
+    expect(templates.find((t) => t.id === "classic")?.locked).toBe(false);
+    expect(templates.filter((t) => t.id !== "classic").every((t) => t.locked)).toBe(true);
+  });
+
+  it("basic unlocks classic and compact only", () => {
+    const templates = storeTemplatesForLevel("basic");
+    expect(templates.find((t) => t.id === "compact")?.locked).toBe(false);
+    expect(templates.find((t) => t.id === "gallery")?.locked).toBe(true);
+    expect(templates.find((t) => t.id === "showcase")?.locked).toBe(true);
   });
 });

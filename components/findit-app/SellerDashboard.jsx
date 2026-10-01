@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check, LayoutTemplate } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
@@ -343,23 +343,24 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
 // (see SellerProfile.jsx). The server enforces the same gate independently
 // (assertCanCustomizeStore) — this UI gate is a convenience, not the
 // security boundary.
-function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage, go }) {
+function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, saving, onUploadImage, go }) {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
-  // Each upload's onUpdateBranding call fills in the OTHER field from
-  // `branding` as it stood at the moment this specific upload started —
-  // it's a closure over a prop value, never re-read after the await. If
-  // both uploads are allowed to run at once (the natural way a seller sets
-  // up branding for the first time — logo, then immediately banner, while
-  // the logo is still mid-upload), the second one's stale `branding` still
-  // shows the first's field as unset, and its onUpdateBranding call
-  // overwrites the field the first upload just successfully saved — no
-  // error, just a silently vanished logo or banner. Disabling BOTH controls
-  // while EITHER is busy (not just each one's own flag) serializes them, so
-  // by the time a second upload can start, `branding` has already re-
-  // rendered with the first one's result.
-  const busy = uploadingLogo || uploadingBanner;
+  const [selectingTemplate, setSelectingTemplate] = useState(null); // template id being applied, or null
+  // Each save's onUpdateBranding call fills in the OTHER fields from
+  // `branding` as it stood at the moment this specific save started — it's
+  // a closure over a prop value, never re-read after the await. If two
+  // saves are allowed to run at once (a logo upload immediately followed
+  // by picking a template, or either upload overlapping the other), the
+  // second one's stale `branding` still shows the first's field as unset,
+  // and its onUpdateBranding call overwrites what the first save just
+  // successfully saved — no error, just something silently reverting.
+  // Disabling every control while ANY of them is busy (not just each
+  // one's own flag) serializes them, so by the time the next save can
+  // start, `branding` has already re-rendered with the previous result.
+  const busy = uploadingLogo || uploadingBanner || selectingTemplate !== null;
   const locked = !plan || plan.customizationLevel === "none";
+  const currentTemplate = branding?.storeTemplate ?? "classic";
 
   const upload = async (file, kind) => {
     const setUploading = kind === "logo" ? setUploadingLogo : setUploadingBanner;
@@ -377,6 +378,18 @@ function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage,
     }
   };
 
+  const selectTemplate = async (templateId) => {
+    if (templateId === currentTemplate || busy) return;
+    setSelectingTemplate(templateId);
+    try {
+      await onUpdateBranding(branding?.logoUrl ?? null, branding?.bannerUrl ?? null, templateId);
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setSelectingTemplate(null);
+    }
+  };
+
   return (
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
       <div className="flex items-center gap-2 mb-3">
@@ -388,7 +401,7 @@ function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage,
           <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
           <div className="min-w-0">
             <p className="text-[12px] text-[#514B67] mb-2">
-              Add a store logo and banner on Basic Store and above — they show on your public storefront.
+              Add a store logo/banner and pick a storefront layout on Basic Store and above — they show on your public storefront.
             </p>
             <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
               See upgrade options
@@ -396,33 +409,74 @@ function BrandingCard({ plan, branding, onUpdateBranding, saving, onUploadImage,
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3">
-          {[
-            { key: "logo", label: "Logo", url: branding?.logoUrl, uploading: uploadingLogo, className: "w-16 h-16 rounded-full" },
-            { key: "banner", label: "Banner", url: branding?.bannerUrl, uploading: uploadingBanner, className: "w-full h-16 rounded-lg" },
-          ].map(({ key, label, url, uploading, className }) => (
-            <div key={key}>
-              <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide mb-1.5">{label}</p>
-              <div className={`relative bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
-                {url ? <NextImage src={url} alt="" fill sizes="120px" className="object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            {[
+              { key: "logo", label: "Logo", url: branding?.logoUrl, uploading: uploadingLogo, className: "w-16 h-16 rounded-full" },
+              { key: "banner", label: "Banner", url: branding?.bannerUrl, uploading: uploadingBanner, className: "w-full h-16 rounded-lg" },
+            ].map(({ key, label, url, uploading, className }) => (
+              <div key={key}>
+                <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide mb-1.5">{label}</p>
+                <div className={`relative bg-[#F5F2FC] overflow-hidden flex items-center justify-center mb-2 ${className}`}>
+                  {url ? <NextImage src={url} alt="" fill sizes="120px" className="object-cover" /> : <ImageIcon size={16} className="text-[#B7AFD6]" />}
+                </div>
+                <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || busy ? "opacity-50 pointer-events-none" : ""}`}>
+                  {uploading ? "Uploading…" : url ? "Change" : "Upload"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={saving || busy}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = "";
+                      if (file) upload(file, key);
+                    }}
+                  />
+                </label>
               </div>
-              <label className={`inline-block text-[11px] font-semibold text-[#7C3AED] px-2.5 py-1.5 rounded-lg border border-[#7C3AED]/30 cursor-pointer ${saving || busy ? "opacity-50 pointer-events-none" : ""}`}>
-                {uploading ? "Uploading…" : url ? "Change" : "Upload"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  disabled={saving || busy}
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    e.target.value = "";
-                    if (file) upload(file, key);
-                  }}
-                />
-              </label>
+            ))}
+          </div>
+
+          {storeTemplates.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <LayoutTemplate size={12} className="text-[#8A8372]" />
+                <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide">Storefront layout</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {storeTemplates.map((t) => {
+                  const selected = t.id === currentTemplate;
+                  // A locked template always navigates to the upgrade
+                  // screen, regardless of `busy` — only an unlocked
+                  // selection needs serializing against other saves.
+                  const disabledForBusy = busy && !t.locked;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => (t.locked ? go?.("storePlans") : selectTemplate(t.id))}
+                      disabled={disabledForBusy}
+                      className={`text-left rounded-xl border p-2.5 transition ${
+                        selected ? "border-[#7C3AED] bg-[#F5F2FC]" : "border-[#ECE9F7] bg-white"
+                      } ${t.locked ? "opacity-70" : ""} ${disabledForBusy ? "opacity-50 pointer-events-none" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-0.5">
+                        <p className="text-[12px] font-semibold text-[#1E1B4B]">{t.name}</p>
+                        {t.locked ? (
+                          <Lock size={11} className="text-[#8A8372] shrink-0" />
+                        ) : selected ? (
+                          <CheckCircle2 size={13} className="text-[#7C3AED] shrink-0" />
+                        ) : null}
+                      </div>
+                      <p className="text-[10.5px] text-[#8A8372] leading-snug">{t.description}</p>
+                      {selectingTemplate === t.id && <p className="text-[10px] text-[#7C3AED] mt-1">Applying…</p>}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -1327,7 +1381,15 @@ export default function SellerDashboard({
       {activeTab === "store" && (
       <>
       <ReviewsCard showToast={showToast} />
-      <BrandingCard plan={plan} branding={storeBranding} onUpdateBranding={onUpdateBranding} saving={savingBranding} onUploadImage={onUploadImage} go={go} />
+      <BrandingCard
+        plan={plan}
+        branding={storeBranding}
+        storeTemplates={storePlan?.storeTemplates ?? []}
+        onUpdateBranding={onUpdateBranding}
+        saving={savingBranding}
+        onUploadImage={onUploadImage}
+        go={go}
+      />
       <PayoutAccountCard
         payoutAccount={payoutAccount}
         banks={banks}
