@@ -6,7 +6,7 @@ import {
   Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight, Home as HomeIcon,
   ListOrdered, Bell, Menu, ShoppingBag, ShoppingCart, SlidersHorizontal,
-  LayoutDashboard, MapPin, Store, Tag,
+  LayoutDashboard, MapPin, Store, Tag, UserRound,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { Logo, ArtBlock } from "./shared";
@@ -18,6 +18,30 @@ const BANNERS = [
   { tag: "Request-first", title: "Can't find it?\nAsk FindIt.", cta: "Request now", action: "request" },
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
+
+// A passive nudge, not a wall — browsing never requires an account (see
+// App.jsx's requireAuth), so this is the one place that gently suggests
+// signing in rather than forcing it. Dismissed once, it stays dismissed on
+// this device, same try/catch-wrapped localStorage pattern as
+// App.jsx#hasSeenWelcome — a guest who's already said "not now" shouldn't
+// see this again every single visit.
+const SIGNIN_NUDGE_DISMISSED_KEY = "findit_signin_nudge_dismissed";
+
+function hasDismissedSigninNudge() {
+  try {
+    return localStorage.getItem(SIGNIN_NUDGE_DISMISSED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markSigninNudgeDismissed() {
+  try {
+    localStorage.setItem(SIGNIN_NUDGE_DISMISSED_KEY, "1");
+  } catch {
+    // best-effort — private browsing / storage blocked, just re-shows next visit
+  }
+}
 
 // Home is the one browsing surface this app leans playful on — checkout,
 // payment and forms elsewhere keep the base system's restrained feel (see
@@ -74,12 +98,21 @@ function CartIconButton({ count, onClick }) {
 export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
-  orders = [], myRequests = [], cartCount = 0,
+  orders = [], myRequests = [], cartCount = 0, onRequireAuth,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [sellerSearch, setSellerSearch] = useState("");
+  // Lazy initializer, not a plain `useState(false)` + effect — reading
+  // localStorage synchronously on first render is what stops this from
+  // flashing on screen for one frame on every load before disappearing.
+  const [signinNudgeDismissed, setSigninNudgeDismissed] = useState(hasDismissedSigninNudge);
+
+  const dismissSigninNudge = () => {
+    setSigninNudgeDismissed(true);
+    markSigninNudgeDismissed();
+  };
 
   // The promo banner used to only change on a manual dot tap — auto-advance
   // makes the loudest moment on the screen actually keep moving, the way a
@@ -232,6 +265,32 @@ export default function Home({
             {locationStatus === "requesting" ? "…" : "Allow"}
           </button>
           <button onClick={() => setBannerDismissed(true)} aria-label="Dismiss" className="shrink-0">
+            <X size={14} className="text-[#8A8372]" />
+          </button>
+        </div>
+      )}
+
+      {/* A guest never has to see this to use the app — browsing, search,
+          product pages, and cart all work with no account (see App.jsx's
+          requireAuth, which only ever opens on an actual gated action). This
+          is purely a soft, dismissible nudge, not a second gate. */}
+      {!role && !signinNudgeDismissed && (
+        <div className="flex items-center gap-3 bg-[#F5F2FC] border border-[#ECE9F7] rounded-[16px] px-4 py-3 mb-5">
+          <div className="w-8 h-8 rounded-full bg-white flex items-center justify-center shrink-0">
+            <UserRound size={15} className="text-[#7C3AED]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12px] font-semibold text-[#1E1B4B]">Sign in for the full experience</p>
+            <p className="text-[10.5px] text-[#6B6483]">Save items, track orders, and message sellers faster.</p>
+          </div>
+          <button
+            onClick={() => onRequireAuth?.()}
+            className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-full shrink-0"
+            style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          >
+            Sign in
+          </button>
+          <button onClick={dismissSigninNudge} aria-label="Dismiss" className="shrink-0">
             <X size={14} className="text-[#8A8372]" />
           </button>
         </div>

@@ -7,7 +7,7 @@
 // logic underneath it, not the HTTP/Paystack-call plumbing.
 
 import { getDb, assertNoError } from "./db";
-import { ValidationError, getOrder, notifySellerOfNewOrder, Order } from "./repo";
+import { ValidationError, getOrder, notifySellerOfNewOrder, notifyBestEffort, findUserForSellerId, Order } from "./repo";
 import {
   isPaystackConfigured,
   initiateTransfer,
@@ -125,6 +125,18 @@ export async function confirmOrderPayment(orderId: string): Promise<void> {
 /*  Seller payouts                                                       */
 /* ------------------------------------------------------------------ */
 
+// A seller used to have no way of finding out whether their money actually
+// arrived short of opening My store and checking the payout history
+// themselves — "Delivery confirmed" only ever told the BUYER escrow had
+// been released, never the seller whether the transfer on the other end
+// succeeded, needed an admin's manual help, or outright failed. Best-effort
+// and never allowed to interrupt the payout flow it's reporting on.
+async function notifyPayoutOutcome(sellerId: string, title: string, body: string): Promise<void> {
+  const seller = await findUserForSellerId(sellerId);
+  if (!seller) return;
+  await notifyBestEffort({ userId: seller.id, type: "payout", title, body });
+}
+
 // Called once a buyer confirms delivery (escrow_status -> 'released').
 // Real money movement (a Paystack Transfer) when the platform has Paystack
 // configured AND the seller has a payout account on file; otherwise a
@@ -195,6 +207,14 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
         paid_at: finalStatus === "paid" ? new Date().toISOString() : null,
       })
       .eq("id", id);
+    const amountStr = `₦${order.sellerPayoutAmount.toLocaleString("en-NG")}`;
+    if (finalStatus === "paid") {
+      await notifyPayoutOutcome(order.sellerId, "Payout sent", `${amountStr} for "${order.item}" is on its way to your bank account.`);
+    } else if (finalStatus === "manual_required") {
+      await notifyPayoutOutcome(order.sellerId, "Payout needs manual handling", `Your payout of ${amountStr} for "${order.item}" needs an admin to finish it — we'll update you once it's paid.`);
+    }
+    // "processing" gets no notification of its own — it's the normal,
+    // expected in-flight state for a transfer, not an outcome yet.
   } catch (err) {
     // A PaystackNetworkError means we never got a response at all — the
     // transfer may have actually gone through on Paystack's side before the
@@ -216,6 +236,11 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
             : String(err),
       })
       .eq("id", id);
+    await notifyPayoutOutcome(
+      order.sellerId,
+      "Payout needs manual handling",
+      `Your payout of ₦${order.sellerPayoutAmount.toLocaleString("en-NG")} for "${order.item}" hit an issue and needs an admin to sort out — we'll update you once it's paid.`
+    );
   }
 }
 
@@ -231,10 +256,19 @@ async function recordManualPayout(order: Order, reason: string): Promise<void> {
     failure_reason: reason,
   });
   // Same de-dupe reasoning as above — a payout row for this order already
-  // existing isn't an error worth surfacing.
-  if (result.error && result.error.code !== "23505") {
-    throw new Error(`recording manual payout: ${result.error.message}`);
+  // existing isn't an error worth surfacing. Also skip the notification in
+  // that case: a duplicate call means the seller was already told once.
+  if (result.error) {
+    if (result.error.code !== "23505") {
+      throw new Error(`recording manual payout: ${result.error.message}`);
+    }
+    return;
   }
+  await notifyPayoutOutcome(
+    order.sellerId,
+    "Payout needs manual handling",
+    `Your payout for "${order.item}" (₦${order.sellerPayoutAmount.toLocaleString("en-NG")}) is held up and needs an admin to settle it manually — we'll update you once it's paid.`
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -404,10 +438,17 @@ export async function markPayoutPaidManually(payoutId: string): Promise<void> {
     .update({ status: "paid", paid_at: new Date().toISOString(), failure_reason: null })
     .eq("id", payoutId)
     .in("status", ["manual_required", "failed"])
-    .select("id")
+    .select("id, seller_id, amount, order_id")
     .maybeSingle();
   const row = assertNoError(result, "marking payout paid") as Row | null;
   if (!row) throw new ValidationError("That payout isn't awaiting manual settlement.");
+  const order = await getOrder(row.order_id as string);
+  const amountStr = `₦${Number(row.amount).toLocaleString("en-NG")}`;
+  await notifyPayoutOutcome(
+    row.seller_id as string,
+    "Payout sent",
+    order ? `${amountStr} for "${order.item}" has been paid out to you manually — check your bank account.` : `${amountStr} has been paid out to you manually — check your bank account.`
+  );
 }
 
 export type TransactionListItem = {
