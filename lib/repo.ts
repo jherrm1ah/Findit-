@@ -2325,6 +2325,31 @@ export async function acceptOffer(
     userId,
   });
 
+  // Before this, a winning seller only ever found out indirectly, later,
+  // once the buyer actually paid (notifySellerOfNewOrder) — and a losing
+  // seller never found out at all, their offer just silently stopped
+  // mattering once the request flipped to 'matched'. Best-effort and after
+  // the order already exists, same reasoning as notifySellerOfNewOrder:
+  // offer.seller_id is a sellers.id, not a users.id, so it needs the same
+  // resolution those other notifications already do.
+  const otherOffersResult = await db.from("offers").select("*").eq("request_id", requestId).neq("id", offerId);
+  const otherOffers = assertNoError(otherOffersResult, "loading other offers") as Row[];
+  const notifyOfferOutcome = async (offerRow: Row, accepted: boolean) => {
+    const sId = offerRow.seller_id as string | null;
+    const seller = sId ? await findUserForSellerId(sId) : await findUserByBusinessName(offerRow.seller as string);
+    if (!seller) return;
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "offer",
+      title: accepted ? "Your offer was accepted" : "Offer not selected",
+      body: accepted
+        ? `The buyer accepted your offer on "${request.title}".`
+        : `The buyer went with another offer on "${request.title}".`,
+    });
+  };
+  await notifyOfferOutcome(offer, true);
+  await Promise.all(otherOffers.map((o) => notifyOfferOutcome(o, false)));
+
   return { order };
 }
 
@@ -2599,6 +2624,26 @@ export async function sendMessage(
     .select()
     .single();
   const row = assertNoError(result, "sending message") as Row;
+
+  // The in-thread 4s poll (see Thread.jsx) only ever reaches someone who
+  // already has this exact conversation open — the recipient's only other
+  // signal was the notification bell, which never fired for a message at
+  // all. buyer_id/seller_id on `conversations` are real users.id values
+  // already (see getOrCreateConversation), not a seller business-id that
+  // needs resolving like order.sellerId does elsewhere in this file.
+  const conversation = await getConversation(conversationId);
+  if (conversation) {
+    const recipientId = conversation.buyerId === senderId ? conversation.sellerId : conversation.buyerId;
+    const sender = await getPublicUser(senderId);
+    const senderName = sender?.businessName || sender?.name || "Someone";
+    await notifyBestEffort({
+      userId: recipientId,
+      type: "message",
+      title: `New message from ${senderName}`,
+      body: body.trim().length > 120 ? `${body.trim().slice(0, 117)}...` : body.trim(),
+    });
+  }
+
   return {
     id: row.id as string,
     conversationId: row.conversation_id as string,

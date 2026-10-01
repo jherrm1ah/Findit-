@@ -2,7 +2,7 @@ import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
   Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus, PackageSearch,
-  Bell, MessageCircle,
+  Bell, MessageCircle, Wallet, ShieldAlert,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -97,6 +97,18 @@ export const NOTIFICATION_ICONS = {
   request: PackageSearch,
   admin_broadcast: Bell,
   support_reply: MessageCircle,
+  // A new message landed in a conversation the recipient didn't have open
+  // — see lib/repo.ts#sendMessage. The 4s in-thread poll only ever covered
+  // someone already looking at that exact thread.
+  message: MessageCircle,
+  // A seller's payout actually succeeded, needs manual handling, or was
+  // later settled manually by an admin — see lib/payments.ts.
+  payout: Wallet,
+  // The outcome of a product report, told to the person who filed it (the
+  // seller-facing "your listing was flagged/removed" side reuses `seller`,
+  // below, since it's the same "status of your account" voice as an
+  // application approved/rejected/suspended).
+  moderation: ShieldAlert,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];

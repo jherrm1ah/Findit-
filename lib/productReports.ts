@@ -1,5 +1,6 @@
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./errors";
+import { notifyBestEffort, findUserForSellerId, findUserByBusinessName } from "./repo";
 
 type Row = Record<string, unknown>;
 
@@ -196,7 +197,19 @@ export async function resolveProductReport(
     .maybeSingle();
   const row = assertNoError(result, "resolving product report") as Row | null;
   if (!row) throw new ValidationError("That report has already been resolved.");
-  return rowToReport(row);
+  const report = rowToReport(row);
+
+  await notifyBestEffort({
+    userId: report.reporterId,
+    type: "moderation",
+    title: outcome === "resolved" ? "Your report led to action" : "Your report was reviewed",
+    body:
+      outcome === "resolved"
+        ? "Thanks for the heads-up — we took action on the listing you reported."
+        : "We looked into the listing you reported and didn't find a policy violation.",
+  });
+
+  return report;
 }
 
 const PRODUCT_MODERATION_STATUSES: ProductModerationStatus[] = ["active", "under_review", "removed"];
@@ -230,10 +243,34 @@ export async function moderateProduct(
       moderated_at: new Date().toISOString(),
     })
     .eq("id", productId)
-    .select("id, moderation_status, moderation_reason")
+    .select("id, name, seller, seller_id, moderation_status, moderation_reason")
     .maybeSingle();
   const row = assertNoError(result, "moderating product") as Row | null;
   if (!row) return null;
+
+  // Tell the seller only when this actually changes their standing
+  // (flagged or removed) — restoring a listing to "active" is a relief, not
+  // news worth a notification, and this is the same "status of your
+  // account" voice as an application approved/rejected/suspended, so it
+  // reuses that notification type rather than introducing a new one.
+  if (status === "under_review" || status === "removed") {
+    const sellerId = row.seller_id as string | null;
+    const businessName = row.seller as string | null;
+    const seller = sellerId ? await findUserForSellerId(sellerId) : businessName ? await findUserByBusinessName(businessName) : null;
+    if (seller) {
+      const productName = (row.name as string | null) ?? "your listing";
+      await notifyBestEffort({
+        userId: seller.id,
+        type: "seller",
+        title: status === "removed" ? "Your listing was removed" : "Your listing was flagged for review",
+        body:
+          status === "removed"
+            ? `"${productName}" was removed${cleanReason ? `: ${cleanReason}` : "."}`
+            : `"${productName}" is under review${cleanReason ? `: ${cleanReason}` : "."}`,
+      });
+    }
+  }
+
   return {
     id: row.id as string,
     moderationStatus: row.moderation_status as ProductModerationStatus,
