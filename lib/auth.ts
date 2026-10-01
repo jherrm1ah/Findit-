@@ -842,3 +842,53 @@ export async function isAdminSessionUnlocked(req: NextRequest): Promise<boolean>
   }
   return true;
 }
+
+// Same work as getSessionUser + isAdminSessionUnlocked called back to back
+// (which is what every admin route used to do, via lib/adminRoles.ts), but
+// in one sessions-table read instead of two separate ones against the same
+// row by the same token. AdminQueue fires upward of a dozen admin API calls
+// in parallel on every visit to the Admin tab, and each one used to pay
+// that redundant round trip on its own — this is purely a perf
+// consolidation of requireAdmin/requireAnyAdmin/requireSuperAdmin's own
+// checks, not a new auth path, and is used ONLY by those three, never as a
+// replacement for getSessionUser elsewhere (isAdminSessionUnlocked itself
+// is untouched and still used by GET /api/admin/session).
+export async function getAdminSessionUser(req: NextRequest): Promise<{ user: User; unlocked: boolean } | null> {
+  const token = sessionTokenFromRequest(req);
+  if (!token) return null;
+  const db = getDb();
+
+  const sessionResult = await db
+    .from("sessions")
+    .select("user_id, expires_at, admin_unlocked_at")
+    .eq("token", token)
+    .maybeSingle();
+
+  // Same fail-closed handling as isAdminSessionUnlocked above, and safe to
+  // apply to the whole lookup here (not just the unlock half) — this
+  // combined function is only ever used to decide ADMIN access, which must
+  // already fail closed when migration 020 is missing. A non-admin route's
+  // own session lookup (getSessionUser/getUserForToken) never selects this
+  // column and is completely unaffected.
+  if (sessionResult.error?.code === "42703") {
+    console.error(
+      "[admin-session] sessions.admin_unlocked_at is missing — apply supabase/migrations/020_admin_session_unlock.sql. Admin access stays closed until then."
+    );
+    return null;
+  }
+  const session = assertNoError(sessionResult, "checking admin session") as Row | null;
+  if (!session || new Date(session.expires_at as string) <= new Date()) return null;
+
+  const userResult = await db.from("users").select("*").eq("id", session.user_id).maybeSingle();
+  const row = assertNoError(userResult, "loading session user") as Row | null;
+  if (!row || row.suspended) return null;
+  const user = rowToUser(row);
+
+  const unlockedAt = (session.admin_unlocked_at as string | null) ?? null;
+  const unlocked = isUnlockFresh(unlockedAt);
+  if (unlocked && unlockedAt && Date.now() - new Date(unlockedAt).getTime() > ADMIN_UNLOCK_REFRESH_AFTER_MS) {
+    await unlockAdminSession(token);
+  }
+
+  return { user, unlocked };
+}

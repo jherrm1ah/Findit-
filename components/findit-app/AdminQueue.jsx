@@ -2125,7 +2125,25 @@ function AnalyticsAdmin({ onLoadAnalytics, showToast }) {
 // this just surfaces whichever are currently non-zero in one feed, and
 // tapping one jumps straight to that tab via the same onNavigate the
 // Overview tab's StatCards already use.
-function AlertsCenter({ alerts, onNavigate }) {
+function AlertsCenter({ alerts, failed, onRetry, onNavigate }) {
+  // Distinct from "Nothing needs attention" on purpose — a failed fetch
+  // used to be swallowed into the same empty-array state as a genuine
+  // all-clear, so a real backend error read as reassurance instead of a
+  // problem. An admin trusting that false all-clear is worse than no
+  // alert center at all.
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load alerts — this isn&rsquo;t the same as &ldquo;nothing needs attention.&rdquo;</p>
+          <button onClick={onRetry} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!alerts) return <p className="text-[12px] text-[#6B6483]">Loading alerts…</p>;
   if (alerts.length === 0) {
     return <p className="text-[12px] text-[#6B6483]">Nothing needs attention right now.</p>;
@@ -2161,12 +2179,18 @@ function AlertsCenter({ alerts, onNavigate }) {
 
 function AlertsAdmin({ onLoadAlerts, onNavigate }) {
   const [alerts, setAlerts] = useState(null);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    onLoadAlerts().then(setAlerts).catch(() => setAlerts([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadAlerts()
+      .then(setAlerts)
+      .catch(() => setFailed(true));
+  };
 
-  return <AlertsCenter alerts={alerts} onNavigate={onNavigate} />;
+  useEffect(load, []);
+
+  return <AlertsCenter alerts={alerts} failed={failed} onRetry={load} onNavigate={onNavigate} />;
 }
 
 const TICKET_STATUS_FILTERS = [

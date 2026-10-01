@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSessionUser, isAdminSessionUnlocked, User } from "./auth";
+import { getAdminSessionUser, User } from "./auth";
 import { hasAdminPermission, AdminPermission } from "./adminRolesLevels";
 
 export { ADMIN_ROLES, hasAdminPermission, type AdminRole, type AdminPermission } from "./adminRolesLevels";
@@ -24,10 +24,11 @@ function unlockRequired(): NextResponse {
 // scoped sub-role. Returns the authenticated admin User on success, or a
 // ready-to-return 403 NextResponse otherwise.
 export async function requireAdmin(req: NextRequest, permission: AdminPermission): Promise<User | NextResponse> {
-  const user = await getSessionUser(req);
-  if (!user || user.role !== "admin") {
+  const session = await getAdminSessionUser(req);
+  if (!session || session.user.role !== "admin") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
+  const { user, unlocked } = session;
   if (!hasAdminPermission(user.adminRole, permission)) {
     return NextResponse.json(
       { error: `Your admin role (${user.adminRole ?? "none"}) doesn't include ${permission} access.` },
@@ -36,7 +37,7 @@ export async function requireAdmin(req: NextRequest, permission: AdminPermission
   }
   // Checked last, so a role that was never going to be allowed is told that
   // plainly rather than being sent to sign in again for nothing.
-  if (!(await isAdminSessionUnlocked(req))) return unlockRequired();
+  if (!unlocked) return unlockRequired();
   return user;
 }
 
@@ -49,12 +50,12 @@ export async function requireAdmin(req: NextRequest, permission: AdminPermission
 // permission should use requireAdmin instead; this is not a lighter guard,
 // only a less specific one.
 export async function requireAnyAdmin(req: NextRequest): Promise<User | NextResponse> {
-  const user = await getSessionUser(req);
-  if (!user || user.role !== "admin") {
+  const session = await getAdminSessionUser(req);
+  if (!session || session.user.role !== "admin") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
-  if (!(await isAdminSessionUnlocked(req))) return unlockRequired();
-  return user;
+  if (!session.unlocked) return unlockRequired();
+  return session.user;
 }
 
 // The two admin-creation actions are checked directly against super_admin
@@ -63,13 +64,14 @@ export async function requireAnyAdmin(req: NextRequest): Promise<User | NextResp
 // domain: a lesser admin role must never be able to create a more powerful
 // one, so this isn't just another AdminPermission value.
 export async function requireSuperAdmin(req: NextRequest): Promise<User | NextResponse> {
-  const user = await getSessionUser(req);
-  if (!user || user.role !== "admin") {
+  const session = await getAdminSessionUser(req);
+  if (!session || session.user.role !== "admin") {
     return NextResponse.json({ error: "Admin access required." }, { status: 403 });
   }
+  const { user, unlocked } = session;
   if (user.adminRole !== "super_admin") {
     return NextResponse.json({ error: "Only a Super Admin can do that." }, { status: 403 });
   }
-  if (!(await isAdminSessionUnlocked(req))) return unlockRequired();
+  if (!unlocked) return unlockRequired();
   return user;
 }
