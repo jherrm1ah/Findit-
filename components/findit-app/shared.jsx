@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { Search, Lock, LogOut, Home as HomeIcon } from "lucide-react";
+import { Search, Lock, LogOut, LogIn, Home as HomeIcon } from "lucide-react";
 import { ART } from "./data";
 
 export function Pill({ children, tone = "stone" }) {
@@ -67,7 +67,11 @@ export function Wordmark({ size = "text-[16px]" }) {
 // is the primary action — this is almost always an accidental tap, not a
 // buyer deciding they want to sign out — so logging out is a secondary,
 // much less prominent option, not the only button on the screen.
-export function RoleGate({ title, message, onGoHome, onLogout, logoutLabel = "Log out" }) {
+// onLogin is for a GUEST hitting a role-gated screen (no account at all,
+// as opposed to the wrong one) — opens the auth prompt right from here
+// instead of making them find their own way to it. Shown ahead of "Take me
+// home" since it's the one action that actually gets them past this screen.
+export function RoleGate({ title, message, onGoHome, onLogin, onLogout, logoutLabel = "Log out" }) {
   return (
     <div className="px-5 pt-16 pb-10 flex flex-col items-center text-center min-h-[70vh]">
       <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
@@ -75,11 +79,24 @@ export function RoleGate({ title, message, onGoHome, onLogout, logoutLabel = "Lo
       </div>
       <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>{title}</h1>
       <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">{message}</p>
+      {onLogin && (
+        <button
+          onClick={onLogin}
+          className="flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl mb-3"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          <LogIn size={14} /> Log in or sign up
+        </button>
+      )}
       {onGoHome && (
         <button
           onClick={onGoHome}
-          className="flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl mb-3"
-          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+          className={
+            onLogin
+              ? "flex items-center gap-1.5 text-[#6B6483] text-[12.5px] font-medium px-3 py-2 mb-1"
+              : "flex items-center gap-1.5 text-white text-[13px] font-semibold px-5 py-3 rounded-xl mb-3"
+          }
+          style={onLogin ? undefined : { background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >
           <HomeIcon size={14} /> Take me home
         </button>

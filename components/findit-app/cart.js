@@ -40,3 +40,26 @@ export function storeCart(userId, items) {
     // best-effort — private browsing / storage blocked, cart still works for this tab via React state
   }
 }
+
+// Guest browsing now adds real items to a real ("guest"-keyed) cart before
+// any account exists — see App.jsx's requireAuth flow. Without this, the
+// moment that guest actually logs in or signs up, MainApp remounts keyed to
+// their new user id (same account-isolation reasoning as the comment up
+// top) and reads an empty cart from that id's own, never-yet-written
+// bucket — their cart would visibly vanish at the exact moment they
+// authenticate. Called once, right when a login/signup succeeds, before
+// the caller hands the new user to React; a no-op if there was no guest
+// cart to begin with. Matching product lines add quantities together
+// rather than duplicating the row.
+export function mergeGuestCartIntoUser(userId) {
+  if (!userId) return;
+  const guestItems = getStoredCart(null);
+  if (guestItems.length === 0) return;
+  const merged = new Map(getStoredCart(userId).map((it) => [it.productId, it]));
+  for (const item of guestItems) {
+    const existing = merged.get(item.productId);
+    merged.set(item.productId, existing ? { ...existing, qty: existing.qty + item.qty } : item);
+  }
+  storeCart(userId, [...merged.values()]);
+  storeCart(null, []);
+}

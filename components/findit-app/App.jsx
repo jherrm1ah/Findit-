@@ -8,34 +8,22 @@ import Login from "./Login";
 import MainApp from "./MainApp";
 import ToastHost from "./Toast";
 import { api, setSessionExpiredHandler } from "./api";
-
-// Whether this browser has ever gotten past the first-run Welcome screen —
-// same try/catch-wrapped localStorage pattern as location.js#getStoredLocation.
-// Without this, EVERY page refresh forced a returning, already-logged-in
-// user back through "Get Started" / "I already have an account" before
-// their session was even checked — indistinguishable, from the outside,
-// from being logged out on every reload.
-const WELCOME_SEEN_KEY = "findit_onboarding_seen";
-
-function hasSeenWelcome() {
-  try {
-    return localStorage.getItem(WELCOME_SEEN_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markWelcomeSeen() {
-  try {
-    localStorage.setItem(WELCOME_SEEN_KEY, "1");
-  } catch {
-    // best-effort — private browsing / storage blocked, just re-shows once
-  }
-}
+import { mergeGuestCartIntoUser } from "./cart";
 
 export default function App() {
-  const [phase, setPhase] = useState("splash"); // splash → welcome → login → main
+  // Just the splash → main handoff now — browsing itself was never
+  // supposed to need an account (see requireAuth below), so there's no
+  // "welcome"/"login" phase that gates reaching MainApp anymore. Those two
+  // screens still exist, just as an on-demand overlay (authPrompt, below)
+  // triggered by the handful of actions that actually need one.
+  const [phase, setPhase] = useState("splash"); // splash → main
   const [user, setUser] = useState(null);
+  // null = no overlay. "welcome" = the Get Started / I already have an
+  // account choice. "login" = the actual phone+password (or OTP, for a new
+  // signup) form. Rendered ON TOP of MainApp, not swapped in for it, so a
+  // guest mid-checkout who gets asked to log in never loses their screen,
+  // scroll position, or cart — MainApp simply never unmounts for this.
+  const [authPrompt, setAuthPrompt] = useState(null);
   // Which of Login's own modes (its `mode` state, default "login") to open
   // into — set by which of Welcome's two buttons was tapped, so "Get
   // Started" and "I already have an account" actually lead somewhere
@@ -49,7 +37,8 @@ export default function App() {
   // Without this, every refresh showed the branded splash, then a SECOND,
   // separate "Loading FindIt…" spinner stacked right after it while MainApp
   // fetched its own data from scratch — most noticeable on a slower
-  // connection. See MainApp.jsx's preloadedMainData prop.
+  // connection. See MainApp.jsx's preloadedMainData prop. Never set at all
+  // for a guest — nothing to preload before there's an account.
   const mainDataRef = useRef(null);
 
   const [toasts, setToasts] = useState([]);
@@ -82,66 +71,60 @@ export default function App() {
   useEffect(() => {
     setSessionExpiredHandler(() => {
       // Several in-flight requests can each come back 401 at once — react to
-      // the first and ignore the rest, so this bounces to login once.
+      // the first and ignore the rest, so this only fires once.
       if (!userRef.current) return;
       userRef.current = null;
       sessionRef.current = Promise.resolve(null);
       // Same reasoning as handleLogout — this is a separate logout path
       // (triggered by any 401) that must not leave the departed account's
       // preloaded orders/notifications sitting in mainDataRef for
-      // whoever logs in next.
+      // whoever's signed into this device next.
       mainDataRef.current = null;
       setUser(null);
       // Whoever this was already has an account — never reopen Login on
       // whatever mode a much earlier "Get Started" tap left `loginMode` in.
       setLoginMode("login");
-      setPhase("login");
-      showToast("Your session expired — please log in again.", "error");
+      showToast("Your session expired — you're browsing as a guest again. Log in to pick up where you left off.", "error");
+      // Deliberately NOT forcing the auth overlay open here — they drop
+      // back to guest browsing (MainApp remounts guest-scoped, see its
+      // user?.id-keyed `key` below) and only see Login again if they
+      // attempt something that actually needs it, same as any other guest.
     });
     return () => setSessionExpiredHandler(null);
   }, []);
 
-  // A returning user with a live session skips straight past the login screen.
-  const goToMainOrLogin = async () => {
+  const handleSplashDone = async () => {
     const sessionUser = await sessionRef.current;
-    if (sessionUser) {
-      setUser(sessionUser);
-      setPhase("main");
-    } else {
-      setPhase("login");
-    }
+    if (sessionUser) setUser(sessionUser);
+    setPhase("main"); // always — browsing needs no account, guest or not
   };
 
-  // Only a browser that has never gotten past Welcome sees it — everyone
-  // else goes straight to the session check (goToMainOrLogin), so a
-  // returning user's own session, not a repeat "Get Started" choice,
-  // decides what they see. Distinct from goToMainOrLogin specifically
-  // because THAT path should never show Welcome even if there's no live
-  // session (session-expiry, logout) — those are a returning visitor who
-  // already has an account, not someone deciding whether to make one.
-  const handleSplashDone = async () => {
-    if (hasSeenWelcome()) {
-      goToMainOrLogin();
-      return;
-    }
-    markWelcomeSeen();
-    const sessionUser = await sessionRef.current;
-    if (sessionUser) {
-      setUser(sessionUser);
-      setPhase("main");
-    } else {
-      setPhase("welcome");
-    }
-  };
+  // The one place anything in MainApp asks for an account. Always opens on
+  // Welcome's choice first, never straight into a form, so "why am I being
+  // asked this" has an obvious, dismissible answer rather than a form
+  // appearing out of nowhere over whatever they were doing.
+  const requireAuth = () => setAuthPrompt("welcome");
 
   const handleGetStarted = () => {
     setLoginMode("signup");
-    setPhase("login");
+    setAuthPrompt("login");
   };
 
   const handleHaveAccount = () => {
     setLoginMode("login");
-    setPhase("login");
+    setAuthPrompt("login");
+  };
+
+  const handleAuthDismiss = () => setAuthPrompt(null);
+
+  const handleAuthDone = (loggedInUser) => {
+    // Before React ever sees the new user: by the time MainApp remounts
+    // under this user's own cart key (see the `key` below), whatever this
+    // guest already added to cart needs to already be sitting there, not
+    // about to be overwritten by a fresh empty read. See cart.js.
+    mergeGuestCartIntoUser(loggedInUser.id);
+    setUser(loggedInUser);
+    setAuthPrompt(null);
   };
 
   const handleLogout = async () => {
@@ -161,34 +144,29 @@ export default function App() {
     mainDataRef.current = null;
     setUser(null);
     // Same reasoning as the session-expiry handler above — whoever is
-    // logging out already has an account.
+    // logging out already has an account. They land back on MainApp as a
+    // guest (its key below switches to "guest", forcing exactly the same
+    // clean remount this always relied on) rather than being walled off
+    // behind Login — logging out doesn't mean they're done browsing.
     setLoginMode("login");
-    setPhase("login");
   };
 
   let content;
   if (phase === "splash") {
     content = <Splash key="splash" onDone={handleSplashDone} />;
-  } else if (phase === "welcome") {
-    content = <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} />;
-  } else if (phase === "login") {
-    content = (
-      <Login
-        key="login"
-        initialMode={loginMode}
-        onDone={(loggedInUser) => {
-          setUser(loggedInUser);
-          setPhase("main");
-        }}
-        showToast={showToast}
-      />
-    );
   } else {
     content = (
       <MainApp
-        key="main"
+        // Tied to the signed-in identity (or "guest"), not a static string —
+        // this is what makes a login/logout a clean remount rather than a
+        // live prop swap. Every per-account isolation guarantee this app
+        // already relies on (cart.js, mainDataRef above, and more) was
+        // built assuming MainApp mounts fresh on every identity change, not
+        // that it stays mounted and just receives a new `user` prop.
+        key={user?.id || "guest"}
         user={user}
         onLogout={handleLogout}
+        onRequireAuth={requireAuth}
         showToast={showToast}
         onUserUpdate={(updatedUser) => setUser(updatedUser)}
         preloadedMainData={mainDataRef.current}
@@ -203,11 +181,22 @@ export default function App() {
     // needing its own check.
     <MotionConfig reducedMotion="user">
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
-      {/* splash -> welcome -> login -> main is a one-way, one-time
-          sequence (per session/device) — a coordinated crossfade here
-          instead of an instant cut, matching the same treatment
-          MainApp's own internal screen switcher already has. */}
+      {/* splash -> main is the only one-way, one-time transition left — a
+          coordinated crossfade here instead of an instant cut, matching the
+          same treatment MainApp's own internal screen switcher already has. */}
       <AnimatePresence mode="wait">{content}</AnimatePresence>
+      {/* The auth overlay sits OUTSIDE that AnimatePresence on purpose — it
+          layers on top of MainApp rather than replacing it, so opening or
+          dismissing it is never a "screen transition" that could touch
+          MainApp's own mount lifecycle. */}
+      <AnimatePresence>
+        {authPrompt === "welcome" && (
+          <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} onDismiss={handleAuthDismiss} />
+        )}
+        {authPrompt === "login" && (
+          <Login key="login" initialMode={loginMode} onDone={handleAuthDone} showToast={showToast} onDismiss={handleAuthDismiss} />
+        )}
+      </AnimatePresence>
     </MotionConfig>
   );
 }

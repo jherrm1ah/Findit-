@@ -3,7 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
+import { X } from "lucide-react";
 import { DURATION, EASE } from "./motion";
+import { IconButton } from "./sharedMotion";
 
 // welcome-get-started.png's own pixel dimensions — fixed, not measured, since
 // this is one specific static asset.
@@ -68,7 +70,13 @@ function HitTarget({ containerRect, source, onClick, label }) {
   );
 }
 
-export default function Welcome({ onGetStarted, onHaveAccount }) {
+// onDismiss is optional: it's only passed when this screen appears as an
+// interruption to someone already browsing as a guest (triggered by a
+// gated action — see App.jsx's requireAuth), so they can back out and keep
+// browsing without an account. It's omitted nowhere anymore — Welcome no
+// longer appears as a mandatory first-run gate — but the prop stays
+// optional so a bare render never crashes for want of a handler.
+export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
   const containerRef = useRef(null);
   const rect = useContainedImageRect(containerRef);
 
@@ -83,6 +91,13 @@ export default function Welcome({ onGetStarted, onHaveAccount }) {
       <Image src="/welcome-get-started.png" alt="Let's get you started" fill priority sizes="100vw" className="object-contain" />
       <HitTarget containerRect={rect} source={GET_STARTED_RECT} onClick={onGetStarted} label="Get Started" />
       <HitTarget containerRect={rect} source={HAVE_ACCOUNT_RECT} onClick={onHaveAccount} label="I already have an account" />
+      {onDismiss && (
+        <div className="absolute top-4 right-4 z-10">
+          <IconButton onClick={onDismiss} aria-label="Continue browsing without an account">
+            <X size={18} className="text-[#1E1B4B]" />
+          </IconButton>
+        </div>
+      )}
     </motion.div>
   );
 }
