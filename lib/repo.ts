@@ -489,9 +489,22 @@ function sortForDisplay(products: Product[]): Product[] {
   return [...featuredFirst].sort((a, b) => Number(isBoostActive(b.boostedUntil)) - Number(isBoostActive(a.boostedUntil)));
 }
 
+// Not real pagination — Browse/Home still expect one full array back, and
+// building a server-side paged/filtered API is real future work (see
+// PROJECT_STATUS.md's known issues), not something to retrofit here. This is
+// only a safety ceiling: without it, an unauthenticated GET /api/products
+// does a full, unbounded table scan that grows forever with the catalog.
+// Comfortably above any realistic catalog size today — raise it (or replace
+// this whole function) before it's ever actually reached.
+const LIST_PRODUCTS_SAFETY_LIMIT = 2000;
+
 export async function listProducts(): Promise<Product[]> {
   const db = getDb();
-  const result = await db.from("products").select("*").order("created_at", { ascending: false });
+  const result = await db
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(LIST_PRODUCTS_SAFETY_LIMIT);
   const rows = assertNoError(result, "listing products") as Row[];
   const [stats, imagesById] = await Promise.all([
     getSellerStatsMap(),

@@ -1,10 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, updateNotificationPref } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
+
+const MAX_ATTEMPTS = 20;
+const WINDOW_MS = 60 * 60 * 1000;
 
 export async function PATCH(req: NextRequest) {
   const user = await getSessionUser(req);
   if (!user) return NextResponse.json({ error: "Log in first." }, { status: 401 });
+
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`change-notifications:${user.id}`, MAX_ATTEMPTS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
+  }
 
   let body: { enabled?: boolean };
   try {

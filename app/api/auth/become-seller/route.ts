@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, becomeSeller } from "@/lib/auth";
+import { checkRateLimit } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
+
+const MAX_ATTEMPTS = 10;
+const WINDOW_MS = 60 * 60 * 1000;
 
 // A logged-in buyer turns their existing account into a seller account,
 // instead of needing a second phone number to sign up again.
@@ -8,6 +12,14 @@ export async function POST(req: NextRequest) {
   const user = await getSessionUser(req);
   if (!user) {
     return NextResponse.json({ error: "Log in to start selling." }, { status: 401 });
+  }
+
+  const { allowed, retryAfterSeconds } = await checkRateLimit(`become-seller:${user.id}`, MAX_ATTEMPTS, WINDOW_MS);
+  if (!allowed) {
+    return NextResponse.json(
+      { error: "Too many attempts. Try again later." },
+      { status: 429, headers: { "Retry-After": String(retryAfterSeconds) } }
+    );
   }
 
   let body: { businessName?: string };
