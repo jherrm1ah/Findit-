@@ -119,9 +119,11 @@ export async function POST(req: NextRequest) {
     try {
       // Most accounts have no email (this app is phone-first) — Paystack's
       // initialize endpoint requires one regardless, same fallback used for
-      // Store checkout.
+      // Store checkout. Must be a real, publicly-valid domain — Paystack's
+      // live API rejects ".local" (and similar non-public TLDs) as "not a
+      // valid email" even though the format otherwise looks fine.
       ({ authorizationUrl } = await initializeTransaction({
-        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
         amountNaira: amount,
         reference,
         metadata: { userId: user.id, planId: plan.id, billingPeriod, ownerType: "platform" },
