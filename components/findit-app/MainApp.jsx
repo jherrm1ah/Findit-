@@ -1488,6 +1488,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             orders={orders}
             myRequests={myRequests}
             cartCount={cartCount}
+            onRequireAuth={onRequireAuth}
           />
         )}
         {screen === "browse" && (
