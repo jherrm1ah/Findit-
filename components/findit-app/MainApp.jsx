@@ -106,6 +106,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const [adminOverview, setAdminOverview] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  // Distinct from "no submissions" on purpose — same reasoning as
+  // AlertsAdmin's own `failed` state: a failed fetch used to be
+  // indistinguishable from a genuinely empty queue, so a real backend
+  // error read as "nothing waiting on review" instead of a problem an
+  // admin needed to retry.
+  const [sellerVerificationsFailed, setSellerVerificationsFailed] = useState(false);
   // How many items are in the admin Alert Center right now — shown as a nav
   // badge (see the bottom nav below) so an admin sees something needs
   // attention without having to open the Admin tab and click into Alerts.
@@ -216,6 +222,14 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     storeCart(user?.id, cart);
   }, [cart]);
 
+  // Pulled out so the Verification tab's own "Try again" button can re-run
+  // exactly this fetch, not just the bootstrap effect below that calls it
+  // once on mount.
+  const loadSellerVerifications = () => {
+    setSellerVerificationsFailed(false);
+    api.getSellerVerifications().then(setSellerVerifications).catch(() => setSellerVerificationsFailed(true));
+  };
+
   useEffect(() => {
     // Real, admin-editable categories (lib/categoryCatalog.ts) — fetched
     // once here (works for a signed-out guest browsing Home too) and
@@ -277,7 +291,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       api.getAdminActions().then(setAdminActions).catch(() => {});
       api.getOtpStats().then(setOtpStats).catch(() => {});
       api.getReportedOrders().then(setReportedOrders).catch(() => {});
-      api.getSellerVerifications().then(setSellerVerifications).catch(() => {});
+      loadSellerVerifications();
       api.getAdminOverview().then(setAdminOverview).catch(() => {});
       api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
     }
@@ -1638,6 +1652,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               currentAdminRole={user.adminRole}
               showToast={showToast}
               sellerVerifications={sellerVerifications}
+              sellerVerificationsFailed={sellerVerificationsFailed}
+              onRetrySellerVerifications={loadSellerVerifications}
               onReviewSellerVerification={handleReviewSellerVerification}
               onLoadUsers={handleLoadUsers}
               onSetUserSuspended={handleSetUserSuspended}

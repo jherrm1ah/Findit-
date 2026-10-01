@@ -455,7 +455,7 @@ function SellerIdentityMigration({ onCheckStatus, onPreview, onApply, showToast 
 // can transact at all; this one drives the public New/Verified/Trusted
 // badge). Evidence images are short-lived signed URLs generated fresh on
 // every load of this queue — never stored, never public.
-function VerificationSubmissions({ submissions, onReview, showToast }) {
+function VerificationSubmissions({ submissions, failed, onRetry, onReview, showToast }) {
   const [reviewingId, setReviewingId] = useState(null);
   const [reasonPromptFor, setReasonPromptFor] = useState(null); // { sellerId, action } | null
   const [reason, setReason] = useState("");
@@ -473,6 +473,27 @@ function VerificationSubmissions({ submissions, onReview, showToast }) {
     }
   };
 
+  // Distinct from "0 submissions" on purpose — same reasoning as
+  // AlertsCenter's own failed state: a failed fetch used to read as "no
+  // verification submissions waiting on review," which is worse than no
+  // queue at all, since an admin trusting that false all-clear means a
+  // real seller's verification just sits unreviewed with nothing telling
+  // anyone a fetch actually failed.
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3 mb-7">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">
+            Couldn&rsquo;t load verification submissions — this isn&rsquo;t the same as &ldquo;none waiting.&rdquo;
+          </p>
+          <button onClick={onRetry} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (submissions.length === 0) {
     return <p className="text-[12px] text-[#6B6483] mb-7">No verification submissions waiting on review.</p>;
   }
@@ -2570,6 +2591,8 @@ export default function AdminQueue({
   currentAdminRole,
   showToast,
   sellerVerifications = [],
+  sellerVerificationsFailed = false,
+  onRetrySellerVerifications,
   onReviewSellerVerification,
   onLoadUsers,
   onSetUserSuspended,
@@ -2727,7 +2750,13 @@ export default function AdminQueue({
           <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
             Separate from basic account approval — this drives the public New/Verified/Trusted badge.
           </p>
-          <VerificationSubmissions submissions={sellerVerifications} onReview={onReviewSellerVerification} showToast={showToast} />
+          <VerificationSubmissions
+            submissions={sellerVerifications}
+            failed={sellerVerificationsFailed}
+            onRetry={onRetrySellerVerifications}
+            onReview={onReviewSellerVerification}
+            showToast={showToast}
+          />
         </>
       )}
 
