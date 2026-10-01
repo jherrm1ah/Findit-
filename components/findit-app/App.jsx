@@ -3,39 +3,38 @@
 import { useEffect, useRef, useState } from "react";
 import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
-import Onboarding from "./Onboarding";
 import Welcome from "./Welcome";
 import Login from "./Login";
 import MainApp from "./MainApp";
 import ToastHost from "./Toast";
 import { api, setSessionExpiredHandler } from "./api";
 
-// Whether this browser has ever clicked through (or skipped) the onboarding
-// tutorial — same try/catch-wrapped localStorage pattern as
-// location.js#getStoredLocation. Without this, EVERY page refresh forced a
-// returning, already-logged-in user back through three manual "Next" taps
-// before their session was even checked — indistinguishable, from the
-// outside, from being logged out on every reload.
-const ONBOARDING_SEEN_KEY = "findit_onboarding_seen";
+// Whether this browser has ever gotten past the first-run Welcome screen —
+// same try/catch-wrapped localStorage pattern as location.js#getStoredLocation.
+// Without this, EVERY page refresh forced a returning, already-logged-in
+// user back through "Get Started" / "I already have an account" before
+// their session was even checked — indistinguishable, from the outside,
+// from being logged out on every reload.
+const WELCOME_SEEN_KEY = "findit_onboarding_seen";
 
-function hasSeenOnboarding() {
+function hasSeenWelcome() {
   try {
-    return localStorage.getItem(ONBOARDING_SEEN_KEY) === "1";
+    return localStorage.getItem(WELCOME_SEEN_KEY) === "1";
   } catch {
     return false;
   }
 }
 
-function markOnboardingSeen() {
+function markWelcomeSeen() {
   try {
-    localStorage.setItem(ONBOARDING_SEEN_KEY, "1");
+    localStorage.setItem(WELCOME_SEEN_KEY, "1");
   } catch {
     // best-effort — private browsing / storage blocked, just re-shows once
   }
 }
 
 export default function App() {
-  const [phase, setPhase] = useState("splash"); // splash → onboarding → welcome → login → main
+  const [phase, setPhase] = useState("splash"); // splash → welcome → login → main
   const [user, setUser] = useState(null);
   // Which of Login's own modes (its `mode` state, default "login") to open
   // into — set by which of Welcome's two buttons was tapped, so "Get
@@ -113,27 +112,19 @@ export default function App() {
     }
   };
 
-  // Only a browser that has never clicked through (or skipped) onboarding
-  // sees it — everyone else goes straight to the session check above, so a
-  // returning user's own session (not the tutorial) decides what they see.
-  const handleSplashDone = () => {
-    if (hasSeenOnboarding()) {
+  // Only a browser that has never gotten past Welcome sees it — everyone
+  // else goes straight to the session check (goToMainOrLogin), so a
+  // returning user's own session, not a repeat "Get Started" choice,
+  // decides what they see. Distinct from goToMainOrLogin specifically
+  // because THAT path should never show Welcome even if there's no live
+  // session (session-expiry, logout) — those are a returning visitor who
+  // already has an account, not someone deciding whether to make one.
+  const handleSplashDone = async () => {
+    if (hasSeenWelcome()) {
       goToMainOrLogin();
-    } else {
-      setPhase("onboarding");
+      return;
     }
-  };
-
-  // Distinct from goToMainOrLogin (still used by handleSplashDone and by
-  // every later "no session" case — session-expiry, logout): those are a
-  // RETURNING visitor's paths, who should never see the first-run "Get
-  // Started" choice again just to log back in. This one runs exactly once
-  // per device, right after the tutorial, and only for a genuinely new
-  // visitor with no live session — an already-signed-in one (session found
-  // at the very first page load, tutorial never seen yet either) skips
-  // straight to main, same as goToMainOrLogin would.
-  const handleOnboardingDone = async () => {
-    markOnboardingSeen();
+    markWelcomeSeen();
     const sessionUser = await sessionRef.current;
     if (sessionUser) {
       setUser(sessionUser);
@@ -178,8 +169,6 @@ export default function App() {
   let content;
   if (phase === "splash") {
     content = <Splash key="splash" onDone={handleSplashDone} />;
-  } else if (phase === "onboarding") {
-    content = <Onboarding key="onboarding" onDone={handleOnboardingDone} />;
   } else if (phase === "welcome") {
     content = <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} />;
   } else if (phase === "login") {
@@ -214,7 +203,7 @@ export default function App() {
     // needing its own check.
     <MotionConfig reducedMotion="user">
       <ToastHost toasts={toasts} onDismiss={dismissToast} />
-      {/* splash -> onboarding -> login -> main is a one-way, one-time
+      {/* splash -> welcome -> login -> main is a one-way, one-time
           sequence (per session/device) — a coordinated crossfade here
           instead of an instant cut, matching the same treatment
           MainApp's own internal screen switcher already has. */}
