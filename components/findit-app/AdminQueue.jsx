@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -2253,9 +2253,15 @@ function AdminTicketThread({ ticket, messages, loading, onBack, onSend, onResolv
       </div>
 
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-[13px] font-semibold text-[#1E1B4B]">{ticket.subject}</p>
-          {ticket.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+        <div className="flex items-center justify-between mb-1 gap-2">
+          <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1.5 min-w-0">
+            {ticket.priority && <Zap size={13} className="text-[#F59E0B] shrink-0" fill="#F59E0B" />}
+            <span className="truncate">{ticket.subject}</span>
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {ticket.priority && <Pill tone="gold">Priority</Pill>}
+            {ticket.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+          </div>
         </div>
         <p className="text-[11px] text-[#6B6483]">{ticket.userName || ticket.userPhone || "User"}</p>
       </div>
@@ -2381,14 +2387,18 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
             onClick={() => open(t)}
             {...bouncyPress}
             className={`w-full text-left bg-white border rounded-[20px] p-4 flex items-center justify-between gap-3 ${
-              t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"
-            }`}
+              t.priority ? "border-l-4 border-l-[#F59E0B]" : ""
+            } ${t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"}`}
           >
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{t.subject}</p>
+              <p className="text-[13px] font-semibold text-[#1E1B4B] truncate flex items-center gap-1.5">
+                {t.priority && <Zap size={12} className="text-[#F59E0B] shrink-0" fill="#F59E0B" />}
+                <span className="truncate">{t.subject}</span>
+              </p>
               <p className="text-[11px] text-[#6B6483]">{t.userName || t.userPhone || "User"}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {t.priority && <Pill tone="gold">Priority</Pill>}
               {t.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
               <ChevronRight size={14} className="text-[#B7AFD6]" />
             </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Mail, ShoppingBag, Search, Store, MessageCircle, ChevronRight, Plus } from "lucide-react";
+import { Mail, ShoppingBag, Search, Store, MessageCircle, ChevronRight, Plus, Zap } from "lucide-react";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 
 // A browsing/support screen (Group A) — local bouncy stagger for the FAQ
@@ -152,7 +152,14 @@ export default function HelpSupport({ tickets = [], onOpenTicket, onCreateTicket
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{t.subject}</p>
-              <p className="text-[11px] text-[#6B6483]">{t.status === "resolved" ? "Resolved" : "Open"}</p>
+              <p className="text-[11px] text-[#6B6483] flex items-center gap-1">
+                {t.status === "resolved" ? "Resolved" : "Open"}
+                {t.priority && (
+                  <span className="inline-flex items-center gap-0.5 text-[#B45309] font-medium">
+                    <Zap size={10} fill="#B45309" /> Priority
+                  </span>
+                )}
+              </p>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
               <span className="text-[10px] text-[#8A8372]">{timeAgoShort(t.updatedAt)}</span>

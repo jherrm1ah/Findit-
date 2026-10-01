@@ -463,10 +463,16 @@ create table if not exists support_tickets (
   user_has_unread boolean not null default false,
   admin_has_unread boolean not null default true,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  -- Migration 033 — decided once at creation from the filer's plan at that
+  -- moment (lib/support.ts#createTicket), never re-derived later. Business
+  -- Store, Pro Store, and FindIt Pro are the only plans with
+  -- subscription_plans.priority_support = true today.
+  priority boolean not null default false
 );
 create index if not exists support_tickets_user_id_idx on support_tickets(user_id);
 create index if not exists support_tickets_status_idx on support_tickets(status);
+create index if not exists support_tickets_priority_idx on support_tickets(priority);
 
 create table if not exists support_ticket_messages (
   id text primary key,

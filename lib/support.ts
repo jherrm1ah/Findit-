@@ -1,6 +1,7 @@
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./errors";
-import { notifyBestEffort } from "./repo";
+import { notifyBestEffort, getSellerIdForUser } from "./repo";
+import { getPlatformSubscription, getSellerSubscription } from "./subscriptions";
 
 type Row = Record<string, unknown>;
 
@@ -21,6 +22,10 @@ export type SupportTicket = {
   status: TicketStatus;
   userHasUnread: boolean;
   adminHasUnread: boolean;
+  // Decided once, at creation, from whatever plan the filer held at that
+  // moment — see createTicket's hasPrioritySupport check. Never re-derived
+  // from the filer's CURRENT plan on a later read.
+  priority: boolean;
   createdAt: string;
   updatedAt: string;
 };
@@ -46,9 +51,25 @@ function rowToTicket(row: Row): SupportTicket {
     status: row.status as TicketStatus,
     userHasUnread: Boolean(row.user_has_unread),
     adminHasUnread: Boolean(row.admin_has_unread),
+    priority: Boolean(row.priority),
     createdAt: row.created_at as string,
     updatedAt: row.updated_at as string,
   };
+}
+
+// Real backing for the "Priority support" plan benefit (Business Store,
+// Pro Store, FindIt Pro — see subscription_plans.priority_support).
+// Checked at ticket-creation time only: a buyer/seller can qualify either
+// through their own FindIt Pro (platform) subscription, or — if they're a
+// seller — their store's subscription; either is enough.
+async function hasPrioritySupport(userId: string): Promise<boolean> {
+  const platform = await getPlatformSubscription(userId);
+  if (platform?.plan.prioritySupport) return true;
+
+  const sellerId = await getSellerIdForUser(userId);
+  if (!sellerId) return false;
+  const { plan } = await getSellerSubscription(sellerId);
+  return plan.prioritySupport;
 }
 
 function rowToMessage(row: Row): SupportTicketMessage {
@@ -76,6 +97,8 @@ export async function createTicket(userId: string, subject: string, body: string
     throw new ValidationError(`Message must be under ${MAX_TICKET_MESSAGE_LENGTH} characters.`);
   }
 
+  const priority = await hasPrioritySupport(userId);
+
   const db = getDb();
   const id = randomId("tkt_");
   const insertResult = await db.from("support_tickets").insert({
@@ -83,6 +106,7 @@ export async function createTicket(userId: string, subject: string, body: string
     user_id: userId,
     subject: cleanSubject,
     status: "open",
+    priority,
   });
   assertNoError(insertResult, "creating support ticket");
 
@@ -213,7 +237,14 @@ export type AdminTicketListItem = SupportTicket & { userName: string | null; use
 // with just enough identity to know who's asking without a second lookup.
 export async function listTicketsForAdmin(status?: TicketStatus): Promise<AdminTicketListItem[]> {
   const db = getDb();
-  let query = db.from("support_tickets").select("*, users(name, phone)").order("updated_at", { ascending: false });
+  // Priority tickets first (Business Store, Pro Store, FindIt Pro — the one
+  // real benefit that plan tier promises), most-recent-activity first
+  // within each group.
+  let query = db
+    .from("support_tickets")
+    .select("*, users(name, phone)")
+    .order("priority", { ascending: false })
+    .order("updated_at", { ascending: false });
   if (status) query = query.eq("status", status);
   const result = await query;
   const rows = assertNoError(result, "listing tickets") as Row[];
@@ -228,5 +259,16 @@ export async function getOpenTicketCount(): Promise<number> {
   const db = getDb();
   const result = await db.from("support_tickets").select("id", { count: "exact", head: true }).eq("status", "open");
   if (result.error) throw new Error(`counting open tickets: ${result.error.message}`);
+  return result.count ?? 0;
+}
+
+export async function getOpenPriorityTicketCount(): Promise<number> {
+  const db = getDb();
+  const result = await db
+    .from("support_tickets")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "open")
+    .eq("priority", true);
+  if (result.error) throw new Error(`counting open priority tickets: ${result.error.message}`);
   return result.count ?? 0;
 }
