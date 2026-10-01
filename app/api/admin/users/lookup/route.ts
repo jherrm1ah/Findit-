@@ -14,7 +14,9 @@ export async function GET(req: NextRequest) {
   if (admin instanceof NextResponse) return admin;
 
   const phone = req.nextUrl.searchParams.get("phone");
-  if (!phone || phone.trim().length < 8) {
+  // Matches signup's own minimum (app/api/auth/signup/route.ts) for
+  // consistency — no real account's phone could ever be shorter than this.
+  if (!phone || phone.trim().length < 10) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
 

@@ -476,14 +476,11 @@ complete migration history live in **[`DATABASE.md`](./DATABASE.md)**. Summary h
   `orders → reviews`. Subscriptions attach to either a seller (Store plan) or a user
   (FindIt Pro) via an untyped `owner_type`/`owner_id` pair — the one place the schema
   deliberately skips a literal foreign key, since it targets two different parent tables.
-- **⚠️ `supabase/schema.sql` is currently stale** — it was not updated for 7 migrations
-  (021, 022, 025, 026, 027, 028, 029), so it's missing the `rate_limits`, `reviews`,
-  `moderation_rules`, and `product_reports` tables, the `product_images` table, 7 columns on
-  `products`, several money-integrity constraints, and the `check_rate_limit()` function.
-  **The real, current schema = `schema.sql` + every file in `supabase/migrations/` applied in
-  order (002 through 033).** See §8 (Known Issues) — this needs a cleanup pass, but is a
-  documentation/onboarding risk, not a runtime bug (the live database already has everything;
-  only the hand-maintained mirror file is behind).
+- **`supabase/schema.sql` is a true, verified mirror of the live schema** (regenerated and
+  checked against every migration as of 2026-10-01 — all 34 tables, RLS enabled on every one,
+  zero duplicate names). **The real, current schema = `schema.sql` + every file in
+  `supabase/migrations/` applied in order (002 through 034).** Regenerate it again whenever a
+  new migration lands, rather than letting it drift a second time.
 - **Row Level Security is enabled on every single table, with zero `CREATE POLICY` statements
   anywhere in the codebase.** This is intentional, documented defense-in-depth — see §7 for
   why this is safe given the app's architecture, and why it would *not* be safe to start
@@ -568,9 +565,9 @@ itself), `NODE_ENV` (standard Node flag — also controls whether the session co
 ### Supabase configuration
 
 - Run `supabase/schema.sql` against a fresh project, then apply every file in
-  `supabase/migrations/` **in numeric order** (002 through 033 — see §4's note on
-  `schema.sql` currency; don't skip any, and don't rely on `schema.sql` alone for a
-  from-scratch setup without double-checking against the migrations list in `DATABASE.md`).
+  `supabase/migrations/` **in numeric order** (002 through 034 — `schema.sql` is a verified,
+  current mirror as of 2026-10-01, but any migration added after that date won't be in it
+  until the next regeneration; double-check against the migrations list in `DATABASE.md`).
 - No Supabase Auth setup needed or used.
 - No storage buckets need pre-creating — `lib/storage.ts` creates `product-images` and
   `seller-verification` on first use.
@@ -683,18 +680,18 @@ races. A per-instance in-memory fallback exists only if that RPC call itself thr
 bounded (50,000 entries, fails *closed* once full) to prevent memory-exhaustion DoS. Applied
 to every genuinely sensitive route: login, signup, OTP send/resend/verify, password
 reset/change, uploads, messages, product reports, AI generation, order/boost/subscription
-checkout, requests/offers, support tickets, admin broadcast, admin session unlock. A handful
-of lower-sensitivity, already-session-gated profile-edit routes (phone/business-name/become-
-seller/name/avatar/notifications) don't call it — see §8.
+checkout, requests/offers, support tickets, admin broadcast, admin session unlock, and (as of
+this session's full audit) the profile-edit routes (phone/business-name/become-seller/name/
+avatar/notifications) that were previously the one gap in this list.
 
 ### Known/observed security concerns
 See §8 (Known Issues) for the full, prioritized list — nothing below is speculative, all of
 it was confirmed by reading the actual code:
-- `GET /api/products` is unauthenticated and fully unbounded (no pagination/limit) — a real
-  resource-exhaustion surface as the catalog grows.
-- A few authenticated profile-edit routes have no rate limit (low severity — session-gated,
-  not a credential-guessing surface, but inconsistent with the discipline applied elsewhere).
+- `GET /api/products` is unauthenticated with only a safety-ceiling limit (2,000 rows, not
+  real pagination) — fine today, but still worth real server-side pagination eventually (§8/§9).
 - No explicit CSRF token backstop beyond `SameSite=Lax` + CSP.
+- No database backups/PITR (Supabase Free tier) — the single largest standing operational
+  risk; see §8 and `FINDIT_FULL_AUDIT.md`.
 - `CRON_SECRET` is optional by design (fine for local dev) but should be treated as
   **required** in any public production deployment — it already is set in this project's
   production environment.
@@ -703,38 +700,38 @@ it was confirmed by reading the actual code:
 
 ## 8. Known Issues
 
+*Last reconciled against [`FINDIT_FULL_AUDIT.md`](./FINDIT_FULL_AUDIT.md) (2026-10-01), a
+complete end-to-end audit — read that file for full detail on anything referenced below as
+"fixed."*
+
 ### Critical (should be addressed soon)
 *None found that affect correctness of money movement, auth, or data integrity in
 production today.* The payment/escrow/refund/payout state machine, admin access control, and
 upload validation were all read in detail and are deliberately and carefully hardened (see
 the extensive inline comments throughout `lib/payments.ts`, `lib/auth.ts`,
 `lib/adminRoles.ts`, and the Paystack webhook route — nearly every non-obvious decision is
-explained at the point it's made).
+explained at the point it's made). The full audit above did find and fix a handful of real
+correctness bugs (a seller-name-collision bug in public verification-level computation, a
+non-atomic seller-rename that could permanently lock a seller out of their own orders under a
+rare partial-failure sequence, and others) — none were exploitable for money movement, but
+see `FINDIT_FULL_AUDIT.md` §2 for the full list now that they're fixed.
 
 ### Important (worth scheduling, not urgent)
-1. **`supabase/schema.sql` is stale** — missing 7 migrations' worth of tables/columns/
-   constraints/the rate-limit function (see §4). The live database is correct; only the
-   hand-maintained mirror file has drifted. This is a real onboarding/handover risk (a new
-   developer reading `schema.sql` alone would get an incomplete picture) and should be
-   regenerated from the real project (e.g. via a Supabase schema dump, or by folding in the
-   missing migrations by hand) as a dedicated, carefully-reviewed pass — **not** done as part
-   of this documentation task, per the instruction not to make unnecessary code changes while
-   writing it.
-2. **`GET /api/products` has no pagination** — returns the entire product catalog on every
-   call, unauthenticated. Fine at the current catalog size; will become a real latency and
-   cost problem as listings grow into the thousands. Needs server-side pagination (and
-   eventually, real search) before that happens.
+1. ~~`supabase/schema.sql` is stale~~ — **fixed**. Regenerated and verified against every
+   migration.
+2. ~~`GET /api/products` has no pagination~~ — **fixed** (a 2,000-row safety ceiling, not full
+   pagination — real server-side pagination/search is still worth doing eventually, see §9).
 3. **Search/category/geo filtering is entirely client-side** — works today because the whole
-   catalog is fetched anyway (see #2), but the two issues are really the same underlying
+   catalog is fetched anyway, but the two issues are really the same underlying
    limitation and should be solved together: server-side filtering/pagination/search.
-4. **A handful of authenticated profile-edit routes have no rate limit** (phone,
-   business-name, become-seller, name, avatar, notifications). Low severity today since
-   they're all session-gated with no credential-guessing surface, but inconsistent with the
-   rate-limiting discipline applied everywhere else — cheap to fix by adding the same
-   `checkRateLimit` call already used elsewhere.
+4. ~~A handful of authenticated profile-edit routes have no rate limit~~ — **fixed**.
 5. **No CSRF token mechanism** — relies entirely on `SameSite=Lax` + CSP. Adequate for
    current, modern-browser-only usage; worth an explicit decision (document it as sufficient,
    or add a token) rather than leaving it implicit.
+6. **No database backups or point-in-time recovery** — the Supabase project is on the Free
+   tier, which has neither. This is now the single largest standing operational risk to the
+   platform (a bad migration or a stray `DELETE` has no restore path) and is a billing
+   decision, not a code fix — see `FINDIT_FULL_AUDIT.md` §4/§10.
 
 ### Optional (nice-to-have, not urgent, don't add scope for its own sake)
 6. **No image resizing/thumbnailing pipeline** — uploads are stored and served at original
@@ -759,24 +756,25 @@ explained at the point it's made).
 
 Prioritized, and deliberately **not** padded with features nobody asked for:
 
-1. **Regenerate `supabase/schema.sql`** so it's a true mirror of the live schema again (see
-   Known Issues #1). Low risk, pure documentation accuracy, but needs a careful, dedicated
-   pass — diff every migration from 021 onward against the file by hand or via a real schema
-   dump, don't eyeball it.
-2. **Add pagination to `GET /api/products`**, and move basic filtering (category, price
-   range, search text) server-side. This is the most consequential unaddressed item — it's
-   currently masked by catalog size, not actually fixed, and the fix gets harder to retrofit
-   the longer client code assumes it has the full array in memory.
-3. **Add rate limiting to the remaining unguarded profile-edit routes** (Known Issues #4) —
-   small, mechanical, consistent with the existing pattern.
-4. **Make an explicit decision on CSRF** (Known Issues #5) — either document
+1. **Decide on the Supabase billing tier** (Known Issues #6) — backups/PITR. The one item on
+   this whole list that money, not code, fixes, and the highest-priority one standing.
+2. **Add real pagination to `GET /api/products`**, and move basic filtering (category, price
+   range, search text) server-side. The 2,000-row safety ceiling (already in place) prevents
+   a resource-exhaustion vector but isn't real pagination — this is the most consequential
+   unaddressed code item; it's currently masked by catalog size, and the fix gets harder to
+   retrofit the longer client code assumes it has the full array in memory.
+3. **Make an explicit decision on CSRF** (Known Issues #5) — either document
    `SameSite=Lax` + CSP as the deliberate, sufficient answer, or add a token-based check.
    Either is fine; leaving it unexamined is the only wrong answer.
-5. **Finish or formally park the `seller_id` identity migration** (Known Issues #8) — decide
+4. **Finish or formally park the `seller_id` identity migration** (Known Issues #8) — decide
    whether to backfill the remaining legacy-text-only rows and drop the dual-tracking, or
    intentionally leave both columns forever (e.g. if the text column is still load-bearing
    somewhere undiscovered) and document that decision so a future developer doesn't "finish"
    it by accident and break something.
+5. **Build a real live payment-status view for `Checkout.jsx`** — see
+   `FINDIT_FULL_AUDIT.md` §4 row 4. Currently unreachable dead code assumes the order
+   updates live in that screen; it doesn't, since a real Paystack payment always redirects
+   the browser away first.
 6. Everything in the "Optional" tier of §8 (image resizing, push notifications) — only pick
    these up if there's an actual signal (cost, user complaints) that they're needed, not
    speculatively.
@@ -795,7 +793,7 @@ Prioritized, and deliberately **not** padded with features nobody asked for:
 | `lib/*.ts` | The actual backend logic, one module per domain. **Start here**, not in `app/api`, to understand what any feature actually does — `lib/repo.ts` is the largest/central one (products, orders, offers, notifications, saved items, conversations/messages); everything else is feature-specific (`lib/payments.ts`, `lib/subscriptions.ts`, `lib/boosts.ts`, `lib/support.ts`, etc.) |
 | `lib/*.test.ts` / `lib/*.integration.test.ts` | Co-located Vitest suites — unit tests for pure logic, "integration" tests that exercise real `lib/repo.ts`/`lib/payments.ts` flows against an in-memory fake Supabase client (`lib/testing/fakeSupabase.ts`), no real DB or network involved. Run with `npm run test`. |
 | `components/findit-app/` | The entire client-side React app. `App.jsx` (top-level auth/splash shell) → `MainApp.jsx` (1,879 lines — the screen-switcher + bottom tab bar) → ~25 individual screen components (`Home.jsx`, `Browse.jsx`, `SellerDashboard.jsx`, `AdminQueue.jsx` at 2,856 lines, etc.). `api.js` is the one shared fetch wrapper every screen uses to call `/api/*`. |
-| `supabase/schema.sql` + `supabase/migrations/` | The database. **Read §4's note on `schema.sql` staleness before trusting it alone** — the migrations folder (numeric order, 002–033) is the real source of truth for anything schema.sql might be missing. |
+| `supabase/schema.sql` + `supabase/migrations/` | The database. `schema.sql` is a verified, current mirror as of 2026-10-01 — the migrations folder (numeric order, 002–034) is still the real source of truth going forward, for anything added after that date. |
 | `.env.example` | The authoritative environment variable reference — always check this first, it's kept current and heavily commented. |
 | `vercel.json` | The one piece of infra-as-code: the daily cron job definition. |
 | `next.config.mjs` | Security headers, CSP, image remote patterns, the global `/api/*` no-cache rule. |
@@ -851,10 +849,10 @@ rate limiting, upload validation, RLS-as-defense-in-depth, API-layer authorizati
 in detail and found to be deliberately and consistently hardened, not an afterthought.
 
 **Still needs work**: nothing blocking — see §8/§9. The most consequential open item is that
-search/browse is entirely client-side with an unpaginated `GET /api/products`, which is a
-scaling concern, not a correctness one, at today's catalog size. `supabase/schema.sql` being
-stale is a documentation/onboarding risk, not a live-data risk (the real database already has
-everything from all 33 migrations).
+search/browse is entirely client-side with only a safety-ceiling-limited (not truly paginated)
+`GET /api/products`, which is a scaling concern, not a correctness one, at today's catalog
+size. The real standing risk is operational, not code: the Supabase project has no backups or
+point-in-time recovery (Free tier) — see §8.
 
 **Most important things to protect/back up**:
 - The Supabase project (`lhbekblecppamgmvmumo`) itself — this is the only copy of all

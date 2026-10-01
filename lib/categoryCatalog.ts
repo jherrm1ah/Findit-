@@ -82,6 +82,9 @@ export async function createCategory(input: { label: string; iconKey: string; so
   if (!label) throw new ValidationError("A category name is required.");
   const id = slugify(label);
   if (!id) throw new ValidationError("That name doesn't produce a usable category id — try including a letter or number.");
+  if (input.sortOrder !== undefined && !Number.isInteger(input.sortOrder)) {
+    throw new ValidationError("Sort order must be a whole number.");
+  }
 
   const db = getDb();
   const insertResult = await db
@@ -115,6 +118,9 @@ const CATEGORY_PATCH_COLUMNS: Record<string, string> = {
 // id out from under them would silently orphan real listings. Change the
 // label instead; the id can stay a plain internal key forever.
 export async function updateCategory(id: string, patch: Partial<Omit<Category, "id">>): Promise<Category> {
+  if (patch.sortOrder !== undefined && !Number.isInteger(patch.sortOrder)) {
+    throw new ValidationError("Sort order must be a whole number.");
+  }
   const columns: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     const column = CATEGORY_PATCH_COLUMNS[key];

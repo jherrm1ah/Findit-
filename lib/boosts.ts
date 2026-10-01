@@ -65,6 +65,21 @@ const BOOST_PLAN_PATCH_COLUMNS: Record<string, string> = {
 };
 
 export async function updateBoostPlan(id: string, patch: Partial<Omit<BoostPlan, "id">>): Promise<BoostPlan> {
+  // Unlike setPlatformFeeBps (lib/payments.ts), this had no range/integer
+  // check at all — a negative/zero price or durationDays would persist
+  // unrejected and flow straight into a real Paystack charge
+  // (amountNaira: plan.price) or a no-op boost (endsAt computed from
+  // durationDays). Admin-only input, but a typo here is still real money.
+  if (patch.price !== undefined && (!Number.isFinite(patch.price) || patch.price < 0)) {
+    throw new ValidationError("Price can't be negative.");
+  }
+  if (patch.durationDays !== undefined && (!Number.isInteger(patch.durationDays) || patch.durationDays <= 0)) {
+    throw new ValidationError("Duration must be a positive whole number of days.");
+  }
+  if (patch.sortOrder !== undefined && !Number.isInteger(patch.sortOrder)) {
+    throw new ValidationError("Sort order must be a whole number.");
+  }
+
   const columns: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     const column = BOOST_PLAN_PATCH_COLUMNS[key];
@@ -132,6 +147,15 @@ async function applyBoostedUntil(db: ReturnType<typeof getDb>, productId: string
     const claimed = assertNoError(updateResult, "activating boost") as Row | null;
     if (claimed) return;
   }
+
+  // Exhausted every attempt — the boosts row (the actual charge) already
+  // committed before this ran, so the seller was charged but boosted_until
+  // never got raised. Silent here would mean no trace of a paid-for boost
+  // placement that never took effect; log it so it's at least visible
+  // server-side instead of looking like nothing happened at all.
+  console.error(
+    `[boosts] applyBoostedUntil exhausted ${MAX_BOOST_APPLY_ATTEMPTS} attempts for product ${productId} — boosted_until was not raised to ${endsAtIso}.`
+  );
 }
 
 // Called on a schedule (see app/api/cron/expirations, vercel.json) — unlike

@@ -58,10 +58,3 @@ export function requestBrowserLocation(userId) {
   });
 }
 
-export function clearStoredLocation(userId) {
-  try {
-    localStorage.removeItem(storageKey(userId));
-  } catch {
-    // ignore
-  }
-}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap } from "lucide-react";
@@ -2358,10 +2358,12 @@ function AdminTicketThread({ ticket, messages, loading, onBack, onSend, onResolv
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
-    setDraft("");
     try {
       await onSend(ticket.id, body);
+      setDraft("");
     } catch (err) {
+      // Keep the draft on failure — same reasoning as Thread.jsx's submit —
+      // so a network blip doesn't make the admin retype a long reply.
       showToast?.(err.message || "Couldn't send that reply.", "error");
     } finally {
       setSending(false);
@@ -2461,6 +2463,10 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
   const [loadingThread, setLoadingThread] = useState(false);
 
   const [ticketsFailed, setTicketsFailed] = useState(false);
+  // Bumped on every open/back so a slow onLoadTicket response for a ticket
+  // the admin already left can't land late and silently swap the screen
+  // back to it — same guard as MainApp.jsx's threadRequestRef/ticketRequestRef.
+  const openRequestRef = useRef(0);
 
   const loadTickets = () => {
     setTicketsFailed(false);
@@ -2472,17 +2478,21 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
   useEffect(loadTickets, [statusFilter]);
 
   const open = async (t) => {
+    const requestId = ++openRequestRef.current;
     setOpenTicket(t);
     setLoadingThread(true);
     try {
       const { ticket, messages: msgs } = await onLoadTicket(t.id);
+      if (openRequestRef.current !== requestId) return;
       setOpenTicket(ticket);
       setMessages(msgs);
       setTickets((ts) => ts?.map((x) => (x.id === t.id ? { ...x, adminHasUnread: false } : x)) ?? ts);
     } catch (err) {
-      showToast?.(err.message || "Couldn't load that ticket.", "error");
+      if (openRequestRef.current === requestId) {
+        showToast?.(err.message || "Couldn't load that ticket.", "error");
+      }
     } finally {
-      setLoadingThread(false);
+      if (openRequestRef.current === requestId) setLoadingThread(false);
     }
   };
 
@@ -2503,7 +2513,10 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
         ticket={openTicket}
         messages={messages}
         loading={loadingThread}
-        onBack={() => setOpenTicket(null)}
+        onBack={() => {
+          openRequestRef.current++;
+          setOpenTicket(null);
+        }}
         onSend={send}
         onResolve={resolve}
         showToast={showToast}

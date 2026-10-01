@@ -21,7 +21,10 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
-  if (!body.phone || body.phone.trim().length < 8) {
+  // Matches signup's own minimum (app/api/auth/signup/route.ts) — these two
+  // previously disagreed (8 here, 10 there), so a phone too short to ever
+  // sign up with could still pass this check and spend a real SMS.
+  if (!body.phone || body.phone.trim().length < 10) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
   const purpose: OtpPurpose = body.purpose === "reset" ? "reset" : "signup";

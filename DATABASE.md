@@ -4,31 +4,11 @@ Companion to [`PROJECT_STATUS.md`](./PROJECT_STATUS.md). This is the full table-
 database reference: every table, its important columns, relationships, Row Level Security
 status, storage buckets, database functions, and the complete migration history.
 
-**Source of truth**: `supabase/migrations/002_*.sql` through `033_*.sql`, applied in order on
-top of `supabase/schema.sql`. **`schema.sql` alone is currently stale** — see the note below
-before trusting it as a complete reference on its own.
-
----
-
-## ⚠️ `schema.sql` staleness
-
-`supabase/schema.sql` was not updated for migrations **021, 022, 025, 026, 027, 028, 029**.
-Concretely missing from it today:
-- The entire `rate_limits` table and the `check_rate_limit()` function (022).
-- The entire `reviews` table (025).
-- The entire `moderation_rules` and `product_reports` tables (027).
-- The entire `product_images` table, and 7 columns on `products` — `description`,
-  `condition`, `qty`, `location`, `delivery_option`, `color`, `variation` (026), plus 4
-  moderation columns — `moderation_status`, `moderation_reason`, `moderated_by`,
-  `moderated_at` (027).
-- All of migration 021's money-integrity CHECK constraints and its 10 FK-covering indexes.
-- `boosts.payment_id` (029).
-
-The **live database already has all of this** — only the hand-maintained `schema.sql` mirror
-file is behind. Everything in this document reflects the real, current, merged state
-(`schema.sql` + all 32 migration files), with each gap noted inline. Regenerating
-`schema.sql` is tracked as a known issue in `PROJECT_STATUS.md` §8 — not done as part of this
-documentation pass, since it's a careful, dedicated edit, not a doc-writing task.
+**Source of truth**: `supabase/migrations/002_*.sql` through `034_*.sql`, applied in order on
+top of `supabase/schema.sql`. `schema.sql` was regenerated and verified against the live
+project (all 34 tables, RLS enabled on every one, zero duplicate names) — it is a true mirror
+as of 2026-10-01; keep it that way by regenerating it again whenever a new migration lands,
+rather than letting it drift a second time.
 
 ---
 
@@ -87,7 +67,7 @@ The seller/store record — admin-verification + lifecycle gate + Store customiz
 | `verification_submitted_at`, `verification_reviewed_at`, `verification_reviewed_by` (**FK → users.id**), `verification_rejection_reason` | mixed | |
 | `bank_account_number`, `bank_code`, `bank_account_name`, `paystack_recipient_code` | text | (016) payout destination |
 
-Indexes: `sellers_verification_reviewed_by_idx` (021, missing from schema.sql); unique
+Indexes: `sellers_verification_reviewed_by_idx` (021); unique
 partial index `sellers_store_slug_unique_idx(store_slug) where store_slug is not null`.
 
 ### `seller_verification_details`
@@ -155,19 +135,19 @@ Marketplace listings.
 | `active` | boolean | default true — lets a Store downgrade deactivate excess listings without deleting (010) |
 | `boosted_until` | timestamptz | null = not boosted; sort-only, no cron needed (018) |
 | `boost_expiry_notified_at` | timestamptz | dedupes the "boost ended" notification (030) |
-| `description` | text | **missing from schema.sql** (026) |
-| `condition` | text | check(`New`,`Used`) — **missing from schema.sql** (026) |
-| `qty` | integer | not null, default 1, check `>= 0` — **missing from schema.sql** (026) |
-| `location`, `delivery_option`, `color`, `variation` | text | **missing from schema.sql** (026); `delivery_option` check(`Delivery`,`Pickup`,`Both`) |
-| `moderation_status` | text | not null, default `active`, check(`active`,`under_review`,`removed`) — **missing from schema.sql** (027) |
-| `moderation_reason`, `moderated_by` (**FK → users.id**), `moderated_at` | mixed | **missing from schema.sql** (027) |
+| `description` | text | (026) |
+| `condition` | text | check(`New`,`Used`) (026) |
+| `qty` | integer | not null, default 1, check `>= 0` (026) |
+| `location`, `delivery_option`, `color`, `variation` | text | (026); `delivery_option` check(`Delivery`,`Pickup`,`Both`) |
+| `moderation_status` | text | not null, default `active`, check(`active`,`under_review`,`removed`) (027) |
+| `moderation_reason`, `moderated_by` (**FK → users.id**), `moderated_at` | mixed | (027) |
 
 Indexes: `products_seller_id_idx`, `products_seller_idx`, `products_created_at_idx(created_at
 desc)`, `products_active_idx`, `products_boosted_until_idx`, `products_moderation_status_idx`
-(027, missing from schema.sql).
+(027).
 
 ### `product_images`
-*(Missing from schema.sql — migration 026.)* Up to N photos per listing; `products.image_url`
+*(Added in migration 026.)* Up to N photos per listing; `products.image_url`
 stays as a denormalized cover.
 
 | Column | Type | Notes |
@@ -241,7 +221,7 @@ A placed order / the escrow + payment record.
 | `paid_at` | timestamptz | |
 | `platform_fee_bps`, `platform_fee_amount`, `seller_payout_amount` | integer | snapshotted once at payment confirmation, frozen forever after |
 
-**Constraints added in 021, missing from schema.sql**: `orders_platform_fee_amount_nonneg`,
+**Constraints added in 021**: `orders_platform_fee_amount_nonneg`,
 `orders_seller_payout_amount_nonneg`, `orders_platform_fee_bps_range` (0–10000),
 `orders_fee_split_reconciles` (`platform_fee_amount + seller_payout_amount = price` when both
 set), `orders_escrow_requires_payment` (escrow can't be `held`/`released` unless
@@ -249,8 +229,7 @@ set), `orders_escrow_requires_payment` (escrow can't be `held`/`released` unless
 snapshot).
 
 Indexes: `orders_user_id_idx`, `orders_seller_idx`, `orders_escrow_status_idx` (partial,
-`where escrow_status='disputed'`), `orders_seller_id_idx`, `orders_request_id_idx` (021,
-missing from schema.sql).
+`where escrow_status='disputed'`), `orders_seller_id_idx`, `orders_request_id_idx` (021).
 
 ### `notifications`
 Per-user notification feed.
@@ -275,8 +254,7 @@ Buyer↔seller chat thread.
 | `seller_id` | text | not null, **FK → users.id** (cascade) — note: references `users`, not `sellers` |
 | `created_at` | timestamptz | |
 
-Unique `(buyer_id, seller_id)`. Index: `conversations_seller_id_idx` (021, missing from
-schema.sql).
+Unique `(buyer_id, seller_id)`. Index: `conversations_seller_id_idx` (021).
 
 ### `messages`
 Chat messages within a conversation.
@@ -290,8 +268,7 @@ Chat messages within a conversation.
 | `created_at` | timestamptz | |
 | `read` | boolean | default false |
 
-Indexes: `messages_conversation_id_idx`; `messages_sender_id_idx` (021, missing from
-schema.sql).
+Indexes: `messages_conversation_id_idx`; `messages_sender_id_idx` (021).
 
 ### `support_tickets`
 In-app support ticket thread (019).
@@ -322,7 +299,7 @@ Messages within a support ticket.
 | `created_at` | timestamptz | |
 
 Indexes: `support_ticket_messages_ticket_id_idx`; `support_ticket_messages_sender_id_idx`
-(021, missing from schema.sql).
+(021).
 
 ### `saved_items`
 Wishlist / "save for later".
@@ -335,7 +312,7 @@ Wishlist / "save for later".
 | `created_at` | timestamptz | |
 
 Unique `(user_id, product_id)`. Indexes: `saved_items_user_id_idx`;
-`saved_items_product_id_idx` (021, missing from schema.sql).
+`saved_items_product_id_idx` (021).
 
 ### `admin_actions`
 Audit trail for high-impact admin actions.
@@ -348,8 +325,7 @@ Audit trail for high-impact admin actions.
 | `detail` | jsonb | |
 | `created_at` | timestamptz | |
 
-Indexes: `admin_actions_created_at_idx(created_at desc)`; `admin_actions_admin_id_idx` (021,
-missing from schema.sql).
+Indexes: `admin_actions_created_at_idx(created_at desc)`; `admin_actions_admin_id_idx` (021).
 
 ### `transaction_records`
 *(024)* Verified, buyer-facing proof-of-completion snapshot — created exactly once per order,
@@ -450,7 +426,7 @@ A seller's Store plan OR a user's FindIt Pro plan (same shape, `owner_type` dist
 | `created_at`, `updated_at` | timestamptz | |
 
 Unique `(owner_type, owner_id)`. Indexes: `subscriptions_owner_idx(owner_type,owner_id)`,
-`subscriptions_status_idx`, `subscriptions_plan_id_idx` (021, missing from schema.sql).
+`subscriptions_status_idx`, `subscriptions_plan_id_idx` (021).
 
 ### `subscription_events`
 Append-only audit trail for a subscription (upgrades, trial starts, cancellations…).
@@ -495,8 +471,8 @@ Admin-editable, append-only marketplace commission — "current fee" = latest ro
 | `created_by` | text | **FK → users.id**, nullable |
 | `created_at` | timestamptz | |
 
-Index: `platform_fee_config_created_at_idx(created_at desc)`; `_created_by_idx` (021, missing
-from schema.sql). Seed row: `fee_default`, 500 bps (5%).
+Index: `platform_fee_config_created_at_idx(created_at desc)`; `_created_by_idx` (021). Seed
+row: `fee_default`, 500 bps (5%).
 
 ### `payouts`
 One row per order once funds are released to the seller.
@@ -537,16 +513,15 @@ Append-only purchase record of a listing boost.
 | `product_id` | text | not null, **FK → products.id** (cascade) |
 | `seller_id` | text | not null, **FK → sellers.id** (cascade) |
 | `boost_plan_id` | text | not null, **FK → boost_plans.id** |
-| `amount` | integer | check `>= 0` (021, missing from schema.sql) |
+| `amount` | integer | check `>= 0` (021) |
 | `starts_at`, `ends_at` | timestamptz | |
 | `created_at` | timestamptz | |
-| `payment_id` | text | **FK → payments.id**, nullable (029, missing from schema.sql) — unique partial index `boosts_payment_id_key` where not null, makes boost activation idempotent against a redelivered Paystack webhook |
+| `payment_id` | text | **FK → payments.id**, nullable (029) — unique partial index `boosts_payment_id_key` where not null, makes boost activation idempotent against a redelivered Paystack webhook |
 
-Indexes: `boosts_product_id_idx`, `boosts_seller_id_idx`; `boosts_boost_plan_id_idx` (021,
-missing from schema.sql).
+Indexes: `boosts_product_id_idx`, `boosts_seller_id_idx`; `boosts_boost_plan_id_idx` (021).
 
 ### `rate_limits`
-*(Missing from schema.sql entirely — migration 022.)* Shared, cross-serverless-instance
+*(Added in migration 022.)* Shared, cross-serverless-instance
 rate-limit counters (DB-backed because each Vercel serverless instance used to keep its own,
 independently-wrong, in-memory counter).
 
@@ -560,7 +535,7 @@ Index: `rate_limits_window_start_idx(window_start)` (supports opportunistic GC).
 function: `check_rate_limit()`, see §3 below.
 
 ### `reviews`
-*(Missing from schema.sql — migration 025.)* Real, listable, seller-repliable reviews (the
+*(Added in migration 025.)* Real, listable, seller-repliable reviews (the
 text itself used to live only on `orders.review_comment`, invisible to other buyers).
 
 | Column | Type | Notes |
@@ -580,7 +555,7 @@ Indexes: `reviews_seller_id_idx`, `_seller_name_idx`, `_buyer_user_id_idx`,
 `reviewed=true`.
 
 ### `moderation_rules`
-*(Missing from schema.sql — migration 027.)* Admin-editable prohibited-keyword list for
+*(Added in migration 027.)* Admin-editable prohibited-keyword list for
 listings.
 
 | Column | Type | Notes |
@@ -595,7 +570,7 @@ listings.
 Index: `moderation_rules_active_idx(active)`.
 
 ### `product_reports`
-*(Missing from schema.sql — migration 027.)* Buyer "report this listing" queue.
+*(Added in migration 027.)* Buyer "report this listing" queue.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -828,10 +803,9 @@ deliberately performance- or correctness-motivated:
 1. **No Supabase Auth, no `auth.uid()` policies anywhere.** Custom phone+password auth
    (`lib/auth.ts`), cookie sessions (`sessions` table). RLS is defense-in-depth only; the
    service-role key is the actual trust boundary, used from every Next.js API route.
-2. **`schema.sql` needs a refresh pass** before being trusted as a living reference on its
-   own — it's missing 5 tables, roughly 15 columns, 1 function, and roughly 15
-   constraints/indexes from migrations 021/022/025/026/027/029. Tracked as a known issue in
-   `PROJECT_STATUS.md` §8, recommended as the first item in §9's next-steps list.
+2. **`schema.sql` is a true mirror of the live schema** (regenerated and verified 2026-10-01,
+   see the note at the top of this file) — keep it that way by regenerating it again whenever
+   a new migration lands, rather than letting it drift a second time.
 3. **Identity dual-tracking is a recurring pattern**: `products`/`orders`/`offers` all carry
    both a legacy text `seller` name and a nullable `seller_id` FK — a deliberate, additive,
    in-progress migration (009) toward reliable identity, not yet the sole source of truth

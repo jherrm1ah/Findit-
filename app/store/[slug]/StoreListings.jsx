@@ -5,7 +5,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { Search, X } from "lucide-react";
 
-const naira = (amount) => `₦${amount.toLocaleString("en-NG")}`;
+// Number(...) coercion matches components/findit-app/data.js's shared naira()
+// helper — degrades to ₦0/₦NaN instead of throwing if amount is ever not a
+// plain number.
+const naira = (amount) => `₦${Number(amount).toLocaleString("en-NG")}`;
 
 // Client-side search/category filter over one seller's own listings — same
 // search-box and pill-row styling as components/findit-app/Browse.jsx, so a
