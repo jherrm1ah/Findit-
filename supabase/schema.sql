@@ -274,7 +274,13 @@ create table if not exists products (
   -- boost_plans/boosts and lib/boosts.ts) that just moves this listing to
   -- the front of Home/Browse while now() < boosted_until — no cron needed
   -- to "expire" it, the sort just stops caring once the timestamp passes.
-  boosted_until timestamptz
+  boosted_until timestamptz,
+  -- Migration 030 — dedupes the scheduled "your boost ended" notification
+  -- (see app/api/cron/expirations) against THIS specific boosted_until,
+  -- not the listing forever: lib/boosts.ts#applyBoostedUntil clears it back
+  -- to null every time it extends boosted_until, so stacking another boost
+  -- later still gets its own notification when that one eventually lapses.
+  boost_expiry_notified_at timestamptz
 );
 create index if not exists products_seller_id_idx on products(seller_id);
 create index if not exists products_seller_idx on products(seller);

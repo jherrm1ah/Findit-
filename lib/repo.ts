@@ -817,6 +817,28 @@ export async function updateProduct(
   if (patch.images !== undefined) {
     await replaceProductImages(db, id, images);
   }
+
+  // Saving a listing (the heart icon) used to be a dead end — nothing ever
+  // watched it afterward, so a price drop or restock was invisible to
+  // everyone who'd saved it unless they stumbled back onto the listing
+  // themselves. Only these two edits are worth interrupting a saver for;
+  // anything else (photos, description, color) stays silent. Skipped
+  // entirely when the listing ends up inactive from this same edit — no
+  // point telling someone about a deal on a listing they can't see.
+  const nowActive = patch.active !== undefined ? patch.active : existing.active;
+  const nowPrice = Math.round(patch.price ?? existing.price);
+  const priceDropped = nowActive && patch.price !== undefined && nowPrice < existing.price;
+  const restocked = nowActive && patch.qty !== undefined && existing.qty === 0 && patch.qty > 0;
+  if (priceDropped || restocked) {
+    const saversResult = await db.from("saved_items").select("user_id").eq("product_id", id);
+    const savers = assertNoError(saversResult, "listing savers of product") as Row[];
+    const title = priceDropped ? "Price drop on a saved item" : "Back in stock";
+    const body = priceDropped
+      ? `"${existing.name}" dropped to ₦${nowPrice.toLocaleString("en-NG")}.`
+      : `"${existing.name}" is back in stock.`;
+    await Promise.all(savers.map((s) => notifyBestEffort({ userId: s.user_id as string, type: "saved_item", title, body })));
+  }
+
   return getProduct(id);
 }
 

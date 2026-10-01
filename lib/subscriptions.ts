@@ -1,5 +1,5 @@
 import { getDb, assertNoError } from "./db";
-import { ValidationError } from "./repo";
+import { ValidationError, notifyBestEffort, findUserForSellerId } from "./repo";
 
 type Row = Record<string, unknown>;
 
@@ -297,6 +297,22 @@ async function expirePlatformSubscription(sub: Subscription, reason: "trial_ende
     return latest;
   }
   await logEvent(sub.id, reason, { fromPlanId: sub.planId, wasTrial: sub.status === "trialing" });
+  // Only reaches here once, for whichever caller's write actually won the
+  // race above (the condition on sub.status means a second call for an
+  // already-expired row just takes the "re-read and return" branch instead
+  // of landing here again) — so this fires exactly once per real lapse, no
+  // matter whether it was a normal page load that happened to notice
+  // (resolveEffectiveSubscription) or the scheduled sweep below catching a
+  // seller who hasn't opened the app since. Never for "cancelled" — that's
+  // the seller's own action, moments old; they don't need telling.
+  if (reason !== "cancelled") {
+    await notifyBestEffort({
+      userId: sub.ownerId,
+      type: "seller",
+      title: reason === "trial_ended" ? "Your FindIt Pro trial has ended" : "Your FindIt Pro subscription expired",
+      body: "Your FindIt Pro perks have been turned off — resubscribe anytime to get them back.",
+    });
+  }
   return rowToSubscription(row);
 }
 
@@ -337,7 +353,53 @@ async function downgradeToFree(sub: Subscription, reason: "trial_ended" | "expir
     const freePlan = await getPlan(FREE_STORE_PLAN_ID);
     await enforceProductLimit(sub.ownerId, freePlan?.productLimit ?? null);
   }
+  // Same "fires exactly once per real lapse" reasoning as
+  // expirePlatformSubscription above. sub.ownerId here is a sellers.id, not
+  // a users.id (see getSellerIdForUser) — needs the same resolution every
+  // other seller-facing notification in this codebase already does.
+  if (reason !== "cancelled") {
+    const seller = await findUserForSellerId(sub.ownerId);
+    if (seller) {
+      await notifyBestEffort({
+        userId: seller.id,
+        type: "seller",
+        title: reason === "trial_ended" ? "Your store trial has ended" : "Your store subscription expired",
+        body: "Your store is back on the Free plan — upgrade anytime to get your plan's perks back.",
+      });
+    }
+  }
   return rowToSubscription(row);
+}
+
+// Called on a schedule (see app/api/cron/expirations, vercel.json) rather
+// than waiting for a read that happens to trigger resolveEffectiveSubscription
+// (getSellerSubscription/getPlatformSubscription) to lazily notice a lapse.
+// That lazy path works fine for a seller who's still opening the app, but
+// someone who stops entirely — the exact seller a "your trial ended"
+// notification matters most for — would otherwise never have their row
+// re-read at all, and so never get told. Safe to run concurrently with a
+// normal lazy read of the same row: both go through the same
+// conditioned update inside downgradeToFree/expirePlatformSubscription, so
+// whichever gets there first is the one that actually writes (and
+// notifies) — the other just takes the "someone else already handled this"
+// branch.
+export async function sweepLapsedSubscriptions(): Promise<number> {
+  const db = getDb();
+  const nowIso = new Date().toISOString();
+  const result = await db
+    .from("subscriptions")
+    .select("*")
+    .in("status", ["active", "trialing", "past_due"])
+    .or(`current_period_end.lte.${nowIso},trial_ends_at.lte.${nowIso}`);
+  const rows = assertNoError(result, "finding subscriptions to sweep for expiry") as Row[];
+
+  let resolved = 0;
+  for (const row of rows) {
+    const sub = rowToSubscription(row);
+    const after = await resolveEffectiveSubscription(sub);
+    if (after.status !== sub.status) resolved++;
+  }
+  return resolved;
 }
 
 // The main read path — used by gating checks and the dashboard alike, so

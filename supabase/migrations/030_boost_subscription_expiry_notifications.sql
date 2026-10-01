@@ -1,0 +1,23 @@
+-- ---------------------------------------------------------------------------
+-- 030 — Boost expiry notifications
+--
+-- products.boosted_until (migration 018) never needed a cron to "expire" a
+-- boost for sorting purposes — Home/Browse just stops caring once now() >
+-- boosted_until. But nothing ever told the SELLER their boost ran out
+-- either, short of them noticing the placement effect wore off. Fixing that
+-- means a scheduled sweep (see app/api/cron/expirations, vercel.json) that
+-- finds products whose boost just lapsed and notifies the seller — this
+-- column is how that sweep avoids notifying the same lapse twice.
+--
+-- Tracked per-PRODUCT against its live boosted_until, not per boosts row:
+-- a seller can stack boost purchases (lib/boosts.ts#applyBoostedUntil is
+-- additive), and an earlier purchase's own ends_at can read as "in the
+-- past" while the listing is still actively boosted by a later purchase's
+-- extension — only the product's actual boosted_until is ever the truth.
+-- applyBoostedUntil clears this back to null every time it genuinely
+-- extends boosted_until, so a later boost's eventual lapse gets its own
+-- fresh notification rather than being silently skipped as "already
+-- notified" for a now-stale, shorter expiry.
+-- ---------------------------------------------------------------------------
+
+alter table products add column if not exists boost_expiry_notified_at timestamptz;
