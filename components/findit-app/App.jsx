@@ -93,6 +93,9 @@ export default function App() {
       // whoever logs in next.
       mainDataRef.current = null;
       setUser(null);
+      // Whoever this was already has an account — never reopen Login on
+      // whatever mode a much earlier "Get Started" tap left `loginMode` in.
+      setLoginMode("login");
       setPhase("login");
       showToast("Your session expired — please log in again.", "error");
     });
@@ -166,6 +169,9 @@ export default function App() {
     // account's real orders and notifications.
     mainDataRef.current = null;
     setUser(null);
+    // Same reasoning as the session-expiry handler above — whoever is
+    // logging out already has an account.
+    setLoginMode("login");
     setPhase("login");
   };
 
