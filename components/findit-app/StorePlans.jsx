@@ -35,7 +35,7 @@ const FEATURE_ROWS = (plan) =>
     plan.customizationLevel !== "none" ? { text: "Store logo, banner, layout templates & accent colors", live: true } : null,
     plan.featuredListingAccess ? { text: "Featured placement on Home & Browse", live: true } : null,
     plan.proBadge ? { text: "Pro Store badge", live: true } : null,
-    plan.prioritySupport ? { text: "Priority support", live: false } : null,
+    plan.prioritySupport ? { text: "Priority support", live: true } : null,
   ].filter(Boolean);
 
 function cap(s) {

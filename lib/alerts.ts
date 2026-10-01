@@ -2,7 +2,7 @@ import { countDisputedOrders } from "./repo";
 import { listPayoutsForAdmin } from "./payments";
 import { getVerificationQueueCounts } from "./sellerVerification";
 import { getSellerRiskSignals } from "./risk";
-import { getOpenTicketCount } from "./support";
+import { getOpenTicketCount, getOpenPriorityTicketCount } from "./support";
 
 // The admin alert center — deliberately NOT a new signal. Every item here
 // is a count this app already computes for its own dedicated screen
@@ -28,12 +28,13 @@ function plural(n: number, noun: string): string {
 }
 
 export async function getAdminAlerts(): Promise<AdminAlert[]> {
-  const [openDisputes, manualPayouts, verificationCounts, riskSignals, openTickets] = await Promise.all([
+  const [openDisputes, manualPayouts, verificationCounts, riskSignals, openTickets, openPriorityTickets] = await Promise.all([
     countDisputedOrders(),
     listPayoutsForAdmin("manual_required"),
     getVerificationQueueCounts(),
     getSellerRiskSignals(),
     getOpenTicketCount(),
+    getOpenPriorityTicketCount(),
   ]);
 
   const highRiskSellerCount = riskSignals.filter((s) => s.disputeRate >= HIGH_RISK_DISPUTE_RATE).length;
@@ -85,11 +86,19 @@ export async function getAdminAlerts(): Promise<AdminAlert[]> {
   }
 
   if (openTickets > 0) {
+    // A priority ticket (Business Store/Pro Store/FindIt Pro — see
+    // lib/support.ts#hasPrioritySupport) bumps this to critical and says so
+    // plainly, rather than sitting in the same "warning" bucket as every
+    // other open ticket — the whole point of paying for priority support is
+    // that it doesn't go unnoticed.
     alerts.push({
       id: "tickets",
-      severity: "warning",
-      title: "Open support tickets",
-      description: `${plural(openTickets, "ticket")} waiting on a reply.`,
+      severity: openPriorityTickets > 0 ? "critical" : "warning",
+      title: openPriorityTickets > 0 ? "Priority support tickets waiting" : "Open support tickets",
+      description:
+        openPriorityTickets > 0
+          ? `${plural(openPriorityTickets, "priority ticket")} waiting, out of ${openTickets} total.`
+          : `${plural(openTickets, "ticket")} waiting on a reply.`,
       count: openTickets,
       tab: "support",
     });

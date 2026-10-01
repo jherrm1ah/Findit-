@@ -115,15 +115,36 @@ export async function POST(req: NextRequest) {
     });
     assertNoError(insertResult, "recording pending payment");
 
-    // Most accounts have no email (this app is phone-first) — Paystack's
-    // initialize endpoint requires one regardless, same fallback used for
-    // Store checkout.
-    const { authorizationUrl } = await initializeTransaction({
-      email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
-      amountNaira: amount,
-      reference,
-      metadata: { userId: user.id, planId: plan.id, billingPeriod, ownerType: "platform" },
-    });
+    let authorizationUrl: string;
+    try {
+      // Most accounts have no email (this app is phone-first) — Paystack's
+      // initialize endpoint requires one regardless, same fallback used for
+      // Store checkout.
+      ({ authorizationUrl } = await initializeTransaction({
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        amountNaira: amount,
+        reference,
+        metadata: { userId: user.id, planId: plan.id, billingPeriod, ownerType: "platform" },
+      }));
+    } catch (err) {
+      // Same reasoning as the order/boost checkout routes: a pending row
+      // left behind by a failed init call would otherwise block the next
+      // retry for PENDING_PAYMENT_STALE_MS.
+      await db
+        .from("payments")
+        .update({
+          status: "failed",
+          metadata: {
+            userId: user.id,
+            planId: plan.id,
+            billingPeriod,
+            ownerType: "platform",
+            initError: err instanceof Error ? err.message : String(err),
+          },
+        })
+        .eq("id", reference);
+      throw err;
+    }
 
     return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount });
   } catch (err) {

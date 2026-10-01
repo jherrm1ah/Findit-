@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
+import { PaystackRejectedError } from "./paystack";
 
 // Thrown for real, user-facing validation problems (bad input, business-rule
 // violations) — safe to show verbatim to the client. Anything else that
@@ -32,6 +33,16 @@ export function toClientError(err: unknown, fallback = "Something went wrong —
   // reports here, so this is the one place that needs to know about Sentry
   // at all, not every individual route's catch block.
   Sentry.captureException(err);
+  // Still logged/reported above like any other non-ValidationError — this
+  // only changes what the CLIENT sees. Paystack's own rejection message
+  // (bad email, amount too small, the business account isn't live-ready
+  // yet) is written for exactly this — showing it beats every
+  // Paystack-backed checkout (orders, boosts, Store/FindIt Pro
+  // subscriptions) collapsing to the same unhelpful generic fallback no
+  // one could act on, buyer or admin alike.
+  if (err instanceof PaystackRejectedError) {
+    return { status: 502, body: { error: err.message } };
+  }
   return { status: 500, body: { error: fallback } };
 }
 

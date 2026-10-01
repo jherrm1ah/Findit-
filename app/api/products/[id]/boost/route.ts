@@ -107,12 +107,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
     assertNoError(insertResult, "recording pending payment");
 
-    const { authorizationUrl } = await initializeTransaction({
-      email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
-      amountNaira: plan.price,
-      reference,
-      metadata: { productId: product.id, sellerId, boostPlanId: plan.id },
-    });
+    let authorizationUrl: string;
+    try {
+      ({ authorizationUrl } = await initializeTransaction({
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        amountNaira: plan.price,
+        reference,
+        metadata: { productId: product.id, sellerId, boostPlanId: plan.id },
+      }));
+    } catch (err) {
+      // Same reasoning as the order/subscription checkout routes: a
+      // pending row left behind by a failed init call would otherwise
+      // block the seller's next retry for PENDING_PAYMENT_STALE_MS.
+      await db
+        .from("payments")
+        .update({
+          status: "failed",
+          metadata: { productId: product.id, sellerId, boostPlanId: plan.id, initError: err instanceof Error ? err.message : String(err) },
+        })
+        .eq("id", reference);
+      throw err;
+    }
 
     return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: plan.price });
   } catch (err) {

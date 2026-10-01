@@ -85,16 +85,31 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
     assertNoError(insertResult, "recording pending payment");
 
-    // Most accounts have no email (this app is phone-first) — Paystack's
-    // initialize endpoint requires one regardless, so this synthetic
-    // address (never sent anything) is the fallback when the buyer hasn't
-    // given us a real one.
-    const { authorizationUrl } = await initializeTransaction({
-      email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
-      amountNaira: order.price,
-      reference,
-      metadata: { orderId: order.id },
-    });
+    let authorizationUrl: string;
+    try {
+      // Most accounts have no email (this app is phone-first) — Paystack's
+      // initialize endpoint requires one regardless, so this synthetic
+      // address (never sent anything) is the fallback when the buyer
+      // hasn't given us a real one.
+      ({ authorizationUrl } = await initializeTransaction({
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        amountNaira: order.price,
+        reference,
+        metadata: { orderId: order.id },
+      }));
+    } catch (err) {
+      // initializeTransaction can throw after the pending row above already
+      // committed — leaving it "pending" would block every retry for the
+      // next PENDING_PAYMENT_STALE_MS (the check above only matches
+      // status='pending'), even though this attempt never actually reached
+      // Paystack successfully. Mark it failed so the buyer's very next tap
+      // isn't blocked by an attempt that never got anywhere.
+      await db
+        .from("payments")
+        .update({ status: "failed", metadata: { orderId: order.id, initError: err instanceof Error ? err.message : String(err) } })
+        .eq("id", reference);
+      throw err;
+    }
 
     return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: order.price });
   } catch (err) {

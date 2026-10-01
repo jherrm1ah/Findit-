@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap } from "lucide-react";
 import { Pill } from "./shared";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
@@ -2125,7 +2125,25 @@ function AnalyticsAdmin({ onLoadAnalytics, showToast }) {
 // this just surfaces whichever are currently non-zero in one feed, and
 // tapping one jumps straight to that tab via the same onNavigate the
 // Overview tab's StatCards already use.
-function AlertsCenter({ alerts, onNavigate }) {
+function AlertsCenter({ alerts, failed, onRetry, onNavigate }) {
+  // Distinct from "Nothing needs attention" on purpose — a failed fetch
+  // used to be swallowed into the same empty-array state as a genuine
+  // all-clear, so a real backend error read as reassurance instead of a
+  // problem. An admin trusting that false all-clear is worse than no
+  // alert center at all.
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load alerts — this isn&rsquo;t the same as &ldquo;nothing needs attention.&rdquo;</p>
+          <button onClick={onRetry} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!alerts) return <p className="text-[12px] text-[#6B6483]">Loading alerts…</p>;
   if (alerts.length === 0) {
     return <p className="text-[12px] text-[#6B6483]">Nothing needs attention right now.</p>;
@@ -2161,12 +2179,18 @@ function AlertsCenter({ alerts, onNavigate }) {
 
 function AlertsAdmin({ onLoadAlerts, onNavigate }) {
   const [alerts, setAlerts] = useState(null);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    onLoadAlerts().then(setAlerts).catch(() => setAlerts([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadAlerts()
+      .then(setAlerts)
+      .catch(() => setFailed(true));
+  };
 
-  return <AlertsCenter alerts={alerts} onNavigate={onNavigate} />;
+  useEffect(load, []);
+
+  return <AlertsCenter alerts={alerts} failed={failed} onRetry={load} onNavigate={onNavigate} />;
 }
 
 const TICKET_STATUS_FILTERS = [
@@ -2229,9 +2253,15 @@ function AdminTicketThread({ ticket, messages, loading, onBack, onSend, onResolv
       </div>
 
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
-        <div className="flex items-center justify-between mb-1">
-          <p className="text-[13px] font-semibold text-[#1E1B4B]">{ticket.subject}</p>
-          {ticket.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+        <div className="flex items-center justify-between mb-1 gap-2">
+          <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1.5 min-w-0">
+            {ticket.priority && <Zap size={13} className="text-[#F59E0B] shrink-0" fill="#F59E0B" />}
+            <span className="truncate">{ticket.subject}</span>
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {ticket.priority && <Pill tone="gold">Priority</Pill>}
+            {ticket.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
+          </div>
         </div>
         <p className="text-[11px] text-[#6B6483]">{ticket.userName || ticket.userPhone || "User"}</p>
       </div>
@@ -2357,14 +2387,18 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
             onClick={() => open(t)}
             {...bouncyPress}
             className={`w-full text-left bg-white border rounded-[20px] p-4 flex items-center justify-between gap-3 ${
-              t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"
-            }`}
+              t.priority ? "border-l-4 border-l-[#F59E0B]" : ""
+            } ${t.adminHasUnread ? "border-[#E4D9FA] bg-[#F5F2FC]" : "border-[#ECE9F7]"}`}
           >
             <div className="min-w-0">
-              <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{t.subject}</p>
+              <p className="text-[13px] font-semibold text-[#1E1B4B] truncate flex items-center gap-1.5">
+                {t.priority && <Zap size={12} className="text-[#F59E0B] shrink-0" fill="#F59E0B" />}
+                <span className="truncate">{t.subject}</span>
+              </p>
               <p className="text-[11px] text-[#6B6483]">{t.userName || t.userPhone || "User"}</p>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {t.priority && <Pill tone="gold">Priority</Pill>}
               {t.status === "resolved" ? <Pill tone="green">Resolved</Pill> : <Pill tone="gold">Open</Pill>}
               <ChevronRight size={14} className="text-[#B7AFD6]" />
             </div>

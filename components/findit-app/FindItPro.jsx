@@ -20,7 +20,7 @@ const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 // today, so they're deliberately left off this list rather than claimed.
 const FEATURE_ROWS = [
   { text: "FindIt Pro badge on your profile", live: true },
-  { text: "Priority support", live: false },
+  { text: "Priority support", live: true },
 ];
 
 export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, go }) {
