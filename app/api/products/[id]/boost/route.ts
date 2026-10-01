@@ -109,8 +109,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     let authorizationUrl: string;
     try {
+      // Must be a real, publicly-valid domain — Paystack's live API rejects
+      // ".local" (and similar non-public TLDs) as "not a valid email" even
+      // though the format otherwise looks fine.
       ({ authorizationUrl } = await initializeTransaction({
-        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
         amountNaira: plan.price,
         reference,
         metadata: { productId: product.id, sellerId, boostPlanId: plan.id },

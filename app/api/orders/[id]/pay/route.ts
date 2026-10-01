@@ -90,9 +90,11 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       // Most accounts have no email (this app is phone-first) — Paystack's
       // initialize endpoint requires one regardless, so this synthetic
       // address (never sent anything) is the fallback when the buyer
-      // hasn't given us a real one.
+      // hasn't given us a real one. Must be a real, publicly-valid domain —
+      // Paystack's live API rejects ".local" (and similar non-public TLDs)
+      // as "not a valid email" even though the format otherwise looks fine.
       ({ authorizationUrl } = await initializeTransaction({
-        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
         amountNaira: order.price,
         reference,
         metadata: { orderId: order.id },
