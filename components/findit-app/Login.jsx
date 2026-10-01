@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, User, Store } from "lucide-react";
+import { ArrowRight, User, Store, X } from "lucide-react";
 import { Logo, Field } from "./shared";
+import { IconButton } from "./sharedMotion";
 import { api } from "./api";
 import OtpInput from "./OtpInput";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
@@ -22,7 +23,7 @@ function formatMMSS(totalSeconds) {
   return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
 }
 
-export default function Login({ onDone, showToast, initialMode = "login" }) {
+export default function Login({ onDone, showToast, initialMode = "login", onDismiss }) {
   const [mode, setMode] = useState(initialMode); // login | signup | reset
   const [step, setStep] = useState("form"); // form | code | newPassword
   const [phone, setPhone] = useState("");
@@ -181,8 +182,9 @@ export default function Login({ onDone, showToast, initialMode = "login" }) {
     }
   };
 
+  let stepContent;
   if (mode === "reset" && step === "form") {
-    return (
+    stepContent = (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -250,11 +252,9 @@ export default function Login({ onDone, showToast, initialMode = "login" }) {
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
       </motion.div>
     );
-  }
-
-  if (mode === "reset" && step === "newPassword") {
+  } else if (mode === "reset" && step === "newPassword") {
     const validNewPassword = newPassword.length >= 4 && newPassword === newPasswordConfirm;
-    return (
+    stepContent = (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -334,11 +334,9 @@ export default function Login({ onDone, showToast, initialMode = "login" }) {
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
       </motion.div>
     );
-  }
-
-  if (step === "code") {
+  } else if (step === "code") {
     const maskedPhone = phone.length > 4 ? `${phone.slice(0, -4).replace(/./g, "•")}${phone.slice(-4)}` : phone;
-    return (
+    stepContent = (
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
@@ -418,9 +416,8 @@ export default function Login({ onDone, showToast, initialMode = "login" }) {
         <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
       </motion.div>
     );
-  }
-
-  return (
+  } else {
+    stepContent = (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
       animate={{ opacity: 1, y: 0 }}
@@ -553,5 +550,24 @@ export default function Login({ onDone, showToast, initialMode = "login" }) {
 
       <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
     </motion.div>
+    );
+  }
+
+  // onDismiss is only passed when Login appears as an interruption to
+  // someone already browsing as a guest (see App.jsx's requireAuth) — it
+  // backs all the way out to guest browsing regardless of which step above
+  // is showing, since every step is its own full-screen fixed overlay and
+  // this sits on top of all of them as one consistent escape hatch.
+  return (
+    <>
+      {stepContent}
+      {onDismiss && (
+        <div className="fixed top-4 right-4 z-[60]">
+          <IconButton onClick={onDismiss} aria-label="Continue browsing without an account">
+            <X size={18} className="text-[#1E1B4B]" />
+          </IconButton>
+        </div>
+      )}
+    </>
   );
 }

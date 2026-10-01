@@ -52,7 +52,7 @@ function tabsFor(role) {
   ];
 }
 
-export default function MainApp({ user, onLogout, showToast, onUserUpdate, preloadedMainData }) {
+export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUserUpdate, preloadedMainData }) {
   const isSeller = user?.role === "seller";
   const isAdmin = user?.role === "admin";
   const TABS = tabsFor(user?.role);
@@ -231,8 +231,23 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     // below was stacked sequentially after the splash on every refresh
     // instead of overlapping it, most noticeable on a slower connection.
     // Falls back to firing fresh requests when there's nothing preloaded —
-    // a brand-new login doesn't go through that session-check path at all.
-    const mainData = preloadedMainData ?? Promise.all([api.getProducts(), api.getOrders(), api.getNotifications()]);
+    // a brand-new login doesn't go through that session-check path at all,
+    // and neither does a guest (App.jsx never preloads for one — there's no
+    // account yet to preload orders/notifications for). getOrders and
+    // getNotifications both 401 for a guest; Promise.all rejects the WHOLE
+    // bundle the instant any one of its promises does, which used to mean
+    // a guest's listings silently failed to load too, discarding the
+    // already-successful getProducts() result right along with them — the
+    // one thing every guest actually needs on first paint. Each is now
+    // caught independently and defaults to [] rather than ever taking
+    // products down with it.
+    const mainData =
+      preloadedMainData ??
+      Promise.all([
+        api.getProducts(),
+        user ? api.getOrders().catch(() => []) : Promise.resolve([]),
+        user ? api.getNotifications().catch(() => []) : Promise.resolve([]),
+      ]);
     mainData
       .then(([p, o, n]) => {
         setProducts(p);
@@ -366,7 +381,23 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
     }
   };
 
+  // Screens that are either meaningless with no account (nothing to show —
+  // My orders, My requests, Messages, Notifications) or that unconditionally
+  // read user.name/phone/role/etc with no null-guard and would throw for a
+  // guest (Profile, AccountDetails, BecomeSeller, NotificationPreferences).
+  // seller/sellerOnboarding/storePlans/findItPro/admin are deliberately NOT
+  // here — those already render a RoleGate fallback instead of crashing,
+  // so they don't need a second layer of protection.
+  const AUTH_REQUIRED_SCREENS = new Set([
+    "profile", "accountDetails", "becomeSeller", "notifPrefs",
+    "account", "messages", "notifications", "myRequests", "request",
+  ]);
+
   const go = (s, group) => {
+    if (!user && AUTH_REQUIRED_SCREENS.has(s)) {
+      onRequireAuth?.();
+      return;
+    }
     if (s !== screen) {
       historyRef.current.push(screen);
       if (historyRef.current.length > MAX_HISTORY) historyRef.current.shift();
@@ -389,7 +420,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
 
   const handleToggleSaved = async (productId) => {
     if (!user) {
-      showToast("Log in to save items.", "error");
+      onRequireAuth?.();
       return;
     }
     if (pendingSaveToggles.has(productId)) return;
@@ -456,6 +487,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   };
 
   const buyNow = async (prod, qty) => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     try {
       // Only productId/qty go to the server — it looks up the real product
       // and computes price/seller itself, so nothing here is trusted as-is.
@@ -496,6 +531,10 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // paid individually from My orders (Account.jsx), so there's no separate
   // multi-item payment flow to build here.
   const handleCartCheckout = async () => {
+    if (!user) {
+      onRequireAuth?.();
+      return;
+    }
     setCheckingOutCart(true);
     const createdOrders = [];
     const remaining = [...cart];
@@ -1186,19 +1225,38 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   }, [products]);
 
   // The store page's "Message seller" button points at
-  // /?messageSeller=<name> (see app/store/[slug]/page.tsx) — a buyer with no
-  // session lands on Login first (App.jsx never renders MainApp without one)
-  // and the param survives that detour, so this only needs `user` to be
-  // ready, not `products`. Cleared the same way the product deep link is, so
-  // a refresh doesn't reopen the thread.
+  // /?messageSeller=<name> (see app/store/[slug]/page.tsx). A guest with no
+  // session lands here same as anyone else now (browsing needs no account —
+  // see App.jsx's requireAuth), but this effect simply no-ops until `user`
+  // is actually set: the `?messageSeller=` param just sits unconsumed in
+  // the URL while they're a guest, and openConversationWithSeller's own
+  // auth guard would also catch it even if that weren't true. Once they
+  // authenticate (via the auth overlay a tap on the thread, or anything
+  // else, would trigger), this effect's `[user]` dependency re-runs and the
+  // deep link finally resolves. Cleared the same way the product deep link
+  // is, so a refresh doesn't reopen the thread.
   const messageDeepLinkHandled = useRef(false);
+  const messageDeepLinkAuthPrompted = useRef(false);
   useEffect(() => {
-    if (messageDeepLinkHandled.current || !user) return;
+    if (messageDeepLinkHandled.current) return;
     const params = new URLSearchParams(window.location.search);
     const wantedSeller = params.get("messageSeller");
-    const wantedSellerId = params.get("messageSellerId");
+    if (!wantedSeller) {
+      messageDeepLinkHandled.current = true;
+      return;
+    }
+    if (!user) {
+      // Don't strand a guest who followed this link with a param that
+      // quietly does nothing — ask once, then wait for `user` to actually
+      // show up (this effect re-runs on it) before consuming the link.
+      if (!messageDeepLinkAuthPrompted.current) {
+        messageDeepLinkAuthPrompted.current = true;
+        onRequireAuth?.();
+      }
+      return;
+    }
     messageDeepLinkHandled.current = true;
-    if (!wantedSeller) return;
+    const wantedSellerId = params.get("messageSellerId");
     openConversationWithSeller(wantedSeller, wantedSellerId || undefined);
     params.delete("messageSeller");
     params.delete("messageSellerId");
@@ -1326,7 +1384,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
   // public name, never a Product.
   const openConversationWithSeller = async (sellerName, sellerId) => {
     if (!user) {
-      showToast("Log in to message a seller.", "error");
+      onRequireAuth?.();
       return;
     }
     try {
@@ -1460,6 +1518,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Seller access needed"
               message="Store plans belong to seller accounts."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1479,6 +1538,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Sign in needed"
               message="FindIt Pro is a membership for signed-in accounts."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1492,6 +1552,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Seller access needed"
               message="Seller verification belongs to seller accounts."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1542,6 +1603,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Seller access needed"
               message="This dashboard belongs to seller accounts. Sign up with a seller account (or log in with one) to respond to customer requests here."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1607,6 +1669,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Admin access needed"
               message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
@@ -1628,6 +1691,7 @@ export default function MainApp({ user, onLogout, showToast, onUserUpdate, prelo
               title="Admin access needed"
               message="This queue is staff-only. Log in with an admin account to verify sellers and review unmatched requests."
               onGoHome={() => go("home")}
+              onLogin={!user ? onRequireAuth : undefined}
               onLogout={onLogout}
               logoutLabel="Log out"
             />
