@@ -1222,6 +1222,7 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
   const [feeInput, setFeeInput] = useState("");
   const [savingFee, setSavingFee] = useState(false);
   const [payouts, setPayouts] = useState(null);
+  const [payoutsFailed, setPayoutsFailed] = useState(false);
   const [statusFilter, setStatusFilter] = useState("");
   const [actingId, setActingId] = useState(null);
 
@@ -1232,9 +1233,14 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
     }).catch(() => {});
   }, []);
 
-  useEffect(() => {
-    onLoadPayouts(statusFilter || undefined).then(setPayouts).catch(() => setPayouts([]));
-  }, [statusFilter]);
+  const loadPayouts = () => {
+    setPayoutsFailed(false);
+    onLoadPayouts(statusFilter || undefined)
+      .then(setPayouts)
+      .catch(() => setPayoutsFailed(true));
+  };
+
+  useEffect(loadPayouts, [statusFilter]);
 
   const saveFee = async (e) => {
     e.preventDefault();
@@ -1320,7 +1326,18 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
       </div>
 
       <div className="space-y-2.5">
-        {payouts?.length === 0 && <p className="text-[12px] text-[#6B6483]">No payouts match.</p>}
+        {payoutsFailed && (
+          <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+            <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load payouts — this isn&rsquo;t the same as &ldquo;none match.&rdquo;</p>
+              <button onClick={loadPayouts} className="text-[11.5px] font-semibold text-[#E64980]">
+                Try again
+              </button>
+            </div>
+          </div>
+        )}
+        {!payoutsFailed && payouts?.length === 0 && <p className="text-[12px] text-[#6B6483]">No payouts match.</p>}
         {payouts?.map((p) => (
           <div key={p.id} className="bg-white border border-[#ECE9F7] rounded-xl p-3.5">
             <div className="flex items-center justify-between mb-1">
@@ -1533,11 +1550,19 @@ function BoostPlanEditorCard({ plan, onSave }) {
 function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoostPlan, showToast }) {
   const [plans, setPlans] = useState(null);
   const [boostPlans, setBoostPlans] = useState(null);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    onLoadPlans().then(setPlans).catch(() => setPlans([]));
-    onLoadBoostPlans().then(setBoostPlans).catch(() => setBoostPlans([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    Promise.all([onLoadPlans(), onLoadBoostPlans()])
+      .then(([p, bp]) => {
+        setPlans(p);
+        setBoostPlans(bp);
+      })
+      .catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
 
   const save = async (id, patch) => {
     try {
@@ -1559,6 +1584,19 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoost
     }
   };
 
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load plans.</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!plans || !boostPlans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
 
   const storePlans = plans.filter((p) => p.kind === "store");
@@ -1651,13 +1689,17 @@ function CategoryEditorCard({ category, onSave }) {
 
 function CategoriesAdmin({ onLoadCategories, onCreateCategory, onUpdateCategory, showToast }) {
   const [categories, setCategories] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [newLabel, setNewLabel] = useState("");
   const [newIconKey, setNewIconKey] = useState(ICON_KEY_OPTIONS[0]);
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    onLoadCategories().then(setCategories).catch(() => setCategories([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadCategories().then(setCategories).catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
 
   const save = async (id, patch) => {
     try {
@@ -1685,6 +1727,19 @@ function CategoriesAdmin({ onLoadCategories, onCreateCategory, onUpdateCategory,
     }
   };
 
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load categories.</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!categories) return <p className="text-[12px] text-[#6B6483]">Loading categories…</p>;
 
   return (
@@ -1792,9 +1847,14 @@ function ModerationRulesAdmin({ onLoadRules, onCreateRule, onUpdateRule, showToa
   const [newSeverity, setNewSeverity] = useState("flag");
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    onLoadRules().then(setRules).catch(() => setRules([]));
-  }, []);
+  const [failed, setFailed] = useState(false);
+
+  const load = () => {
+    setFailed(false);
+    onLoadRules().then(setRules).catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
 
   const save = async (id, patch) => {
     try {
@@ -1823,6 +1883,19 @@ function ModerationRulesAdmin({ onLoadRules, onCreateRule, onUpdateRule, showToa
     }
   };
 
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load moderation rules.</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!rules) return <p className="text-[12px] text-[#6B6483]">Loading moderation rules…</p>;
 
   return (
@@ -1869,11 +1942,15 @@ function ModerationRulesAdmin({ onLoadRules, onCreateRule, onUpdateRule, showToa
 // same useState(null)-sentinel idiom as CategoriesAdmin/RiskSignals.
 function FlaggedProducts({ onLoadFlaggedProducts, onModerateProduct, showToast }) {
   const [products, setProducts] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [acting, setActing] = useState(null);
 
-  useEffect(() => {
-    onLoadFlaggedProducts().then(setProducts).catch(() => setProducts([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadFlaggedProducts().then(setProducts).catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
 
   const act = async (id, status, reason) => {
     setActing(id);
@@ -1888,6 +1965,19 @@ function FlaggedProducts({ onLoadFlaggedProducts, onModerateProduct, showToast }
     }
   };
 
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3 mb-7">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load flagged listings — this isn&rsquo;t the same as &ldquo;nothing flagged.&rdquo;</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!products) return <p className="text-[12px] text-[#6B6483]">Loading flagged listings…</p>;
   if (products.length === 0) {
     return <p className="text-[12px] text-[#6B6483] mb-7">Nothing flagged right now.</p>;
@@ -1938,11 +2028,15 @@ function FlaggedProducts({ onLoadFlaggedProducts, onModerateProduct, showToast }
 // Self-loading, same idiom as FlaggedProducts above.
 function ProductReportsQueue({ onLoadProductReports, onResolveProductReport, showToast }) {
   const [reports, setReports] = useState(null);
+  const [failed, setFailed] = useState(false);
   const [acting, setActing] = useState(null);
 
-  useEffect(() => {
-    onLoadProductReports().then(setReports).catch(() => setReports([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadProductReports().then(setReports).catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
 
   const resolve = async (report, outcome) => {
     setActing(report.id);
@@ -1957,6 +2051,19 @@ function ProductReportsQueue({ onLoadProductReports, onResolveProductReport, sho
     }
   };
 
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3 mb-7">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load reports — this isn&rsquo;t the same as &ldquo;none open.&rdquo;</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!reports) return <p className="text-[12px] text-[#6B6483]">Loading reports…</p>;
   if (reports.length === 0) {
     return <p className="text-[12px] text-[#6B6483] mb-7">No open reports — every reported listing has been reviewed.</p>;
@@ -2003,11 +2110,28 @@ function ProductReportsQueue({ onLoadProductReports, onResolveProductReport, sho
 // of one doesn't read as "100% risk").
 function RiskSignals({ onLoadRiskSignals }) {
   const [signals, setSignals] = useState(null);
+  const [failed, setFailed] = useState(false);
 
-  useEffect(() => {
-    onLoadRiskSignals().then(setSignals).catch(() => setSignals([]));
-  }, []);
+  const load = () => {
+    setFailed(false);
+    onLoadRiskSignals().then(setSignals).catch(() => setFailed(true));
+  };
 
+  useEffect(load, []);
+
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load risk signals.</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!signals) return <p className="text-[12px] text-[#6B6483]">Loading risk signals…</p>;
   if (signals.length === 0) {
     return <p className="text-[12px] text-[#6B6483]">No seller currently has a statistically meaningful dispute pattern.</p>;
@@ -2315,9 +2439,16 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
   const [messages, setMessages] = useState([]);
   const [loadingThread, setLoadingThread] = useState(false);
 
-  useEffect(() => {
-    onLoadTickets(statusFilter || undefined).then(setTickets).catch(() => setTickets([]));
-  }, [statusFilter]);
+  const [ticketsFailed, setTicketsFailed] = useState(false);
+
+  const loadTickets = () => {
+    setTicketsFailed(false);
+    onLoadTickets(statusFilter || undefined)
+      .then(setTickets)
+      .catch(() => setTicketsFailed(true));
+  };
+
+  useEffect(loadTickets, [statusFilter]);
 
   const open = async (t) => {
     setOpenTicket(t);
@@ -2376,8 +2507,19 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
         ))}
       </div>
 
-      {!tickets && <p className="text-[12px] text-[#6B6483]">Loading tickets…</p>}
-      {tickets && tickets.length === 0 && <p className="text-[12px] text-[#6B6483]">No support tickets match.</p>}
+      {ticketsFailed && (
+        <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
+          <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load tickets — this isn&rsquo;t the same as &ldquo;none match.&rdquo;</p>
+            <button onClick={loadTickets} className="text-[11.5px] font-semibold text-[#E64980]">
+              Try again
+            </button>
+          </div>
+        </div>
+      )}
+      {!ticketsFailed && !tickets && <p className="text-[12px] text-[#6B6483]">Loading tickets…</p>}
+      {!ticketsFailed && tickets && tickets.length === 0 && <p className="text-[12px] text-[#6B6483]">No support tickets match.</p>}
 
       <motion.div className="space-y-2.5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
         {tickets?.map((t) => (

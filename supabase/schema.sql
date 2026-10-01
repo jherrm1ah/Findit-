@@ -172,6 +172,7 @@ create table if not exists sellers (
   bank_account_name text,
   paystack_recipient_code text
 );
+create index if not exists sellers_verification_reviewed_by_idx on sellers(verification_reviewed_by);
 
 -- ---------------------------------------------------------------------------
 -- seller_verification_details / seller_verification_evidence — the private
@@ -293,13 +294,113 @@ create table if not exists products (
   -- not the listing forever: lib/boosts.ts#applyBoostedUntil clears it back
   -- to null every time it extends boosted_until, so stacking another boost
   -- later still gets its own notification when that one eventually lapses.
-  boost_expiry_notified_at timestamptz
+  boost_expiry_notified_at timestamptz,
+  -- ---- Real listing details (migration 026) ----
+  -- Nullable with no default, on purpose: a listing that predates this
+  -- migration has no honest answer for "what condition is this?" or "does
+  -- this include delivery?", and silently defaulting every existing row
+  -- would assert something nobody actually said. The seller form requires
+  -- these going forward (see lib/repo.ts#validateProductInput); an old,
+  -- unedited listing just shows "Not specified" until its seller updates it.
+  -- qty is the one exception — defaulting an existing single listing to
+  -- "1 available" is a safe, harmless assumption, not a trust claim.
+  description text,
+  condition text check (condition in ('New', 'Used')),
+  qty integer not null default 1 check (qty >= 0),
+  -- Free-text pickup/delivery-area note, same spirit as requests.location —
+  -- never geocoded, distinct from lat/lng above (which is the SELLER
+  -- ACCOUNT's location, captured for "near you" sorting, not a statement
+  -- about this specific item).
+  location text,
+  delivery_option text check (delivery_option in ('Delivery', 'Pickup', 'Both')),
+  color text,
+  variation text,
+  -- ---- Moderation (migration 027) ----
+  -- Deliberately separate from `active` above, which already means something
+  -- else entirely: a Store-subscription downgrade hiding excess listings.
+  -- Collapsing the two into one flag would make "why is this listing
+  -- hidden?" ambiguous to both the seller and support.
+  moderation_status text not null default 'active'
+    check (moderation_status in ('active', 'under_review', 'removed')),
+  moderation_reason text,
+  moderated_by text references users(id),
+  moderated_at timestamptz
 );
 create index if not exists products_seller_id_idx on products(seller_id);
 create index if not exists products_seller_idx on products(seller);
 create index if not exists products_created_at_idx on products(created_at desc);
 create index if not exists products_active_idx on products(active);
 create index if not exists products_boosted_until_idx on products(boosted_until);
+create index if not exists products_moderation_status_idx on products(moderation_status);
+create index if not exists products_moderated_by_idx on products(moderated_by);
+
+-- ---------------------------------------------------------------------------
+-- product_images (migration 026) — up to MAX_PRODUCT_IMAGES (lib/repo.ts)
+-- photos per listing, not just one. products.image_url above is kept as the
+-- cover photo (sort_order 0's url, denormalized by createProduct/
+-- updateProduct) so every existing reader keeps rendering the cover exactly
+-- as before; this table is what ProductDetail's photo gallery actually reads.
+-- ---------------------------------------------------------------------------
+
+create table if not exists product_images (
+  id text primary key,
+  product_id text not null references products(id) on delete cascade,
+  url text not null,
+  sort_order integer not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists product_images_product_id_idx on product_images(product_id, sort_order);
+alter table product_images enable row level security;
+
+-- ---------------------------------------------------------------------------
+-- moderation_rules / product_reports (migration 027)
+--
+-- moderation_rules — an admin-editable list of prohibited-item keywords,
+-- the same "admin manages a list of configurable rows" pattern as
+-- `categories`. A rule's severity decides what happens when a listing's
+-- name/description matches its keyword: 'block' refuses the create/update
+-- outright, 'flag' lets it through but leaves it for a human to look at.
+--
+-- product_reports — a buyer "report this listing" queue, the same
+-- report/resolve shape as the disputed-orders flow.
+-- ---------------------------------------------------------------------------
+
+create table if not exists moderation_rules (
+  id text primary key,
+  -- Matched case-insensitively against the listing's name and description
+  -- (see lib/moderationRules.ts) — not a regex, so an admin without
+  -- engineering help can safely add one.
+  keyword text not null,
+  reason text not null,
+  severity text not null default 'flag' check (severity in ('flag', 'block')),
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists moderation_rules_active_idx on moderation_rules(active);
+alter table moderation_rules enable row level security;
+
+create table if not exists product_reports (
+  id text primary key,
+  product_id text not null references products(id) on delete cascade,
+  reporter_id text not null references users(id) on delete cascade,
+  reason text not null check (reason in ('prohibited_item', 'counterfeit', 'scam', 'spam', 'inappropriate', 'other')),
+  -- Optional context from the reporter; capped the same way
+  -- validateProductInput caps description (lib/repo.ts) — a report is free
+  -- text a stranger writes about someone else's listing, not a field with
+  -- an inherent shape.
+  details text check (details is null or char_length(details) <= 1000),
+  status text not null default 'open' check (status in ('open', 'resolved', 'dismissed')),
+  resolved_by text references users(id),
+  resolution_note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create index if not exists product_reports_product_id_idx on product_reports(product_id);
+create index if not exists product_reports_status_idx on product_reports(status);
+create index if not exists product_reports_reporter_id_idx on product_reports(reporter_id);
+create index if not exists product_reports_resolved_by_idx on product_reports(resolved_by);
+alter table product_reports enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- requests / offers
@@ -401,13 +502,77 @@ create table if not exists orders (
   -- already-paid order's numbers were.
   platform_fee_bps integer,
   platform_fee_amount integer,
-  seller_payout_amount integer
+  seller_payout_amount integer,
+  -- ---- Money invariants (migration 021) ----
+  -- Already enforced in application code (lib/payments.ts) before these
+  -- existed — these are the backstop, not a replacement for those checks.
+  -- Nullable columns are allowed to be null (unpaid orders haven't been
+  -- fee-split yet) and constrained only once set.
+  constraint orders_platform_fee_amount_nonneg
+    check (platform_fee_amount is null or platform_fee_amount >= 0),
+  constraint orders_seller_payout_amount_nonneg
+    check (seller_payout_amount is null or seller_payout_amount >= 0),
+  constraint orders_platform_fee_bps_range
+    check (platform_fee_bps is null or (platform_fee_bps >= 0 and platform_fee_bps <= 10000)),
+  -- The platform's cut plus the seller's cut must equal the order price,
+  -- exactly, whenever both are set (they're written together, never one
+  -- without the other — see lib/payments.ts#confirmOrderPayment).
+  constraint orders_fee_split_reconciles
+    check (
+      platform_fee_amount is null
+      or seller_payout_amount is null
+      or platform_fee_amount + seller_payout_amount = price
+    ),
+  -- 'held'/'released' both assert FindIt is holding real money for this
+  -- order — neither is reachable until payment_status confirms the charge.
+  -- 'refunded' is deliberately allowed alongside a non-paid payment_status:
+  -- a charge later reversed can legitimately leave the two out of step.
+  constraint orders_escrow_requires_payment
+    check (escrow_status not in ('held', 'released') or payment_status = 'paid'),
+  -- A paid order without its fee snapshot has lost that record permanently —
+  -- there's no way to reconstruct which rate applied after the fact.
+  constraint orders_paid_has_fee_snapshot
+    check (payment_status <> 'paid' or platform_fee_bps is not null)
 );
 create index if not exists orders_user_id_idx on orders(user_id);
 create index if not exists orders_seller_idx on orders(seller);
 create index if not exists orders_escrow_status_idx on orders(escrow_status)
   where escrow_status = 'disputed';
 create index if not exists orders_seller_id_idx on orders(seller_id);
+create index if not exists orders_request_id_idx on orders(request_id);
+
+-- ---------------------------------------------------------------------------
+-- reviews (migration 025) — a real, listable, repliable form of a review.
+-- orders already carries `reviewed`/`my_rating`/`review_comment`, and every
+-- rating computation in the app keeps reading those — this table doesn't
+-- replace them. What was missing was anywhere for a review's actual TEXT to
+-- be found again: it sat on the order forever, invisible to any other buyer,
+-- with no way for the seller to answer it. One row per order (the same
+-- one-review-per-order rule orders.reviewed already implied, now enforced),
+-- carrying a snapshot of the seller identity the same way transaction_records
+-- does below.
+-- ---------------------------------------------------------------------------
+
+create table if not exists reviews (
+  id text primary key,
+  order_id text not null unique references orders(id) on delete restrict,
+  buyer_user_id text not null references users(id) on delete restrict,
+  seller_id text references sellers(id),
+  seller_name text not null,
+  rating integer not null check (rating between 1 and 5),
+  comment text,
+  -- The seller's one reply — a single pair of columns, not an events table,
+  -- since a reply is a courtesy response the seller may revise, not a fact
+  -- whose history needs to be tamper-evident.
+  seller_reply text,
+  seller_replied_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create index if not exists reviews_seller_id_idx on reviews(seller_id);
+create index if not exists reviews_seller_name_idx on reviews(seller_name);
+create index if not exists reviews_buyer_user_id_idx on reviews(buyer_user_id);
+create index if not exists reviews_created_at_idx on reviews(created_at desc);
+alter table reviews enable row level security;
 
 -- ---------------------------------------------------------------------------
 -- notifications — also now always owned by a real user (no more shared
@@ -436,6 +601,7 @@ create table if not exists conversations (
   created_at timestamptz not null default now(),
   unique (buyer_id, seller_id)
 );
+create index if not exists conversations_seller_id_idx on conversations(seller_id);
 
 create table if not exists messages (
   id text primary key,
@@ -446,6 +612,7 @@ create table if not exists messages (
   read boolean not null default false
 );
 create index if not exists messages_conversation_id_idx on messages(conversation_id);
+create index if not exists messages_sender_id_idx on messages(sender_id);
 
 -- ---------------------------------------------------------------------------
 -- support_tickets / support_ticket_messages (migration 019)
@@ -483,6 +650,7 @@ create table if not exists support_ticket_messages (
   created_at timestamptz not null default now()
 );
 create index if not exists support_ticket_messages_ticket_id_idx on support_ticket_messages(ticket_id);
+create index if not exists support_ticket_messages_sender_id_idx on support_ticket_messages(sender_id);
 
 -- ---------------------------------------------------------------------------
 -- saved_items — real wishlist/"save for later" (new; the old app faked this
@@ -497,6 +665,7 @@ create table if not exists saved_items (
   unique (user_id, product_id)
 );
 create index if not exists saved_items_user_id_idx on saved_items(user_id);
+create index if not exists saved_items_product_id_idx on saved_items(product_id);
 
 -- ---------------------------------------------------------------------------
 -- admin_actions — audit trail for destructive/high-impact admin actions
@@ -515,6 +684,7 @@ create table if not exists admin_actions (
   created_at timestamptz not null default now()
 );
 create index if not exists admin_actions_created_at_idx on admin_actions(created_at desc);
+create index if not exists admin_actions_admin_id_idx on admin_actions(admin_id);
 
 -- ---------------------------------------------------------------------------
 -- Verified Transaction Records (migration 024)
@@ -557,6 +727,7 @@ create index if not exists transaction_records_buyer_idx on transaction_records(
 create index if not exists transaction_records_seller_idx on transaction_records(seller_id);
 create index if not exists transaction_records_seller_name_idx on transaction_records(seller_name);
 create index if not exists transaction_records_completed_at_idx on transaction_records(completed_at desc);
+create index if not exists transaction_records_product_id_idx on transaction_records(product_id);
 alter table transaction_records enable row level security;
 
 -- Append-only history. A dispute, refund or admin correction adds a row here
@@ -577,6 +748,7 @@ create table if not exists transaction_record_events (
 );
 create index if not exists transaction_record_events_record_idx
   on transaction_record_events(transaction_record_id, created_at);
+create index if not exists transaction_record_events_actor_id_idx on transaction_record_events(actor_id);
 alter table transaction_record_events enable row level security;
 
 -- ---------------------------------------------------------------------------
@@ -604,6 +776,78 @@ create table if not exists otp_verifications (
 create index if not exists otp_verifications_phone_purpose_idx on otp_verifications(phone, purpose);
 create index if not exists otp_verifications_expires_at_idx on otp_verifications(expires_at);
 create index if not exists otp_verifications_created_at_idx on otp_verifications(created_at);
+
+-- ---------------------------------------------------------------------------
+-- rate_limits (migration 022) — the real rate limiter. lib/rateLimit.ts's
+-- in-process JS Map only ever worked for a single-process app; FindIt runs
+-- on Vercel, where every request may land on a different serverless
+-- instance, each with its own empty Map, reset on every cold start. One row
+-- per key here, incremented atomically by check_rate_limit() below, fixes
+-- both problems — every instance reads/writes the same counter, and it
+-- survives cold starts. The in-memory limiter is kept as a fallback only,
+-- so a database blip degrades protection rather than locking everyone out.
+-- ---------------------------------------------------------------------------
+
+create table if not exists rate_limits (
+  -- The caller-supplied bucket, e.g. 'login:<ip>:<phone>' or 'order:<user id>'.
+  key text primary key,
+  -- Start of the current window. Rolled forward, not appended to, so this
+  -- table stays one row per key rather than one row per attempt.
+  window_start timestamptz not null default now(),
+  hits integer not null default 0
+);
+create index if not exists rate_limits_window_start_idx on rate_limits(window_start);
+alter table rate_limits enable row level security;
+
+-- Atomic check-and-increment — one round trip, one statement, so two
+-- concurrent requests can never both read the same count and both decide
+-- they're under the limit. search_path pinned to public (migration 028,
+-- fixing a Supabase security-linter warning about a mutable search_path on
+-- a function that resolves an unqualified table name).
+create or replace function check_rate_limit(
+  p_key text,
+  p_max integer,
+  p_window_seconds integer
+)
+returns table (allowed boolean, retry_after_seconds integer)
+language plpgsql
+set search_path = public
+as $$
+declare
+  v_now timestamptz := now();
+  v_cutoff timestamptz := v_now - make_interval(secs => p_window_seconds);
+  v_hits integer;
+  v_window_start timestamptz;
+begin
+  insert into rate_limits as rl (key, window_start, hits)
+  values (p_key, v_now, 1)
+  on conflict (key) do update
+    set
+      -- Still inside the window: count up. Window expired: start a new one
+      -- at 1, which is this very request.
+      hits = case when rl.window_start > v_cutoff then rl.hits + 1 else 1 end,
+      window_start = case when rl.window_start > v_cutoff then rl.window_start else v_now end
+  returning rl.hits, rl.window_start into v_hits, v_window_start;
+
+  -- Opportunistic garbage collection. Keys are unbounded (every distinct IP
+  -- and phone combination makes one), so something has to remove stale rows;
+  -- doing it on roughly one call in two hundred keeps it free in the common
+  -- case and avoids needing a scheduled job. A day is far longer than any
+  -- window this app uses.
+  if random() < 0.005 then
+    delete from rate_limits where window_start < v_now - interval '1 day';
+  end if;
+
+  if v_hits > p_max then
+    return query
+      select
+        false,
+        greatest(1, ceil(extract(epoch from (v_window_start + make_interval(secs => p_window_seconds) - v_now)))::integer);
+  else
+    return query select true, 0;
+  end if;
+end;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- subscription_plans / subscriptions / subscription_events / payments —
@@ -655,6 +899,7 @@ create table if not exists subscriptions (
 );
 create index if not exists subscriptions_owner_idx on subscriptions(owner_type, owner_id);
 create index if not exists subscriptions_status_idx on subscriptions(status);
+create index if not exists subscriptions_plan_id_idx on subscriptions(plan_id);
 
 create table if not exists subscription_events (
   id text primary key,
@@ -706,6 +951,7 @@ create table if not exists platform_fee_config (
   created_at timestamptz not null default now()
 );
 create index if not exists platform_fee_config_created_at_idx on platform_fee_config(created_at desc);
+create index if not exists platform_fee_config_created_by_idx on platform_fee_config(created_by);
 
 create table if not exists payouts (
   id text primary key,
@@ -748,13 +994,20 @@ create table if not exists boosts (
   product_id text not null references products(id) on delete cascade,
   seller_id text not null references sellers(id) on delete cascade,
   boost_plan_id text not null references boost_plans(id),
-  amount integer not null,
+  amount integer not null check (amount >= 0),
   starts_at timestamptz not null default now(),
   ends_at timestamptz not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  -- Migration 029 — lets lib/boosts.ts#activateBoost tell "already applied
+  -- for this exact payment" apart from "new payment, apply it", so a
+  -- redelivered Paystack webhook event can retry safely instead of
+  -- double-extending the boost.
+  payment_id text references payments(id)
 );
 create index if not exists boosts_product_id_idx on boosts(product_id);
 create index if not exists boosts_seller_id_idx on boosts(seller_id);
+create index if not exists boosts_boost_plan_id_idx on boosts(boost_plan_id);
+create unique index if not exists boosts_payment_id_key on boosts(payment_id) where payment_id is not null;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
