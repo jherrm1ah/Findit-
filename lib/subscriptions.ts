@@ -606,6 +606,12 @@ export async function getStorePlanOverview(sellerId: string) {
     plan,
     usage: { activeProducts: activeCount, label: formatUsageLabel(activeCount, plan.productLimit) },
     plans,
+    // The dashboard's storefront-template picker reads this directly off
+    // the same "everything my Store plan screen needs" call it already
+    // makes — see storeTemplatesForLevel above for why each entry carries
+    // its own `locked` flag rather than this just being the unlocked subset.
+    storeTemplates: storeTemplatesForLevel(plan.customizationLevel),
+    storeAccents: storeAccentsForLevel(plan.customizationLevel),
   };
 }
 
@@ -694,6 +700,217 @@ export async function assertCanCustomizeStore(sellerId: string): Promise<void> {
     const suggestion = next ? ` Available on ${next.name} and above.` : "";
     throw new ValidationError(`Store branding isn't available on the ${plan.name} plan.${suggestion}`);
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Storefront layout templates (migration 031)                               */
+/*                                                                            */
+/*  customizationLevel has always had four named tiers (none/basic/advanced/ */
+/*  full), but until now every tier above "none" unlocked the exact same    */
+/*  thing (a logo/banner upload) — the tiers themselves did nothing. This    */
+/*  catalog is what finally makes basic/advanced/full mean something        */
+/*  different from each other: which storefront LAYOUTS a seller can pick.  */
+/* -------------------------------------------------------------------------- */
+
+export type StoreTemplateId = "classic" | "compact" | "gallery" | "showcase";
+
+export type StoreTemplate = {
+  id: StoreTemplateId;
+  name: string;
+  description: string;
+  minCustomizationLevel: SubscriptionPlan["customizationLevel"];
+};
+
+// Ordered so a plain array `.find`/comparison by index would already work,
+// but kept explicit (a rank map) rather than relying on array order, so
+// reordering STORE_TEMPLATES below can never silently change who unlocks
+// what.
+const CUSTOMIZATION_LEVEL_RANK: Record<SubscriptionPlan["customizationLevel"], number> = {
+  none: 0,
+  basic: 1,
+  advanced: 2,
+  full: 3,
+};
+
+// 'classic' is deliberately the ONE template every plan (including Free)
+// can render — it's the layout that already existed before this feature,
+// not a new design. The other three are real, structurally different
+// layouts (see app/store/[slug]/StoreTemplate.tsx), not just recolors.
+export const STORE_TEMPLATES: StoreTemplate[] = [
+  {
+    id: "classic",
+    name: "Classic",
+    description: "The standard FindIt storefront — banner, logo, and a clean product grid.",
+    minCustomizationLevel: "none",
+  },
+  {
+    id: "compact",
+    name: "Compact",
+    description: "A tighter layout that gets buyers to your products faster, with less scrolling.",
+    minCustomizationLevel: "basic",
+  },
+  {
+    id: "gallery",
+    name: "Gallery",
+    description: "Product-forward — a larger, image-led grid takes center stage right under your header.",
+    minCustomizationLevel: "advanced",
+  },
+  {
+    id: "showcase",
+    name: "Showcase",
+    description: "An editorial, premium layout with a full-width banner and a featured About section.",
+    minCustomizationLevel: "full",
+  },
+];
+
+export const DEFAULT_STORE_TEMPLATE: StoreTemplateId = "classic";
+
+export function isStoreTemplateId(value: string): value is StoreTemplateId {
+  return STORE_TEMPLATES.some((t) => t.id === value);
+}
+
+function templateRequiredRank(id: StoreTemplateId): number {
+  // STORE_TEMPLATES always has an entry for every StoreTemplateId (the type
+  // is derived from it), so this lookup cannot miss.
+  return CUSTOMIZATION_LEVEL_RANK[STORE_TEMPLATES.find((t) => t.id === id)!.minCustomizationLevel];
+}
+
+// Pure — the one rule for "does this plan level actually unlock this
+// template." Used both to gate the WRITE (assertCanUseStoreTemplate below)
+// and to decide what the PUBLIC store page renders for a seller whose plan
+// has since lapsed (see lib/sellerPublicProfile.ts) — same "never trust a
+// stored value past what the live plan currently allows" rule
+// getStorePlanDisplayMap/isSubscriptionLapsed already apply to the Pro
+// badge and featured placement above.
+export function isTemplateUnlockedAtLevel(id: StoreTemplateId, level: SubscriptionPlan["customizationLevel"]): boolean {
+  return CUSTOMIZATION_LEVEL_RANK[level] >= templateRequiredRank(id);
+}
+
+// What the PUBLIC store page should actually render. Falls back to the
+// universal default rather than ever rendering a template the seller's
+// CURRENT plan doesn't unlock, even when that's what's stored on their row
+// — e.g. they picked Showcase on Pro, then their subscription lapsed back
+// to Free. An unrecognized stored value (should never happen, but this is
+// a plain text column with no DB-level enum) falls back the same way.
+export function effectiveStoreTemplate(stored: string | null, level: SubscriptionPlan["customizationLevel"]): StoreTemplateId {
+  if (stored && isStoreTemplateId(stored) && isTemplateUnlockedAtLevel(stored, level)) return stored;
+  return DEFAULT_STORE_TEMPLATE;
+}
+
+// What the seller's OWN dashboard shows as choices — the full catalog,
+// each annotated with whether their CURRENT plan actually unlocks it. A
+// locked template is shown (with what it needs), never silently hidden —
+// the same "show the locked state, don't hide it" pattern StorePlans.jsx
+// and BrandingCard already use for every other plan-gated feature.
+export function storeTemplatesForLevel(
+  level: SubscriptionPlan["customizationLevel"]
+): Array<StoreTemplate & { locked: boolean }> {
+  return STORE_TEMPLATES.map((t) => ({ ...t, locked: !isTemplateUnlockedAtLevel(t.id, level) }));
+}
+
+// Real server-side gate for the WRITE, same spirit as assertCanCustomizeStore
+// above but specific to which template was asked for, not just "any
+// customization at all" — a Basic seller sending "showcase" directly to the
+// API must be rejected here even though they pass assertCanCustomizeStore.
+export async function assertCanUseStoreTemplate(sellerId: string, templateId: string): Promise<void> {
+  if (!isStoreTemplateId(templateId)) {
+    throw new ValidationError("Unknown store template.");
+  }
+  const { plan } = await getSellerSubscription(sellerId);
+  if (!isTemplateUnlockedAtLevel(templateId, plan.customizationLevel)) {
+    const template = STORE_TEMPLATES.find((t) => t.id === templateId)!;
+    const requiredRank = templateRequiredRank(templateId);
+    const plans = await listPlans("store");
+    const next = plans.find((p) => CUSTOMIZATION_LEVEL_RANK[p.customizationLevel] >= requiredRank);
+    const suggestion = next ? ` Available on ${next.name} and above.` : "";
+    throw new ValidationError(`The "${template.name}" template isn't available on the ${plan.name} plan.${suggestion}`);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Storefront accent colors (migration 032)                                  */
+/*                                                                            */
+/*  A curated set of color pairs, not an open picker — real choice without   */
+/*  letting a seller land on an unreadable or off-brand combination on a     */
+/*  real storefront. Unlike STORE_TEMPLATES, these aren't tiered by how      */
+/*  "big" a feature they are (a color isn't more premium than another        */
+/*  color), so every non-default preset shares ONE gate — the same plain     */
+/*  "has any customization at all" check logo_url/banner_url already use.    */
+/* -------------------------------------------------------------------------- */
+
+export type StoreAccentId = "violet" | "ocean" | "sunset" | "forest" | "berry" | "midnight" | "gold" | "slate";
+
+export type StoreAccent = {
+  id: StoreAccentId;
+  name: string;
+  // Gradient stops, used wherever the storefront currently hardcodes
+  // `linear-gradient(135deg,#A855F7,#7C3AED)` — buttons, the banner
+  // placeholder, the logo circle, the PRO badge.
+  from: string;
+  to: string;
+  // A pale tint of `to`, used for badge/escrow-banner backgrounds — `to`
+  // itself doubles as the text color on top of it, same as how #7C3AED
+  // already serves both roles in the original hardcoded violet.
+  tint: string;
+};
+
+// 'violet' is, intentionally, the exact pair every storefront already
+// rendered in before this feature existed — the universal default, same
+// role 'classic' plays for STORE_TEMPLATES above. Every other entry was
+// picked (and its `to` checked) to still read clearly as white text on
+// top of the gradient, the same way the storefront already puts white
+// text on the violet gradient in several places (the PRO badge, the
+// logo-circle initial, the footer CTA).
+export const STORE_ACCENTS: StoreAccent[] = [
+  { id: "violet", name: "Violet", from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" },
+  { id: "ocean", name: "Ocean", from: "#38BDF8", to: "#1D4ED8", tint: "#E6F2FD" },
+  { id: "sunset", name: "Sunset", from: "#FB923C", to: "#BE123C", tint: "#FDECE6" },
+  { id: "forest", name: "Forest", from: "#34D399", to: "#047857", tint: "#E6F7EF" },
+  { id: "berry", name: "Berry", from: "#F472B6", to: "#9D174D", tint: "#FCE7F0" },
+  { id: "midnight", name: "Midnight", from: "#818CF8", to: "#312E81", tint: "#ECEBFB" },
+  { id: "gold", name: "Gold", from: "#F59E0B", to: "#B45309", tint: "#FDF3E0" },
+  { id: "slate", name: "Slate", from: "#64748B", to: "#334155", tint: "#EEF1F4" },
+];
+
+export const DEFAULT_STORE_ACCENT: StoreAccentId = "violet";
+
+export function isStoreAccentId(value: string): value is StoreAccentId {
+  return STORE_ACCENTS.some((a) => a.id === value);
+}
+
+export function getStoreAccent(id: StoreAccentId): StoreAccent {
+  // STORE_ACCENTS always has an entry for every StoreAccentId (the type is
+  // derived from it), so this lookup cannot miss.
+  return STORE_ACCENTS.find((a) => a.id === id)!;
+}
+
+// What the PUBLIC store page should actually render — same lapse-safety
+// rule as effectiveStoreTemplate above: a seller who picked a non-default
+// accent while on a paid plan and then lapsed back to Free renders in
+// 'violet', never their last-picked color, however harmless that color
+// itself might look.
+export function effectiveStoreAccent(stored: string | null, level: SubscriptionPlan["customizationLevel"]): StoreAccentId {
+  if (stored && isStoreAccentId(stored) && (stored === DEFAULT_STORE_ACCENT || level !== "none")) return stored;
+  return DEFAULT_STORE_ACCENT;
+}
+
+// Full catalog annotated with lock state for the seller's OWN dashboard —
+// same "show the locked state, don't hide it" pattern as
+// storeTemplatesForLevel. Every preset but the default shares one lock: any
+// paid customization unlocks all of them together, not a progressive ladder.
+export function storeAccentsForLevel(level: SubscriptionPlan["customizationLevel"]): Array<StoreAccent & { locked: boolean }> {
+  return STORE_ACCENTS.map((a) => ({ ...a, locked: a.id !== DEFAULT_STORE_ACCENT && level === "none" }));
+}
+
+// Real server-side gate for the WRITE. The default is always allowed (it's
+// what every plan already renders); anything else needs the same
+// "customization unlocked at all" check logo_url/banner_url use.
+export async function assertCanUseStoreAccent(sellerId: string, accentId: string): Promise<void> {
+  if (!isStoreAccentId(accentId)) {
+    throw new ValidationError("Unknown store accent color.");
+  }
+  if (accentId === DEFAULT_STORE_ACCENT) return;
+  await assertCanCustomizeStore(sellerId);
 }
 
 export type PlanChangePreview =

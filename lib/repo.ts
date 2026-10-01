@@ -6,7 +6,13 @@ import {
   markTransactionDisputeResolved,
 } from "./transactionRecord";
 import { ValidationError } from "./errors";
-import { assertCanActivateProduct, assertCanCustomizeStore, getStorePlanDisplayMap } from "./subscriptions";
+import {
+  assertCanActivateProduct,
+  assertCanCustomizeStore,
+  assertCanUseStoreTemplate,
+  assertCanUseStoreAccent,
+  getStorePlanDisplayMap,
+} from "./subscriptions";
 import { computeVerificationLevel, VerificationLevel, VerificationStatus } from "./sellerVerificationLevels";
 import { isValidCategoryKey } from "./categoryCatalog";
 import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./requestMatching";
@@ -1713,12 +1719,21 @@ export function assertSellerCanTransact(status: SellerStatus | null): void {
 // assumption, so it degrades to "no seller_id recorded" rather than throwing).
 export async function getSellerBrandingForUser(
   userId: string
-): Promise<{ logoUrl: string | null; bannerUrl: string | null } | null> {
+): Promise<{ logoUrl: string | null; bannerUrl: string | null; storeTemplate: string; storeAccent: string } | null> {
   const db = getDb();
-  const result = await db.from("sellers").select("logo_url, banner_url").eq("user_id", userId).maybeSingle();
+  const result = await db
+    .from("sellers")
+    .select("logo_url, banner_url, store_template, store_accent")
+    .eq("user_id", userId)
+    .maybeSingle();
   const row = assertNoError(result, "loading store branding") as Row | null;
   if (!row) return null;
-  return { logoUrl: (row.logo_url as string | null) ?? null, bannerUrl: (row.banner_url as string | null) ?? null };
+  return {
+    logoUrl: (row.logo_url as string | null) ?? null,
+    bannerUrl: (row.banner_url as string | null) ?? null,
+    storeTemplate: (row.store_template as string | null) ?? "classic",
+    storeAccent: (row.store_accent as string | null) ?? "violet",
+  };
 }
 
 export async function getSellerIdForUser(userId: string): Promise<string | null> {
@@ -1729,18 +1744,33 @@ export async function getSellerIdForUser(userId: string): Promise<string | null>
 }
 
 // Real backing for the "customization" Store subscription benefit — gated
-// server-side (assertCanCustomizeStore) so a Free/Basic seller can't set
-// these just by knowing the endpoint exists. logoUrl/bannerUrl null clears
-// that image; undefined leaves it untouched.
+// server-side (assertCanCustomizeStore) so a seller on a plan with no
+// customization at all can't set these just by knowing the endpoint
+// exists. logoUrl/bannerUrl null clears that image; undefined leaves it
+// untouched. storeTemplate and storeAccent each get their OWN gate
+// (assertCanUseStoreTemplate / assertCanUseStoreAccent), separate from
+// assertCanCustomizeStore: passing that only proves the seller's plan
+// unlocks SOME customization, not that it unlocks the SPECIFIC template or
+// color they're asking for (see migrations 031/032).
 export async function updateSellerBranding(
   sellerId: string,
-  patch: { logoUrl?: string | null; bannerUrl?: string | null }
+  patch: { logoUrl?: string | null; bannerUrl?: string | null; storeTemplate?: string; storeAccent?: string }
 ): Promise<void> {
-  await assertCanCustomizeStore(sellerId);
+  if (patch.logoUrl !== undefined || patch.bannerUrl !== undefined) {
+    await assertCanCustomizeStore(sellerId);
+  }
+  if (patch.storeTemplate !== undefined) {
+    await assertCanUseStoreTemplate(sellerId, patch.storeTemplate);
+  }
+  if (patch.storeAccent !== undefined) {
+    await assertCanUseStoreAccent(sellerId, patch.storeAccent);
+  }
 
   const columns: Record<string, unknown> = {};
   if (patch.logoUrl !== undefined) columns.logo_url = patch.logoUrl;
   if (patch.bannerUrl !== undefined) columns.banner_url = patch.bannerUrl;
+  if (patch.storeTemplate !== undefined) columns.store_template = patch.storeTemplate;
+  if (patch.storeAccent !== undefined) columns.store_accent = patch.storeAccent;
   if (Object.keys(columns).length === 0) return;
 
   const db = getDb();

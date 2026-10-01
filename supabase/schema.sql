@@ -126,6 +126,19 @@ create table if not exists sellers (
   -- and rendered on the public storefront (SellerProfile.jsx). Null until set.
   logo_url text,
   banner_url text,
+  -- Migration 031 — which storefront LAYOUT this seller has picked, gated
+  -- by the same customization_level as logo_url/banner_url above (see
+  -- lib/subscriptions.ts#STORE_TEMPLATES for what each level unlocks).
+  -- 'classic' is exactly the layout that existed before this column did, so
+  -- every seller who never opens the picker renders identically to before.
+  store_template text not null default 'classic',
+  -- Migration 032 — a curated accent color pair (see
+  -- lib/subscriptions.ts#STORE_ACCENTS), gated the same plain way
+  -- logo_url/banner_url are (any paid customization unlocks every preset —
+  -- no progressive tier ladder like store_template has). 'violet' is the
+  -- exact color every storefront already rendered in before this column
+  -- existed.
+  store_accent text not null default 'violet',
   -- ---- Seller trust & verification (migration 012) ----
   -- Public-safe profile fields — see seller_verification_details below for
   -- the private ones (exact address/coordinates), kept in a separate table

@@ -1,0 +1,23 @@
+-- ---------------------------------------------------------------------------
+-- 032 — Storefront accent colors
+--
+-- Every storefront layout template (migration 031) rendered in the exact
+-- same purple/indigo gradient — that's FindIt's own brand color, hardcoded
+-- throughout app/store/[slug]/StoreBody.tsx, not something a seller could
+-- ever change. This is the curated-presets answer: a handful of real,
+-- hand-picked color pairs (see lib/subscriptions.ts#STORE_ACCENTS), not an
+-- open color picker — a seller gets real choice without the risk of an
+-- unreadable or off-brand combination landing on a real storefront.
+--
+-- Unlike store_template (gated progressively by tier), every accent other
+-- than the default is gated by the SAME plain "has any customization at
+-- all" check logo_url/banner_url already use (assertCanCustomizeStore) —
+-- color choice isn't a "bigger" feature than a smaller one the way the
+-- layouts are, so it doesn't need its own tier ladder.
+--
+-- Defaults to 'violet', which IS the exact color every storefront already
+-- rendered in — so, same as store_template's 'classic' default, nothing
+-- visually changes for a seller who never opens the picker.
+-- ---------------------------------------------------------------------------
+
+alter table sellers add column if not exists store_accent text not null default 'violet';

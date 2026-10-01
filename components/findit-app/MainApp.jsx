@@ -700,16 +700,23 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
-  const handleUpdateStoreBranding = async (logoUrl, bannerUrl) => {
+  const handleUpdateStoreBranding = async (logoUrl, bannerUrl, storeTemplate, storeAccent) => {
     setSavingBranding(true);
     try {
-      await api.updateStoreBranding(logoUrl, bannerUrl);
-      setStoreBranding({ logoUrl, bannerUrl });
+      await api.updateStoreBranding(logoUrl, bannerUrl, storeTemplate, storeAccent);
+      setStoreBranding((prev) => ({
+        logoUrl,
+        bannerUrl,
+        storeTemplate: storeTemplate !== undefined ? storeTemplate : prev?.storeTemplate,
+        storeAccent: storeAccent !== undefined ? storeAccent : prev?.storeAccent,
+      }));
       // Every one of this seller's own listings carries these fields too
       // (see rowToProduct in lib/repo.ts) — refresh so their own storefront
       // preview and the public one both show the change immediately.
       api.getProducts().then(setProducts).catch(() => {});
-      showToast("Store branding updated.");
+      showToast(
+        storeTemplate !== undefined ? "Storefront template updated." : storeAccent !== undefined ? "Storefront color updated." : "Store branding updated."
+      );
     } catch (err) {
       showToast(err.message || "Couldn't update your store branding — try again.", "error");
       throw err;

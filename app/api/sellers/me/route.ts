@@ -22,5 +22,7 @@ export async function GET(req: NextRequest) {
     sellerId,
     logoUrl: branding?.logoUrl ?? null,
     bannerUrl: branding?.bannerUrl ?? null,
+    storeTemplate: branding?.storeTemplate ?? "classic",
+    storeAccent: branding?.storeAccent ?? "violet",
   });
 }

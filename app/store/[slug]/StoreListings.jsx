@@ -13,7 +13,20 @@ const naira = (amount) => `₦${amount.toLocaleString("en-NG")}`;
 // link (this page is server-rendered and has no session, see page.tsx) get
 // a consistent feel. Filtering happens entirely in the browser: a single
 // seller's listing count never justifies a server round trip per keystroke.
-export default function StoreListings({ listings, categoryLabels }) {
+// density="spacious" is what the gallery/showcase storefront templates ask
+// for — a 2-column grid with a taller image area, versus the default
+// 2/3-column, more compact grid every other template (classic, compact)
+// uses. Purely a CSS/layout difference; the data and filtering below are
+// identical either way.
+// accent carries the seller's curated color pair (see
+// lib/subscriptions.ts#STORE_ACCENTS) — defaults to the original violet so
+// a caller that doesn't pass one (there currently isn't one) still renders
+// exactly as before.
+const DEFAULT_ACCENT = { from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" };
+
+export default function StoreListings({ listings, categoryLabels, density = "cozy", accent = DEFAULT_ACCENT }) {
+  const spacious = density === "spacious";
+  const accentGradient = `linear-gradient(135deg,${accent.from},${accent.to})`;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
 
@@ -57,7 +70,7 @@ export default function StoreListings({ listings, categoryLabels }) {
 
       {listings.length > 4 && (
         <div className="flex-1 flex items-center gap-2 bg-white border border-[#ECE9F7] rounded-[20px] px-3 py-2.5 mb-3">
-          <Search size={15} className="text-[#7C3AED]" />
+          <Search size={15} style={{ color: accent.to }} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -77,7 +90,7 @@ export default function StoreListings({ listings, categoryLabels }) {
           <button
             onClick={() => setCategory("all")}
             className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition ${category === "all" ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-            style={category === "all" ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+            style={category === "all" ? { background: accentGradient } : {}}
           >
             All
           </button>
@@ -86,7 +99,7 @@ export default function StoreListings({ listings, categoryLabels }) {
               key={key}
               onClick={() => setCategory(key)}
               className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition ${category === key ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-              style={category === key ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+              style={category === key ? { background: accentGradient } : {}}
             >
               {label}
             </button>
@@ -99,17 +112,17 @@ export default function StoreListings({ listings, categoryLabels }) {
           No listings match {query ? `"${query}"` : "that category"}.
         </p>
       ) : (
-        <ul className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-6 list-none p-0 m-0">
+        <ul className={`grid gap-x-4 gap-y-6 list-none p-0 m-0 ${spacious ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
           {filtered.map((product) => (
             <li key={product.id}>
               <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group">
-                <div className="relative rounded-2xl overflow-hidden bg-[#EDE9FB] h-32 mb-2">
+                <div className={`relative rounded-2xl overflow-hidden bg-[#EDE9FB] mb-2 ${spacious ? "h-44" : "h-32"}`}>
                   {product.imageUrl && (
-                    <Image src={product.imageUrl} alt="" fill sizes="(max-width: 640px) 50vw, 33vw" className="object-cover" />
+                    <Image src={product.imageUrl} alt="" fill sizes={spacious ? "50vw" : "(max-width: 640px) 50vw, 33vw"} className="object-cover" />
                   )}
                 </div>
-                <p className="text-[12.5px] font-medium text-[#1E1B4B] leading-tight line-clamp-2">{product.name}</p>
-                <p className="text-[13px] font-bold text-[#1E1B4B] mt-0.5">{naira(product.price)}</p>
+                <p className={`font-medium text-[#1E1B4B] leading-tight line-clamp-2 ${spacious ? "text-[13.5px]" : "text-[12.5px]"}`}>{product.name}</p>
+                <p className={`font-bold text-[#1E1B4B] mt-0.5 ${spacious ? "text-[14.5px]" : "text-[13px]"}`}>{naira(product.price)}</p>
               </Link>
             </li>
           ))}
