@@ -142,16 +142,31 @@ export async function POST(req: NextRequest) {
     });
     assertNoError(insertResult, "recording pending payment");
 
-    // Most accounts have no email (this app is phone-first) — Paystack's
-    // initialize endpoint requires one regardless, so this synthetic
-    // address (never sent anything) is the fallback when the seller hasn't
-    // given us a real one during verification.
-    const { authorizationUrl } = await initializeTransaction({
-      email: ctx.user.email || `${ctx.user.phone.replace(/[^0-9]/g, "")}@findit.local`,
-      amountNaira: amount,
-      reference,
-      metadata: { sellerId: ctx.sellerId, planId: plan.id, billingPeriod },
-    });
+    let authorizationUrl: string;
+    try {
+      // Most accounts have no email (this app is phone-first) — Paystack's
+      // initialize endpoint requires one regardless, so this synthetic
+      // address (never sent anything) is the fallback when the seller
+      // hasn't given us a real one during verification.
+      ({ authorizationUrl } = await initializeTransaction({
+        email: ctx.user.email || `${ctx.user.phone.replace(/[^0-9]/g, "")}@findit.local`,
+        amountNaira: amount,
+        reference,
+        metadata: { sellerId: ctx.sellerId, planId: plan.id, billingPeriod },
+      }));
+    } catch (err) {
+      // Same reasoning as the order/boost checkout routes: a pending row
+      // left behind by a failed init call would otherwise block the
+      // seller's next retry for PENDING_PAYMENT_STALE_MS.
+      await db
+        .from("payments")
+        .update({
+          status: "failed",
+          metadata: { sellerId: ctx.sellerId, planId: plan.id, billingPeriod, initError: err instanceof Error ? err.message : String(err) },
+        })
+        .eq("id", reference);
+      throw err;
+    }
 
     return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount });
   } catch (err) {
