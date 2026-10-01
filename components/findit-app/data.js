@@ -2,7 +2,7 @@ import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
   Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus, PackageSearch,
-  Bell, MessageCircle, Wallet, ShieldAlert,
+  Bell, MessageCircle, Wallet, ShieldAlert, Tag,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -109,6 +109,9 @@ export const NOTIFICATION_ICONS = {
   // below, since it's the same "status of your account" voice as an
   // application approved/rejected/suspended).
   moderation: ShieldAlert,
+  // A price drop or restock on a listing someone has saved (the heart icon)
+  // — see lib/repo.ts#updateProduct.
+  saved_item: Tag,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
