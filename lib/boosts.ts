@@ -1,5 +1,6 @@
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./errors";
+import { notifyBestEffort, findUserForSellerId, findUserByBusinessName } from "./repo";
 
 type Row = Record<string, unknown>;
 
@@ -119,12 +120,69 @@ async function applyBoostedUntil(db: ReturnType<typeof getDb>, productId: string
     // must not be clobbered by this one; retry against its result. .is()
     // for null (never boosted before), .eq() otherwise — PostgREST's .eq()
     // does not match NULL rows.
-    let query = db.from("products").update({ boosted_until: endsAtIso }).eq("id", productId);
+    //
+    // boost_expiry_notified_at resets to null in this same write (see
+    // migration 030): raising boosted_until means there's a new expiry to
+    // eventually notify the seller about, and leaving an old notified
+    // timestamp in place would make notifyExpiredBoosts below mistake this
+    // fresh extension for one it already told the seller about.
+    let query = db.from("products").update({ boosted_until: endsAtIso, boost_expiry_notified_at: null }).eq("id", productId);
     query = current === null ? query.is("boosted_until", null) : query.eq("boosted_until", current);
     const updateResult = await query.select("id").maybeSingle();
     const claimed = assertNoError(updateResult, "activating boost") as Row | null;
     if (claimed) return;
   }
+}
+
+// Called on a schedule (see app/api/cron/expirations, vercel.json) — unlike
+// the sort order on Home/Browse, which never needed a cron because it just
+// stops caring once now() > boosted_until, telling the SELLER their boost
+// ended has nothing else to trigger it: no read path exists that a seller
+// who stopped opening the app would ever hit. Checked against the
+// product's live boosted_until, not any single boosts row's own ends_at —
+// see migration 030's comment for why a stacked, still-active boost must
+// never be mistaken for an expired one.
+export async function notifyExpiredBoosts(): Promise<number> {
+  const db = getDb();
+  const nowIso = new Date().toISOString();
+  const result = await db
+    .from("products")
+    .select("id, name, seller, seller_id, boosted_until")
+    .lte("boosted_until", nowIso)
+    .is("boost_expiry_notified_at", null);
+  const rows = assertNoError(result, "finding products whose boost just expired") as Row[];
+
+  let notified = 0;
+  for (const row of rows) {
+    // Conditioned on boosted_until still matching exactly what was just
+    // read — a seller buying a fresh boost between the select above and
+    // here (which both raises boosted_until and clears this flag) must not
+    // have that brand-new, still-unnotified extension clobbered by this
+    // claim for the old one.
+    const claimResult = await db
+      .from("products")
+      .update({ boost_expiry_notified_at: nowIso })
+      .eq("id", row.id as string)
+      .eq("boosted_until", row.boosted_until as string)
+      .select("id")
+      .maybeSingle();
+    const claimed = assertNoError(claimResult, "claiming boost expiry notification") as Row | null;
+    if (!claimed) continue; // lost the claim — another sweep run, or a fresh boost, got here first
+
+    const sellerId = row.seller_id as string | null;
+    const businessName = row.seller as string | null;
+    const seller = sellerId ? await findUserForSellerId(sellerId) : businessName ? await findUserByBusinessName(businessName) : null;
+    if (!seller) continue;
+
+    await notifyBestEffort({
+      userId: seller.id,
+      type: "boost",
+      title: "Boost ended",
+      body: `Your boost for "${row.name}" has ended — it's no longer getting the extra placement on Home/Browse.`,
+    });
+    notified++;
+  }
+  return notified;
 }
 
 export async function activateBoost(input: {

@@ -2,7 +2,7 @@ import {
   Wrench, Lightbulb, Droplet, Utensils, Droplets, GraduationCap, Briefcase,
   Smartphone, Car, BatteryCharging, Sparkles, Leaf, Monitor, BookOpen, Package,
   Send, ShieldCheck, Star, Truck, BadgeCheck, ShieldPlus, PackageSearch,
-  Bell, MessageCircle, Wallet, ShieldAlert, Tag,
+  Bell, MessageCircle, Wallet, ShieldAlert, Tag, Zap,
 } from "lucide-react";
 import { CATEGORY_LABELS } from "../../lib/categories";
 
@@ -112,6 +112,10 @@ export const NOTIFICATION_ICONS = {
   // A price drop or restock on a listing someone has saved (the heart icon)
   // — see lib/repo.ts#updateProduct.
   saved_item: Tag,
+  // A paid listing boost ran out — see lib/boosts.ts#notifyExpiredBoosts.
+  // Subscription (Store/FindIt Pro) expiry reuses `seller`, above, since
+  // it's the same account-status voice — see lib/subscriptions.ts.
+  boost: Zap,
 };
 
 export const STEPS = ["Awaiting payment", "Seller preparing", "Dispatched", "Out for delivery", "Delivered"];
