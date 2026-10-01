@@ -1,7 +1,14 @@
 import { getDb, assertNoError } from "./db";
 import { computeVerificationLevel, type VerificationLevel, type VerificationStatus } from "./sellerVerificationLevels";
 import { buildSellerNameIndex, matchSellerIdByName } from "./sellerIdentityMatch";
-import { getStorePlanDisplayMap, FREE_STORE_PLAN_ID, effectiveStoreTemplate, type StoreTemplateId } from "./subscriptions";
+import {
+  getStorePlanDisplayMap,
+  FREE_STORE_PLAN_ID,
+  effectiveStoreTemplate,
+  effectiveStoreAccent,
+  type StoreTemplateId,
+  type StoreAccentId,
+} from "./subscriptions";
 import { listPublicReviewsForSeller, type PublicReview } from "./reviews";
 import type { Product } from "./repo";
 
@@ -55,6 +62,9 @@ export type PublicSellerProfile = {
   // value: a seller who picked Showcase on Pro and then lapsed back to
   // Free is rendered as 'classic' here, not Showcase.
   storeTemplate: StoreTemplateId;
+  // Same resolution rule as storeTemplate above — see
+  // lib/subscriptions.ts#effectiveStoreAccent.
+  storeAccent: StoreAccentId;
   rating: number | null;
   reviewCount: number;
   completedOrderCount: number;
@@ -78,7 +88,7 @@ export type PublicSellerProfileResult =
 // Only these columns are ever read. Adding a column to the sellers table does
 // not silently widen what a buyer can see.
 const PUBLIC_SELLER_COLUMNS =
-  "id, name, status, logo_url, banner_url, store_template, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, store_slug, created_at";
+  "id, name, status, logo_url, banner_url, store_template, store_accent, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, store_slug, created_at";
 
 // A suspended or rejected seller has no storefront. Returning "not found"
 // rather than "suspended" is deliberate: a buyer has no business learning
@@ -222,6 +232,7 @@ export async function getPublicSellerProfile(
         (row.store_template as string | null) ?? null,
         display?.customizationLevel ?? "none"
       ),
+      storeAccent: effectiveStoreAccent((row.store_accent as string | null) ?? null, display?.customizationLevel ?? "none"),
       rating,
       reviewCount: ratings.length,
       completedOrderCount,

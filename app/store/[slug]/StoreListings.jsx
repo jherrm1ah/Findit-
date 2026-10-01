@@ -18,8 +18,15 @@ const naira = (amount) => `₦${amount.toLocaleString("en-NG")}`;
 // 2/3-column, more compact grid every other template (classic, compact)
 // uses. Purely a CSS/layout difference; the data and filtering below are
 // identical either way.
-export default function StoreListings({ listings, categoryLabels, density = "cozy" }) {
+// accent carries the seller's curated color pair (see
+// lib/subscriptions.ts#STORE_ACCENTS) — defaults to the original violet so
+// a caller that doesn't pass one (there currently isn't one) still renders
+// exactly as before.
+const DEFAULT_ACCENT = { from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" };
+
+export default function StoreListings({ listings, categoryLabels, density = "cozy", accent = DEFAULT_ACCENT }) {
   const spacious = density === "spacious";
+  const accentGradient = `linear-gradient(135deg,${accent.from},${accent.to})`;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
 
@@ -63,7 +70,7 @@ export default function StoreListings({ listings, categoryLabels, density = "coz
 
       {listings.length > 4 && (
         <div className="flex-1 flex items-center gap-2 bg-white border border-[#ECE9F7] rounded-[20px] px-3 py-2.5 mb-3">
-          <Search size={15} className="text-[#7C3AED]" />
+          <Search size={15} style={{ color: accent.to }} />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -83,7 +90,7 @@ export default function StoreListings({ listings, categoryLabels, density = "coz
           <button
             onClick={() => setCategory("all")}
             className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition ${category === "all" ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-            style={category === "all" ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+            style={category === "all" ? { background: accentGradient } : {}}
           >
             All
           </button>
@@ -92,7 +99,7 @@ export default function StoreListings({ listings, categoryLabels, density = "coz
               key={key}
               onClick={() => setCategory(key)}
               className={`shrink-0 text-[12px] font-medium px-3.5 py-2 rounded-full border transition ${category === key ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"}`}
-              style={category === key ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+              style={category === key ? { background: accentGradient } : {}}
             >
               {label}
             </button>

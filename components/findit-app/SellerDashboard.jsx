@@ -343,10 +343,11 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
 // (see SellerProfile.jsx). The server enforces the same gate independently
 // (assertCanCustomizeStore) — this UI gate is a convenience, not the
 // security boundary.
-function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, saving, onUploadImage, go }) {
+function BrandingCard({ plan, branding, storeTemplates = [], storeAccents = [], onUpdateBranding, saving, onUploadImage, go }) {
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [selectingTemplate, setSelectingTemplate] = useState(null); // template id being applied, or null
+  const [selectingAccent, setSelectingAccent] = useState(null); // accent id being applied, or null
   // Each save's onUpdateBranding call fills in the OTHER fields from
   // `branding` as it stood at the moment this specific save started — it's
   // a closure over a prop value, never re-read after the await. If two
@@ -358,9 +359,10 @@ function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, s
   // Disabling every control while ANY of them is busy (not just each
   // one's own flag) serializes them, so by the time the next save can
   // start, `branding` has already re-rendered with the previous result.
-  const busy = uploadingLogo || uploadingBanner || selectingTemplate !== null;
+  const busy = uploadingLogo || uploadingBanner || selectingTemplate !== null || selectingAccent !== null;
   const locked = !plan || plan.customizationLevel === "none";
   const currentTemplate = branding?.storeTemplate ?? "classic";
+  const currentAccent = branding?.storeAccent ?? "violet";
 
   const upload = async (file, kind) => {
     const setUploading = kind === "logo" ? setUploadingLogo : setUploadingBanner;
@@ -390,6 +392,18 @@ function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, s
     }
   };
 
+  const selectAccent = async (accentId) => {
+    if (accentId === currentAccent || busy) return;
+    setSelectingAccent(accentId);
+    try {
+      await onUpdateBranding(branding?.logoUrl ?? null, branding?.bannerUrl ?? null, undefined, accentId);
+    } catch {
+      // MainApp already surfaced a toast
+    } finally {
+      setSelectingAccent(null);
+    }
+  };
+
   return (
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
       <div className="flex items-center gap-2 mb-3">
@@ -401,7 +415,8 @@ function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, s
           <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
           <div className="min-w-0">
             <p className="text-[12px] text-[#514B67] mb-2">
-              Add a store logo/banner and pick a storefront layout on Basic Store and above — they show on your public storefront.
+              Add a store logo/banner and pick a storefront layout and color on Basic Store and above — they show on
+              your public storefront.
             </p>
             <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
               See upgrade options
@@ -470,6 +485,53 @@ function BrandingCard({ plan, branding, storeTemplates = [], onUpdateBranding, s
                       </div>
                       <p className="text-[10.5px] text-[#8A8372] leading-snug">{t.description}</p>
                       {selectingTemplate === t.id && <p className="text-[10px] text-[#7C3AED] mt-1">Applying…</p>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {storeAccents.length > 0 && (
+            <div className="mt-5">
+              <div className="flex items-center gap-1.5 mb-2">
+                <Palette size={12} className="text-[#8A8372]" />
+                <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide">Storefront color</p>
+              </div>
+              <div className="flex flex-wrap gap-2.5">
+                {storeAccents.map((a) => {
+                  const selected = a.id === currentAccent;
+                  // Same reasoning as the template picker: a locked swatch
+                  // always navigates to the upgrade screen regardless of
+                  // `busy`, only an unlocked pick needs serializing.
+                  const disabledForBusy = busy && !a.locked;
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => (a.locked ? go?.("storePlans") : selectAccent(a.id))}
+                      disabled={disabledForBusy}
+                      title={a.locked ? `${a.name} — needs a Store plan with customization` : a.name}
+                      className={`relative w-9 h-9 rounded-full shrink-0 ${disabledForBusy ? "opacity-50 pointer-events-none" : ""}`}
+                      style={{
+                        background: `linear-gradient(135deg,${a.from},${a.to})`,
+                        boxShadow: selected ? `0 0 0 2px white, 0 0 0 4px ${a.to}` : undefined,
+                      }}
+                    >
+                      {a.locked && (
+                        <span className="absolute inset-0 rounded-full bg-black/35 flex items-center justify-center">
+                          <Lock size={11} className="text-white" />
+                        </span>
+                      )}
+                      {!a.locked && selected && (
+                        <span className="absolute inset-0 rounded-full flex items-center justify-center">
+                          <CheckCircle2 size={14} className="text-white drop-shadow" />
+                        </span>
+                      )}
+                      {selectingAccent === a.id && (
+                        <span className="absolute inset-0 rounded-full bg-black/25 flex items-center justify-center">
+                          <span className="text-[8px] font-semibold text-white">…</span>
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -1385,6 +1447,7 @@ export default function SellerDashboard({
         plan={plan}
         branding={storeBranding}
         storeTemplates={storePlan?.storeTemplates ?? []}
+        storeAccents={storePlan?.storeAccents ?? []}
         onUpdateBranding={onUpdateBranding}
         saving={savingBranding}
         onUploadImage={onUploadImage}

@@ -8,6 +8,8 @@ import {
   isTemplateUnlockedAtLevel,
   effectiveStoreTemplate,
   storeTemplatesForLevel,
+  effectiveStoreAccent,
+  storeAccentsForLevel,
 } from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
@@ -236,5 +238,43 @@ describe("storeTemplatesForLevel", () => {
     expect(templates.find((t) => t.id === "compact")?.locked).toBe(false);
     expect(templates.find((t) => t.id === "gallery")?.locked).toBe(true);
     expect(templates.find((t) => t.id === "showcase")?.locked).toBe(true);
+  });
+});
+
+// Unlike templates, every non-default accent shares ONE gate — a color
+// isn't "more premium" than another color, so there's no ladder to test
+// here beyond "the default always works, everything else needs ANY paid
+// customization."
+describe("effectiveStoreAccent", () => {
+  it("renders the stored accent when the current plan has any customization unlocked", () => {
+    expect(effectiveStoreAccent("ocean", "basic")).toBe("ocean");
+    expect(effectiveStoreAccent("gold", "full")).toBe("gold");
+  });
+
+  it("falls back to violet once the live plan has no customization at all", () => {
+    expect(effectiveStoreAccent("ocean", "none")).toBe("violet");
+  });
+
+  it("the default (violet) always renders, even on a plan with no customization", () => {
+    expect(effectiveStoreAccent("violet", "none")).toBe("violet");
+  });
+
+  it("falls back to violet for null, empty, or an unrecognized stored value", () => {
+    expect(effectiveStoreAccent(null, "full")).toBe("violet");
+    expect(effectiveStoreAccent("", "full")).toBe("violet");
+    expect(effectiveStoreAccent("some_removed_color", "full")).toBe("violet");
+  });
+});
+
+describe("storeAccentsForLevel", () => {
+  it("locks nothing when the plan has customization unlocked", () => {
+    const accents = storeAccentsForLevel("basic");
+    expect(accents.every((a) => !a.locked)).toBe(true);
+  });
+
+  it("Free (none) sees every color listed, but only violet unlocked", () => {
+    const accents = storeAccentsForLevel("none");
+    expect(accents.find((a) => a.id === "violet")?.locked).toBe(false);
+    expect(accents.filter((a) => a.id !== "violet").every((a) => a.locked)).toBe(true);
   });
 });

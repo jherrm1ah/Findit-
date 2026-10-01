@@ -611,6 +611,7 @@ export async function getStorePlanOverview(sellerId: string) {
     // makes — see storeTemplatesForLevel above for why each entry carries
     // its own `locked` flag rather than this just being the unlocked subset.
     storeTemplates: storeTemplatesForLevel(plan.customizationLevel),
+    storeAccents: storeAccentsForLevel(plan.customizationLevel),
   };
 }
 
@@ -824,6 +825,92 @@ export async function assertCanUseStoreTemplate(sellerId: string, templateId: st
     const suggestion = next ? ` Available on ${next.name} and above.` : "";
     throw new ValidationError(`The "${template.name}" template isn't available on the ${plan.name} plan.${suggestion}`);
   }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Storefront accent colors (migration 032)                                  */
+/*                                                                            */
+/*  A curated set of color pairs, not an open picker — real choice without   */
+/*  letting a seller land on an unreadable or off-brand combination on a     */
+/*  real storefront. Unlike STORE_TEMPLATES, these aren't tiered by how      */
+/*  "big" a feature they are (a color isn't more premium than another        */
+/*  color), so every non-default preset shares ONE gate — the same plain     */
+/*  "has any customization at all" check logo_url/banner_url already use.    */
+/* -------------------------------------------------------------------------- */
+
+export type StoreAccentId = "violet" | "ocean" | "sunset" | "forest" | "berry" | "midnight" | "gold" | "slate";
+
+export type StoreAccent = {
+  id: StoreAccentId;
+  name: string;
+  // Gradient stops, used wherever the storefront currently hardcodes
+  // `linear-gradient(135deg,#A855F7,#7C3AED)` — buttons, the banner
+  // placeholder, the logo circle, the PRO badge.
+  from: string;
+  to: string;
+  // A pale tint of `to`, used for badge/escrow-banner backgrounds — `to`
+  // itself doubles as the text color on top of it, same as how #7C3AED
+  // already serves both roles in the original hardcoded violet.
+  tint: string;
+};
+
+// 'violet' is, intentionally, the exact pair every storefront already
+// rendered in before this feature existed — the universal default, same
+// role 'classic' plays for STORE_TEMPLATES above. Every other entry was
+// picked (and its `to` checked) to still read clearly as white text on
+// top of the gradient, the same way the storefront already puts white
+// text on the violet gradient in several places (the PRO badge, the
+// logo-circle initial, the footer CTA).
+export const STORE_ACCENTS: StoreAccent[] = [
+  { id: "violet", name: "Violet", from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" },
+  { id: "ocean", name: "Ocean", from: "#38BDF8", to: "#1D4ED8", tint: "#E6F2FD" },
+  { id: "sunset", name: "Sunset", from: "#FB923C", to: "#BE123C", tint: "#FDECE6" },
+  { id: "forest", name: "Forest", from: "#34D399", to: "#047857", tint: "#E6F7EF" },
+  { id: "berry", name: "Berry", from: "#F472B6", to: "#9D174D", tint: "#FCE7F0" },
+  { id: "midnight", name: "Midnight", from: "#818CF8", to: "#312E81", tint: "#ECEBFB" },
+  { id: "gold", name: "Gold", from: "#F59E0B", to: "#B45309", tint: "#FDF3E0" },
+  { id: "slate", name: "Slate", from: "#64748B", to: "#334155", tint: "#EEF1F4" },
+];
+
+export const DEFAULT_STORE_ACCENT: StoreAccentId = "violet";
+
+export function isStoreAccentId(value: string): value is StoreAccentId {
+  return STORE_ACCENTS.some((a) => a.id === value);
+}
+
+export function getStoreAccent(id: StoreAccentId): StoreAccent {
+  // STORE_ACCENTS always has an entry for every StoreAccentId (the type is
+  // derived from it), so this lookup cannot miss.
+  return STORE_ACCENTS.find((a) => a.id === id)!;
+}
+
+// What the PUBLIC store page should actually render — same lapse-safety
+// rule as effectiveStoreTemplate above: a seller who picked a non-default
+// accent while on a paid plan and then lapsed back to Free renders in
+// 'violet', never their last-picked color, however harmless that color
+// itself might look.
+export function effectiveStoreAccent(stored: string | null, level: SubscriptionPlan["customizationLevel"]): StoreAccentId {
+  if (stored && isStoreAccentId(stored) && (stored === DEFAULT_STORE_ACCENT || level !== "none")) return stored;
+  return DEFAULT_STORE_ACCENT;
+}
+
+// Full catalog annotated with lock state for the seller's OWN dashboard —
+// same "show the locked state, don't hide it" pattern as
+// storeTemplatesForLevel. Every preset but the default shares one lock: any
+// paid customization unlocks all of them together, not a progressive ladder.
+export function storeAccentsForLevel(level: SubscriptionPlan["customizationLevel"]): Array<StoreAccent & { locked: boolean }> {
+  return STORE_ACCENTS.map((a) => ({ ...a, locked: a.id !== DEFAULT_STORE_ACCENT && level === "none" }));
+}
+
+// Real server-side gate for the WRITE. The default is always allowed (it's
+// what every plan already renders); anything else needs the same
+// "customization unlocked at all" check logo_url/banner_url use.
+export async function assertCanUseStoreAccent(sellerId: string, accentId: string): Promise<void> {
+  if (!isStoreAccentId(accentId)) {
+    throw new ValidationError("Unknown store accent color.");
+  }
+  if (accentId === DEFAULT_STORE_ACCENT) return;
+  await assertCanCustomizeStore(sellerId);
 }
 
 export type PlanChangePreview =

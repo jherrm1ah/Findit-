@@ -87,7 +87,12 @@ export const api = {
 
   getMySellerStatus: () => request("/api/sellers/me").then((d) => d.status),
   getMyStoreBranding: () =>
-    request("/api/sellers/me").then((d) => ({ logoUrl: d.logoUrl, bannerUrl: d.bannerUrl, storeTemplate: d.storeTemplate })),
+    request("/api/sellers/me").then((d) => ({
+      logoUrl: d.logoUrl,
+      bannerUrl: d.bannerUrl,
+      storeTemplate: d.storeTemplate,
+      storeAccent: d.storeAccent,
+    })),
   // The unambiguous key for "which listings/orders are actually mine" —
   // business_name has no uniqueness constraint, so filtering by it alone
   // (as SellerDashboard used to) can mix in a same-named stranger's data.
@@ -543,11 +548,11 @@ export const api = {
     }
     return request("/api/sellers/me/verification", { method: "POST", body: fd });
   },
-  updateStoreBranding: (logoUrl, bannerUrl, storeTemplate) =>
+  updateStoreBranding: (logoUrl, bannerUrl, storeTemplate, storeAccent) =>
     request("/api/sellers/me/branding", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ logoUrl, bannerUrl, storeTemplate }),
+      body: JSON.stringify({ logoUrl, bannerUrl, storeTemplate, storeAccent }),
     }),
   // Unlike submitVerification, this never resets verification_status — the
   // one profile field a seller can always edit regardless of where their

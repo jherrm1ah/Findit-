@@ -23,5 +23,6 @@ export async function GET(req: NextRequest) {
     logoUrl: branding?.logoUrl ?? null,
     bannerUrl: branding?.bannerUrl ?? null,
     storeTemplate: branding?.storeTemplate ?? "classic",
+    storeAccent: branding?.storeAccent ?? "violet",
   });
 }
