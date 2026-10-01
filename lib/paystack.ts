@@ -37,6 +37,17 @@ type PaystackResponse<T> = { status: boolean; message: string; data: T };
 // the "failed" status.
 export class PaystackNetworkError extends Error {}
 
+// Distinct from a plain Error too — this is Paystack itself answering with
+// a real, deliberately human-readable rejection (bad email, amount too
+// small, the business account isn't fully set up for live charges, etc.).
+// That message is MEANT to be shown to whoever's checking out — collapsing
+// it into a generic "Couldn't start payment" (the fate of a plain Error,
+// see lib/errors.ts#toClientError) is how a buyer, a seller, and an admin
+// reading Sentry/logs all lost the one piece of information that actually
+// explains what went wrong, for every Paystack-backed checkout in the app:
+// orders, boosts, and Store/FindIt Pro subscriptions alike.
+export class PaystackRejectedError extends Error {}
+
 async function paystackFetch<T>(path: string, init?: RequestInit): Promise<PaystackResponse<T>> {
   let res: Response;
   try {
@@ -53,7 +64,7 @@ async function paystackFetch<T>(path: string, init?: RequestInit): Promise<Payst
   }
   const body = (await res.json().catch(() => null)) as PaystackResponse<T> | null;
   if (!res.ok || !body) {
-    throw new Error(body?.message || `Paystack request failed (${res.status})`);
+    throw new PaystackRejectedError(body?.message || `Paystack request failed (${res.status})`);
   }
   return body;
 }
