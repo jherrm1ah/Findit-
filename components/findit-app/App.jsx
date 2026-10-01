@@ -180,23 +180,67 @@ export default function App() {
     // one place enforces this rather than every animated component
     // needing its own check.
     <MotionConfig reducedMotion="user">
-      <ToastHost toasts={toasts} onDismiss={dismissToast} />
-      {/* splash -> main is the only one-way, one-time transition left — a
-          coordinated crossfade here instead of an instant cut, matching the
-          same treatment MainApp's own internal screen switcher already has. */}
-      <AnimatePresence mode="wait">{content}</AnimatePresence>
-      {/* The auth overlay sits OUTSIDE that AnimatePresence on purpose — it
-          layers on top of MainApp rather than replacing it, so opening or
-          dismissing it is never a "screen transition" that could touch
-          MainApp's own mount lifecycle. */}
-      <AnimatePresence>
-        {authPrompt === "welcome" && (
-          <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} onDismiss={handleAuthDismiss} />
-        )}
-        {authPrompt === "login" && (
-          <Login key="login" initialMode={loginMode} onDone={handleAuthDone} showToast={showToast} onDismiss={handleAuthDismiss} />
-        )}
-      </AnimatePresence>
+      {/* Every screen in this app is built as a phone-width layout using
+          `fixed inset-0` panels (full-screen overlays, the bottom tab bar,
+          toasts) — there was never a tablet/desktop treatment, so on a wider
+          browser window those panels used to span the ENTIRE viewport edge
+          to edge, stretching a 2-column product grid into two absurdly wide
+          cards. Below `md`, this wrapper is a no-op (full width, no visible
+          backdrop) — mobile is pixel-identical to before. At `md` and up, it
+          centers the app as a fixed-width "device" on a neutral backdrop,
+          like visiting a mobile-only site on desktop Chrome's device toolbar.
+          `contain: layout` is what makes this actually work: it's the
+          standards way to make THIS div (not the real browser viewport) the
+          containing block for every `position: fixed` descendant — see
+          https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment —
+          so every one of those fixed panels anywhere in the app lines up
+          with the frame's edges instead of the real window's. */}
+      <div className="min-h-screen md:bg-[#EDEAF6] md:py-8">
+        {/* Below `md` this is a no-op (full width, `min-h-screen`, normal
+            page scroll, no visible backdrop) — mobile is pixel-identical to
+            before. At `md`+, this becomes a fixed-size "device frame":
+            `[contain:layout]` makes THIS div (not the real browser
+            viewport) the containing block for every `position: fixed`
+            descendant anywhere in the app (the bottom tab bar, full-screen
+            overlays, toasts) — see
+            https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_containment.
+            Critically, `overflow-y-auto` has to live on this SAME element,
+            not an ancestor: a `fixed` descendant of a `[contain:layout]`
+            box is positioned relative to that box's own visible scrollport,
+            not its full (scrolled) content — so making this div both the
+            containment root AND the one that actually scrolls is what keeps
+            the tab bar/overlays correctly pinned to the frame's edges while
+            its content scrolls, instead of scrolling away with the page (a
+            real regression this fix went through and caught — contain
+            without a matching overflow on the same element silently breaks
+            every `fixed bottom-0`/`inset-0` element the moment a screen's
+            content is taller than one viewport, which is the normal case).
+            min-h-screen stays the floor even at md+: every screen here is
+            `fixed inset-0`, which has no height of its own, so if this div's
+            own height were ever allowed to collapse, every one of them would
+            size relative to a zero-height box. */}
+        <div
+          className="relative min-h-screen md:h-[calc(100vh-4rem)] md:max-w-[480px] md:mx-auto md:overflow-y-auto md:rounded-[28px] md:shadow-2xl md:shadow-[#4C1D95]/20 md:[contain:layout]"
+        >
+          <ToastHost toasts={toasts} onDismiss={dismissToast} />
+          {/* splash -> main is the only one-way, one-time transition left — a
+              coordinated crossfade here instead of an instant cut, matching the
+              same treatment MainApp's own internal screen switcher already has. */}
+          <AnimatePresence mode="wait">{content}</AnimatePresence>
+          {/* The auth overlay sits OUTSIDE that AnimatePresence on purpose — it
+              layers on top of MainApp rather than replacing it, so opening or
+              dismissing it is never a "screen transition" that could touch
+              MainApp's own mount lifecycle. */}
+          <AnimatePresence>
+            {authPrompt === "welcome" && (
+              <Welcome key="welcome" onGetStarted={handleGetStarted} onHaveAccount={handleHaveAccount} onDismiss={handleAuthDismiss} />
+            )}
+            {authPrompt === "login" && (
+              <Login key="login" initialMode={loginMode} onDone={handleAuthDone} showToast={showToast} onDismiss={handleAuthDismiss} />
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     </MotionConfig>
   );
 }
