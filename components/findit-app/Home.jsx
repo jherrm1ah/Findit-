@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import NextImage from "next/image";
 import { motion, AnimatePresence, useAnimate } from "motion/react";
 import {
   Search, ShieldCheck, Truck, MessageCircle,
@@ -380,14 +381,34 @@ export default function Home({
       <div
         className="rounded-[20px] p-6 relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
-          background:
-            activeSlide.kind === "campaign"
-              ? `linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%), url(${activeSlide.campaign.imageUrl}) center/cover`
-              : "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)",
+          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : undefined,
           minHeight: 190,
         }}
         onClick={() => handleSlideTap(activeSlide)}
       >
+        {activeSlide.kind === "campaign" && (
+          // A real <Image>, not a CSS background: url() — every other photo
+          // in this app (ArtBlock, product/seller images) already renders
+          // this way, through next/image's own optimizer; a raw CSS
+          // background-image on an inline style is the one place that
+          // wasn't, and is also the one place a Sponsored slide's banner
+          // silently failed to show in production. Layered below the
+          // gradient overlay and the text content, both still painted
+          // after it in DOM order.
+          <NextImage
+            src={activeSlide.campaign.imageUrl}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 100vw, 400px"
+            className="object-cover"
+          />
+        )}
+        {activeSlide.kind === "campaign" && (
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%)" }}
+          />
+        )}
         {activeSlide.kind === "static" && (
           <>
             <motion.div {...floatLoop(14, 4)} className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
