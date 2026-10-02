@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useAnimate } from "motion/react";
 import {
-  Search, PackageSearch, ShieldCheck, Truck, MessageCircle,
-  ArrowRight, X, ChevronRight, Home as HomeIcon,
-  ListOrdered, Bell, Menu, ShoppingBag, ShoppingCart, SlidersHorizontal,
-  LayoutDashboard, MapPin, Store, Tag, UserRound,
+  Search, ShieldCheck, Truck, MessageCircle,
+  ArrowRight, X, ChevronRight,
+  ListOrdered, Bell, Menu, ShoppingCart, SlidersHorizontal,
+  MapPin, Store, Tag, UserRound,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { Logo, ArtBlock } from "./shared";
@@ -157,21 +157,19 @@ export default function Home({
   // it anywhere until they happen to go looking in Account.
   const saved = products.filter((p) => savedIds.includes(p.id));
 
-  // The seller and admin entries are filtered by role rather than shown to
-  // everyone. Neither ever granted access — both screens and every route
-  // behind them check the role server-side — but listing an admin queue in a
-  // buyer's menu only advertises a door they can't open.
+  // Deliberately excludes Home/Browse catalogue/Request/Seller dashboard/
+  // Admin queue — every one of those is already exactly one tap away on the
+  // bottom tab bar (see MainApp.jsx#tabsFor), so repeating them here was
+  // real redundancy, not redundancy-as-safety-net: the same destination
+  // reachable 3 different ways (bottom tab + this menu + Home's own top-
+  // right icon row) on a 5-inch screen, not extra convenience. This menu
+  // now only holds what the bottom tab bar genuinely has no room for.
   const MENU_LINKS = [
-    { label: "Home", screen: "home", icon: HomeIcon },
-    { label: "Browse catalogue", screen: "browse", icon: Search },
     { label: "Browse sellers", screen: "sellers", icon: Store },
     { label: "Cart", screen: "cart", icon: ShoppingCart },
-    { label: "Request an item", screen: "request", icon: PackageSearch },
     { label: "My orders & saved items", screen: "account", icon: ListOrdered },
     { label: "Notifications", screen: "notifications", icon: Bell },
-    role === "seller" && { label: "Seller dashboard", screen: "seller", icon: LayoutDashboard },
-    role === "admin" && { label: "Admin queue", screen: "admin", icon: ShieldCheck },
-  ].filter(Boolean);
+  ];
 
   return (
     <div className="px-5 pt-4 pb-10">
@@ -194,9 +192,6 @@ export default function Home({
           </motion.div>
           <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.12 }}>
             <CartIconButton count={cartCount} onClick={() => go("cart")} />
-          </motion.div>
-          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.18 }}>
-            <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={18} className="text-[#1E1B4B]" /></IconButton>
           </motion.div>
         </div>
 
