@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check, LayoutTemplate } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check, LayoutTemplate, Megaphone } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
@@ -740,6 +740,217 @@ function StoreAnalytics({ plan, orders, go }) {
   );
 }
 
+const CAMPAIGN_HEADLINE_MAX = 60;
+const CAMPAIGN_BODY_MAX = 140;
+const CAMPAIGN_CTA_MAX = 24;
+
+// Paid Sponsored slides in Home's promo carousel (see lib/adCampaigns.ts).
+// Self-contained the same way StoreAnalytics above is: this card owns its
+// own form/upload/submit state rather than threading a dozen fields
+// through the parent, which only ever needs the one onCreateAdCampaign
+// callback plus the plan catalogue and this seller's own campaign history.
+function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUploadImage, showToast }) {
+  const [open, setOpen] = useState(false);
+  const [planId, setPlanId] = useState(plans[0]?.id ?? null);
+  const [headline, setHeadline] = useState("");
+  const [body, setBody] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("Shop now");
+  const [imageUrl, setImageUrl] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [targetProductId, setTargetProductId] = useState("");
+
+  const now = Date.now();
+  const live = myCampaigns.filter((c) => new Date(c.endsAt).getTime() > now);
+  const past = myCampaigns.filter((c) => new Date(c.endsAt).getTime() <= now);
+
+  const resetForm = () => {
+    setHeadline("");
+    setBody("");
+    setCtaLabel("Shop now");
+    setImageUrl(null);
+    setTargetProductId("");
+  };
+
+  const handlePickImage = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // same reset-after-read as the product-photo picker, so re-picking the same file still fires onChange
+    if (!file) return;
+    setUploading(true);
+    try {
+      setImageUrl(await onUploadImage(file));
+    } catch (err) {
+      showToast?.(err.message || "Couldn't upload that image — try again.", "error");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const canSubmit =
+    planId && headline.trim() && headline.trim().length <= CAMPAIGN_HEADLINE_MAX &&
+    body.trim() && body.trim().length <= CAMPAIGN_BODY_MAX &&
+    ctaLabel.trim() && ctaLabel.trim().length <= CAMPAIGN_CTA_MAX &&
+    imageUrl && !uploading && !creating;
+
+  const submit = async () => {
+    if (!canSubmit) return;
+    await onCreate({
+      planId,
+      headline: headline.trim(),
+      body: body.trim(),
+      ctaLabel: ctaLabel.trim(),
+      imageUrl,
+      targetProductId: targetProductId || null,
+    });
+    resetForm();
+    setOpen(false);
+  };
+
+  if (plans.length === 0 && myCampaigns.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Megaphone size={14} className="text-[#7C3AED]" />
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Advertise on FindIt</p>
+        </div>
+        {!open && plans.length > 0 && (
+          <button onClick={() => setOpen(true)} className="text-[11.5px] font-semibold text-[#7C3AED]">
+            New campaign
+          </button>
+        )}
+      </div>
+
+      {live.length === 0 && past.length === 0 && !open && (
+        <p className="text-[11.5px] text-[#6B6483]">
+          Pay to show a Sponsored slide in every buyer&apos;s home screen carousel, alongside FindIt&apos;s own features.
+        </p>
+      )}
+
+      {live.length > 0 && (
+        <div className="space-y-2 mb-2">
+          {live.map((c) => (
+            <div key={c.id} className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3">
+              <div className="min-w-0">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{c.headline}</p>
+                <p className="text-[9.5px] text-[#8A8372]">
+                  Live until {new Date(c.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+                </p>
+              </div>
+              <span className="text-[9.5px] font-semibold text-[#10B981] bg-[#10B981]/12 px-2 py-0.5 rounded-full shrink-0">Live</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {past.length > 0 && !open && (
+        <p className="text-[10px] text-[#8A8372]">
+          {past.length} past campaign{past.length === 1 ? "" : "s"}.
+        </p>
+      )}
+
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: DURATION.fast }}
+            className="overflow-hidden"
+          >
+            <div className="pt-3 space-y-3">
+              {plans.length > 1 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {plans.map((p) => (
+                    <button
+                      key={p.id}
+                      onClick={() => setPlanId(p.id)}
+                      className={`text-[11px] font-semibold px-3 py-1.5 rounded-full border ${
+                        planId === p.id ? "bg-[#7C3AED] text-white border-[#7C3AED]" : "text-[#514B67] border-[#ECE9F7]"
+                      }`}
+                    >
+                      {p.durationDays}d — {naira(p.price)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => document.getElementById("ad-campaign-image-input")?.click()}
+                className="w-full h-28 rounded-xl border-2 border-dashed border-[#ECE9F7] flex items-center justify-center overflow-hidden relative"
+              >
+                {imageUrl ? (
+                  <NextImage src={imageUrl} alt="" fill sizes="400px" className="object-cover" />
+                ) : (
+                  <span className="text-[11px] text-[#8A8372] flex items-center gap-1.5">
+                    {uploading ? "Uploading…" : (<><ImageIcon size={14} /> Upload a banner image</>)}
+                  </span>
+                )}
+              </button>
+              <input id="ad-campaign-image-input" type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+
+              <Field label={`Headline (${headline.length}/${CAMPAIGN_HEADLINE_MAX})`}>
+                <input
+                  value={headline}
+                  onChange={(e) => setHeadline(e.target.value.slice(0, CAMPAIGN_HEADLINE_MAX))}
+                  placeholder="Premium Tech at the Best Prices"
+                  className="w-full text-[13px] text-[#1E1B4B] outline-none"
+                />
+              </Field>
+              <Field label={`Supporting text (${body.length}/${CAMPAIGN_BODY_MAX})`}>
+                <textarea
+                  value={body}
+                  onChange={(e) => setBody(e.target.value.slice(0, CAMPAIGN_BODY_MAX))}
+                  placeholder="Latest iPhones, Samsung & more. Fast delivery. Trusted sellers."
+                  rows={2}
+                  className="w-full text-[13px] text-[#1E1B4B] outline-none resize-none"
+                />
+              </Field>
+              <Field label={`Button label (${ctaLabel.length}/${CAMPAIGN_CTA_MAX})`}>
+                <input
+                  value={ctaLabel}
+                  onChange={(e) => setCtaLabel(e.target.value.slice(0, CAMPAIGN_CTA_MAX))}
+                  className="w-full text-[13px] text-[#1E1B4B] outline-none"
+                />
+              </Field>
+              {listings.length > 0 && (
+                <Field label="Links to (optional — defaults to your store)">
+                  <select
+                    value={targetProductId}
+                    onChange={(e) => setTargetProductId(e.target.value)}
+                    className="w-full text-[13px] text-[#1E1B4B] outline-none bg-transparent"
+                  >
+                    <option value="">Your store page</option>
+                    {listings.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setOpen(false); resetForm(); }}
+                  className="flex-1 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-xl py-2.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submit}
+                  disabled={!canSubmit}
+                  className={`flex-1 text-white text-[12.5px] font-semibold py-2.5 rounded-xl ${!canSubmit ? "opacity-50" : ""}`}
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {creating ? "Working…" : "Pay & publish"}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // A single review, with a reply box the seller can open once. Self-contained
 // so ReviewsCard below stays a plain list — the reply mutation and its
 // pending/error state live here, per-row, rather than one shared "which row
@@ -1024,6 +1235,7 @@ export default function SellerDashboard({
   verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
+  adCampaignPlans = [], myAdCampaigns = [], creatingAdCampaign, onCreateAdCampaign,
   myStore, onClaimStore, claimingStore,
   transactionRecords = [],
 }) {
@@ -1359,6 +1571,15 @@ export default function SellerDashboard({
       </div>
 
       <StoreAnalytics plan={plan} orders={myOrders} go={go} />
+      <AdvertiseCard
+        plans={adCampaignPlans}
+        myCampaigns={myAdCampaigns}
+        listings={myListings}
+        creating={creatingAdCampaign}
+        onCreate={onCreateAdCampaign}
+        onUploadImage={onUploadImage}
+        showToast={showToast}
+      />
       </>
       )}
 

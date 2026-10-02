@@ -4,6 +4,7 @@ import { getDb, assertNoError } from "@/lib/db";
 import { changeStorePlan, changePlatformSubscription, markSubscriptionPastDue, BillingPeriod } from "@/lib/subscriptions";
 import { confirmOrderPayment } from "@/lib/payments";
 import { activateBoost } from "@/lib/boosts";
+import { activateAdCampaign } from "@/lib/adCampaigns";
 import { ValidationError } from "@/lib/errors";
 import { releaseCredit } from "@/lib/referrals";
 
@@ -21,6 +22,34 @@ async function activateBoostFromPayment(payment: Row): Promise<void> {
     productId: metadata.productId,
     sellerId: metadata.sellerId,
     boostPlanId: metadata.boostPlanId,
+    amount: payment.amount as number,
+    paymentId: payment.id as string,
+  });
+}
+
+// Same idea as activateBoostFromPayment — the campaign's actual content
+// (headline/body/cta/image) rides on the payment row's own metadata rather
+// than a separate "draft campaign" table, since nothing about an ad
+// campaign exists in the database at all until the charge is confirmed.
+async function activateAdCampaignFromPayment(payment: Row): Promise<void> {
+  const metadata = (payment.metadata as {
+    sellerId?: string;
+    planId?: string;
+    headline?: string;
+    body?: string;
+    ctaLabel?: string;
+    imageUrl?: string;
+    targetProductId?: string | null;
+  } | null) ?? null;
+  if (!metadata?.sellerId || !metadata.planId || !metadata.headline || !metadata.body || !metadata.ctaLabel || !metadata.imageUrl) return;
+  await activateAdCampaign({
+    sellerId: metadata.sellerId,
+    planId: metadata.planId,
+    headline: metadata.headline,
+    body: metadata.body,
+    ctaLabel: metadata.ctaLabel,
+    imageUrl: metadata.imageUrl,
+    targetProductId: metadata.targetProductId ?? null,
     amount: payment.amount as number,
     paymentId: payment.id as string,
   });
@@ -117,6 +146,13 @@ export async function POST(req: NextRequest) {
         console.error("[paystack-webhook] retry: boost activation still failing", err);
         return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
       }
+    } else if (payment.kind === "ad_campaign") {
+      try {
+        await activateAdCampaignFromPayment(payment);
+      } catch (err) {
+        console.error("[paystack-webhook] retry: ad campaign activation still failing", err);
+        return NextResponse.json({ error: "ad campaign activation failed" }, { status: 500 });
+      }
     } else {
       try {
         await applySubscriptionFromPayment(payment);
@@ -186,6 +222,16 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("[paystack-webhook] payment succeeded but boost activation failed", err);
         return NextResponse.json({ error: "boost activation failed" }, { status: 500 });
+      }
+    } else if (payment.kind === "ad_campaign") {
+      try {
+        // Non-2xx here too, same reasoning as the boost branch above —
+        // activateAdCampaign is idempotent on payment_id, so a redelivered
+        // webhook retrying this is safe.
+        await activateAdCampaignFromPayment(payment);
+      } catch (err) {
+        console.error("[paystack-webhook] payment succeeded but ad campaign activation failed", err);
+        return NextResponse.json({ error: "ad campaign activation failed" }, { status: 500 });
       }
     } else {
       try {

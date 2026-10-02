@@ -164,6 +164,20 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // Real, admin-editable boost pricing (lib/boosts.ts) — see
   // GET /api/boost-plans.
   const [boostPlans, setBoostPlans] = useState([]);
+  // Every currently-active Sponsored slide for Home's promo carousel —
+  // public, loaded for every visitor the same way products is, not just
+  // sellers/admins. See lib/adCampaigns.ts#listActiveAdCampaigns.
+  const [adCampaigns, setAdCampaigns] = useState([]);
+  // Real, admin-editable ad campaign pricing — see GET /api/ad-campaign-plans.
+  const [adCampaignPlans, setAdCampaignPlans] = useState([]);
+  // This seller's own campaigns (live and past) — the Advertise card's
+  // history list.
+  const [myAdCampaigns, setMyAdCampaigns] = useState([]);
+  const [creatingAdCampaign, setCreatingAdCampaign] = useState(false);
+  // Admin moderation queue for ad campaigns + the plan-pricing editor data —
+  // both only ever fetched for an admin session, same as sellers/adminActions.
+  const [adminAdCampaigns, setAdminAdCampaigns] = useState([]);
+  const [adminAdCampaignPlans, setAdminAdCampaignPlans] = useState([]);
   // The seller's own dedicated storefront: slug, public URL, and whether the
   // live plan publishes it. Server-decided (lib/store.ts) — this only holds
   // the answer.
@@ -245,6 +259,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     // applyCategoryOverrides in ./data for why this isn't setState.
     api.getCategories().then(applyCategoryOverrides).catch(() => {});
 
+    // Every currently-active Sponsored slide for Home's promo carousel —
+    // same "works for a signed-out guest too" reasoning as getCategories
+    // above, kept out of the preloadedMainData bundle so a slow or failed
+    // campaign fetch can never hold up (or take down) products/orders.
+    api.getActiveAdCampaigns().then(setAdCampaigns).catch(() => {});
+
     // App.jsx starts this same fetch as soon as the session check resolves
     // — overlapping it with the splash screen's own display time instead of
     // only starting once MainApp mounts (i.e. after the splash has already
@@ -292,6 +312,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       api.getPayoutAccount().then(setPayoutAccount).catch(() => {});
       api.getBoostPlans().then(setBoostPlans).catch(() => {});
       api.getBanks().then((r) => setBanks(r.banks || [])).catch(() => {});
+      api.getAdCampaignPlans().then(setAdCampaignPlans).catch(() => {});
+      api.getMyAdCampaigns().then(setMyAdCampaigns).catch(() => {});
     }
     if (isAdmin) {
       api.getSellers().then(setSellers).catch(() => {});
@@ -301,6 +323,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       loadSellerVerifications();
       api.getAdminOverview().then(setAdminOverview).catch(() => {});
       api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
+      api.getAdminAdCampaigns().then(setAdminAdCampaigns).catch(() => {});
+      api.getAdminAdCampaignPlans().then(setAdminAdCampaignPlans).catch(() => {});
     }
     if (user) {
       api.getFindItPro().then(setFindItPro).catch(() => {});
@@ -823,6 +847,26 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
+  // Same three-outcome response shape as handleBoostProduct — a checkout
+  // redirect, or a "not configured" message. The campaign itself doesn't
+  // exist anywhere yet at this point; it's only created once the webhook
+  // confirms payment (see lib/adCampaigns.ts#activateAdCampaign).
+  const handleCreateAdCampaign = async (input) => {
+    setCreatingAdCampaign(true);
+    try {
+      const result = await api.createAdCampaign(input);
+      if (result.configured) {
+        window.location.href = result.checkoutUrl;
+      } else {
+        showToast(result.message || "Advertising isn't set up yet — contact an admin.", "error");
+      }
+    } catch (err) {
+      showToast(err.message || "Couldn't start payment for that ad campaign — try again.", "error");
+    } finally {
+      setCreatingAdCampaign(false);
+    }
+  };
+
   const handleCancelStorePlan = async () => {
     setChangingPlan(true);
     try {
@@ -1021,6 +1065,30 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     // — refresh so a price/duration edit shows up there immediately.
     api.getBoostPlans().then(setBoostPlans).catch(() => {});
     return updated;
+  };
+
+  const handleLoadAdCampaignPlans = () => api.getAdminAdCampaignPlans();
+
+  const handleUpdateAdCampaignPlan = async (id, patch) => {
+    const updated = await api.updateAdminAdCampaignPlan(id, patch);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    // The seller-facing Advertise card reads this same list — refresh so a
+    // price/duration edit shows up there immediately, same reasoning as
+    // handleUpdateBoostPlan above.
+    api.getAdCampaignPlans().then(setAdCampaignPlans).catch(() => {});
+    return updated;
+  };
+
+  const handleLoadAdCampaigns = () => api.getAdminAdCampaigns();
+
+  const handleTakeDownAdCampaign = async (id, reason) => {
+    const campaign = await api.takeDownAdCampaign(id, reason);
+    api.getAdminActions().then(setAdminActions).catch(() => {});
+    // Home's own carousel reads the public active-campaigns list — refresh
+    // it too so a taken-down campaign stops appearing there right away
+    // rather than waiting for this buyer's next full page load.
+    api.getActiveAdCampaigns().then(setAdCampaigns).catch(() => {});
+    return campaign;
   };
 
   const handleLoadRiskSignals = () => api.getRiskSignals();
@@ -1577,6 +1645,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             myRequests={myRequests}
             cartCount={cartCount}
             onRequireAuth={onRequireAuth}
+            adCampaigns={adCampaigns}
+            onViewSeller={handleViewSeller}
           />
         )}
         {screen === "browse" && (
@@ -1681,6 +1751,10 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               onSavePayoutAccount={handleSavePayoutAccount}
               savingPayoutAccount={savingPayoutAccount}
               boostPlans={boostPlans}
+              adCampaignPlans={adCampaignPlans}
+              myAdCampaigns={myAdCampaigns}
+              creatingAdCampaign={creatingAdCampaign}
+              onCreateAdCampaign={handleCreateAdCampaign}
             transactionRecords={transactionRecords}
             myStore={myStore}
             onClaimStore={handleClaimStore}
@@ -1734,6 +1808,10 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               onUpdatePlan={handleUpdatePlan}
               onLoadBoostPlans={handleLoadBoostPlans}
               onUpdateBoostPlan={handleUpdateBoostPlan}
+              onLoadAdCampaigns={handleLoadAdCampaigns}
+              onTakeDownAdCampaign={handleTakeDownAdCampaign}
+              onLoadAdCampaignPlans={handleLoadAdCampaignPlans}
+              onUpdateAdCampaignPlan={handleUpdateAdCampaignPlan}
               onLoadCategories={handleLoadCategories}
               onCreateCategory={handleCreateCategory}
               onUpdateCategory={handleUpdateCategory}

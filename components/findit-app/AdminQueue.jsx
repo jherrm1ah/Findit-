@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ClipboardList, Clock, CheckCircle2, Check, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap, Gift } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, Check, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap, Gift, Megaphone } from "lucide-react";
 import { Pill } from "./shared";
 import { api } from "./api";
 import { naira } from "./data";
@@ -1836,17 +1836,19 @@ function BoostPlanEditorCard({ plan, onSave }) {
   );
 }
 
-function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoostPlan, showToast }) {
+function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoostPlan, onLoadAdCampaignPlans, onUpdateAdCampaignPlan, showToast }) {
   const [plans, setPlans] = useState(null);
   const [boostPlans, setBoostPlans] = useState(null);
+  const [adCampaignPlans, setAdCampaignPlans] = useState(null);
   const [failed, setFailed] = useState(false);
 
   const load = () => {
     setFailed(false);
-    Promise.all([onLoadPlans(), onLoadBoostPlans()])
-      .then(([p, bp]) => {
+    Promise.all([onLoadPlans(), onLoadBoostPlans(), onLoadAdCampaignPlans()])
+      .then(([p, bp, acp]) => {
         setPlans(p);
         setBoostPlans(bp);
+        setAdCampaignPlans(acp);
       })
       .catch(() => setFailed(true));
   };
@@ -1873,6 +1875,16 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoost
     }
   };
 
+  const saveAdCampaignPlan = async (id, patch) => {
+    try {
+      const updated = await onUpdateAdCampaignPlan(id, patch);
+      setAdCampaignPlans((ps) => ps.map((p) => (p.id === id ? updated : p)));
+      showToast?.(`${updated.name} updated.`);
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update that ad campaign plan.", "error");
+    }
+  };
+
   if (failed) {
     return (
       <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3">
@@ -1886,7 +1898,7 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoost
       </div>
     );
   }
-  if (!plans || !boostPlans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
+  if (!plans || !boostPlans || !adCampaignPlans) return <p className="text-[12px] text-[#6B6483]">Loading plans…</p>;
 
   const storePlans = plans.filter((p) => p.kind === "store");
   const platformPlans = plans.filter((p) => p.kind === "platform");
@@ -1899,6 +1911,8 @@ function PlansAdmin({ onLoadPlans, onUpdatePlan, onLoadBoostPlans, onUpdateBoost
       {platformPlans.map((p) => <PlanEditorCard key={p.id} plan={p} onSave={save} />)}
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 mt-5">Listing boosts</p>
       {boostPlans.map((p) => <BoostPlanEditorCard key={p.id} plan={p} onSave={saveBoostPlan} />)}
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 mt-5">Ad campaigns</p>
+      {adCampaignPlans.map((p) => <BoostPlanEditorCard key={p.id} plan={p} onSave={saveAdCampaignPlan} />)}
     </div>
   );
 }
@@ -2389,6 +2403,129 @@ function ProductReportsQueue({ onLoadProductReports, onResolveProductReport, sho
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+// A paid Sponsored slide, reactively moderated the same way a listing is —
+// it goes live the moment it's paid for (see lib/adCampaigns.ts), and this
+// is the only place an admin can pull one down afterward. No separate
+// approve-before-going-live step exists (see migration 040's note), so
+// this list is the one real check on what's currently showing in every
+// buyer's home carousel.
+function AdCampaignCard({ campaign, onTakeDown }) {
+  const [reasoning, setReasoning] = useState(false);
+  const [reason, setReason] = useState("");
+  const [acting, setActing] = useState(false);
+  const isLive = new Date(campaign.endsAt).getTime() > Date.now();
+
+  const confirmTakeDown = async () => {
+    setActing(true);
+    try {
+      await onTakeDown(campaign.id, reason.trim() || null);
+      setReasoning(false);
+      setReason("");
+    } finally {
+      setActing(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5 flex gap-3">
+      <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-[#F5F2FC]">
+        <Image src={campaign.imageUrl} alt="" fill sizes="80px" className="object-cover" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{campaign.headline}</p>
+          {isLive ? (
+            <Pill tone="green">Live</Pill>
+          ) : campaign.takenDownAt ? (
+            <Pill tone="gold">Taken down</Pill>
+          ) : (
+            <Pill>Ended</Pill>
+          )}
+        </div>
+        <p className="text-[11.5px] text-[#6B6483] mb-1.5 line-clamp-2">{campaign.body}</p>
+        <p className="text-[10px] text-[#8A8372]">
+          {naira(campaign.amount)} · {isLive ? "until" : campaign.takenDownAt ? "taken down" : "ended"}{" "}
+          {new Date(campaign.takenDownAt ?? campaign.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+        </p>
+
+        {isLive && !reasoning && (
+          <button onClick={() => setReasoning(true)} className="text-[11px] font-semibold text-[#E64980] mt-2">
+            Take down
+          </button>
+        )}
+        {isLive && reasoning && (
+          <div className="mt-2">
+            <input
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              placeholder="Reason (shown to the seller, optional)"
+              className="w-full text-[11.5px] border border-[#ECE9F7] rounded-lg px-2.5 py-1.5 outline-none mb-1.5"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={confirmTakeDown}
+                disabled={acting}
+                className="text-[11px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                style={{ background: "linear-gradient(135deg,#E64980,#C22468)" }}
+              >
+                {acting ? "…" : "Confirm take down"}
+              </button>
+              <button onClick={() => { setReasoning(false); setReason(""); }} className="text-[11px] font-semibold text-[#6B6483]">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AdCampaignsAdmin({ onLoadAdCampaigns, onTakeDownAdCampaign, showToast }) {
+  const [campaigns, setCampaigns] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  const load = () => {
+    setFailed(false);
+    onLoadAdCampaigns().then(setCampaigns).catch(() => setFailed(true));
+  };
+
+  useEffect(load, []);
+
+  const takeDown = async (id, reason) => {
+    try {
+      const updated = await onTakeDownAdCampaign(id, reason);
+      setCampaigns((cs) => cs.map((c) => (c.id === id ? updated : c)));
+      showToast?.("Campaign taken down.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't take down that campaign.", "error");
+    }
+  };
+
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3 mb-7">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">Couldn&rsquo;t load ad campaigns.</p>
+          <button onClick={load} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!campaigns) return <p className="text-[12px] text-[#6B6483] mb-7">Loading ad campaigns…</p>;
+  if (campaigns.length === 0) {
+    return <p className="text-[12px] text-[#6B6483] mb-7">No ad campaigns have been purchased yet.</p>;
+  }
+  return (
+    <div className="space-y-3 mb-7">
+      {campaigns.map((c) => <AdCampaignCard key={c.id} campaign={c} onTakeDown={takeDown} />)}
     </div>
   );
 }
@@ -2886,6 +3023,10 @@ export default function AdminQueue({
   onUpdatePlan,
   onLoadBoostPlans,
   onUpdateBoostPlan,
+  onLoadAdCampaignPlans,
+  onUpdateAdCampaignPlan,
+  onLoadAdCampaigns,
+  onTakeDownAdCampaign,
   onLoadCategories,
   onCreateCategory,
   onUpdateCategory,
@@ -3108,6 +3249,8 @@ export default function AdminQueue({
             onUpdatePlan={onUpdatePlan}
             onLoadBoostPlans={onLoadBoostPlans}
             onUpdateBoostPlan={onUpdateBoostPlan}
+            onLoadAdCampaignPlans={onLoadAdCampaignPlans}
+            onUpdateAdCampaignPlan={onUpdateAdCampaignPlan}
             showToast={showToast}
           />
         </>
@@ -3174,6 +3317,19 @@ export default function AdminQueue({
             onLoadRules={onLoadModerationRules}
             onCreateRule={onCreateModerationRule}
             onUpdateRule={onUpdateModerationRule}
+            showToast={showToast}
+          />
+
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Megaphone size={13} className="text-[#7C3AED]" /> Ad campaigns
+          </p>
+          <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
+            Every paid Sponsored slide, live and past — a campaign goes live the moment it's paid for
+            (same as a boost), so this is the one review step before it's taken down.
+          </p>
+          <AdCampaignsAdmin
+            onLoadAdCampaigns={onLoadAdCampaigns}
+            onTakeDownAdCampaign={onTakeDownAdCampaign}
             showToast={showToast}
           />
         </>

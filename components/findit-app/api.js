@@ -256,6 +256,29 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then((d) => d.plan),
+  getActiveAdCampaigns: () => request("/api/ad-campaigns/active").then((d) => d.campaigns),
+  getAdCampaignPlans: () => request("/api/ad-campaign-plans").then((d) => d.plans),
+  getMyAdCampaigns: () => request("/api/sellers/me/ad-campaigns").then((d) => d.campaigns),
+  createAdCampaign: (input) =>
+    request("/api/sellers/me/ad-campaigns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  getAdminAdCampaigns: () => request("/api/admin/ad-campaigns").then((d) => d.campaigns),
+  takeDownAdCampaign: (id, reason) =>
+    request(`/api/admin/ad-campaigns/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }).then((d) => d.campaign),
+  getAdminAdCampaignPlans: () => request("/api/admin/ad-campaign-plans").then((d) => d.plans),
+  updateAdminAdCampaignPlan: (id, patch) =>
+    request(`/api/admin/ad-campaign-plans/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    }).then((d) => d.plan),
   getRiskSignals: () => request("/api/admin/risk-signals").then((d) => d.signals),
   getReferralDashboard: () => request("/api/referrals/me"),
   getAdminReferrals: () => request("/api/admin/referrals"),

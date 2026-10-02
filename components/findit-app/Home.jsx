@@ -99,6 +99,7 @@ export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
   orders = [], myRequests = [], cartCount = 0, onRequireAuth,
+  adCampaigns = [], onViewSeller,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -114,14 +115,51 @@ export default function Home({
     markSigninNudgeDismissed();
   };
 
+  // The carousel's real slide list: FindIt's own BANNERS, unchanged and
+  // always first, with any currently-active paid campaigns appended after
+  // them — never the other way around, so advertising can never push the
+  // app's own Request-first feature out of the default/first position. A
+  // campaign slide is marked "Sponsored" in the render below; BANNERS never
+  // are, because neither is an advertisement.
+  const slides = [
+    ...BANNERS.map((b) => ({ kind: "static", ...b })),
+    ...adCampaigns.map((c) => ({ kind: "campaign", campaign: c })),
+  ];
+
   // The promo banner used to only change on a manual dot tap — auto-advance
   // makes the loudest moment on the screen actually keep moving, the way a
   // carousel is expected to. A manual tap (the dot buttons below) still
   // works and just resets this same timer via the effect's own dependency.
   useEffect(() => {
-    const id = setInterval(() => setBanner((b) => (b + 1) % BANNERS.length), 4500);
+    const id = setInterval(() => setBanner((b) => (b + 1) % slides.length), 4500);
     return () => clearInterval(id);
-  }, [banner]);
+  }, [banner, slides.length]);
+  // A campaign ending (or a fresh one landing) between renders can shrink
+  // slides.length out from under whatever index `banner` was sitting on —
+  // without this, the carousel would render nothing at all for that slide
+  // until the next manual tap or auto-advance.
+  useEffect(() => {
+    if (banner >= slides.length) setBanner(0);
+  }, [slides.length, banner]);
+  const activeSlide = slides[banner] ?? slides[0];
+
+  // Static slides (BANNERS) navigate to another screen; a campaign slide
+  // goes to the specific listing it's promoting when it has one, or
+  // otherwise to the advertiser's own store page — never a dead tap.
+  const handleSlideTap = (slide) => {
+    if (slide.kind === "static") {
+      go(slide.action);
+      return;
+    }
+    const product = slide.campaign.targetProductId
+      ? products.find((p) => p.id === slide.campaign.targetProductId)
+      : null;
+    if (product) {
+      openProduct(product);
+    } else {
+      onViewSeller?.(slide.campaign.sellerId);
+    }
+  };
 
   // The one thing this screen used to have no room for: what's actually
   // happening with the buyer's own stuff, as opposed to generic browsing.
@@ -328,14 +366,25 @@ export default function Home({
         </div>
       )}
 
-      {/* promo carousel */}
+      {/* promo carousel — FindIt's own slides (BANNERS) always first, any
+          paid campaigns appended after; see the `slides` note above. */}
       <div
         className="rounded-[20px] p-6 relative overflow-hidden text-white mb-6 cursor-pointer"
-        style={{ background: "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)", minHeight: 190 }}
-        onClick={() => go(BANNERS[banner].action)}
+        style={{
+          background:
+            activeSlide.kind === "campaign"
+              ? `linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%), url(${activeSlide.campaign.imageUrl}) center/cover`
+              : "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)",
+          minHeight: 190,
+        }}
+        onClick={() => handleSlideTap(activeSlide)}
       >
-        <motion.div {...floatLoop(14, 4)} className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
-        <motion.div {...floatLoop(10, 3)} className="absolute right-10 top-4 w-16 h-16 rounded-full bg-[#F59E0B]/25" />
+        {activeSlide.kind === "static" && (
+          <>
+            <motion.div {...floatLoop(14, 4)} className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
+            <motion.div {...floatLoop(10, 3)} className="absolute right-10 top-4 w-16 h-16 rounded-full bg-[#F59E0B]/25" />
+          </>
+        )}
         <AnimatePresence mode="wait">
           <motion.div
             key={banner}
@@ -344,29 +393,43 @@ export default function Home({
             exit={{ opacity: 0, x: -24 }}
             transition={SPRING_BOUNCY}
           >
-            <span className="inline-block bg-white/15 backdrop-blur text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4 relative">{BANNERS[banner].tag}</span>
-            <h2 className="text-[24px] font-bold leading-[1.15] mb-6 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
-              {BANNERS[banner].title}
+            {/* A campaign is always explicitly labeled "Sponsored" — never
+                the app's own purple pill BANNERS uses, so a buyer can tell
+                paid placement apart from FindIt's own features at a glance. */}
+            <span
+              className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4 relative ${
+                activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
+              }`}
+            >
+              {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
+            </span>
+            <h2 className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
+              {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
             </h2>
+            {activeSlide.kind === "campaign" && (
+              <p className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]">{activeSlide.campaign.body}</p>
+            )}
           </motion.div>
         </AnimatePresence>
         <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
-          {BANNERS[banner].cta}
+          {activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}
           <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
             <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
           </span>
         </motion.span>
-        <div className="absolute bottom-4 right-6 flex gap-1.5">
-          {BANNERS.map((_, i) => (
-            <button
-              key={i}
-              onClick={(e) => { e.stopPropagation(); setBanner(i); }}
-              aria-label={`Show promo ${i + 1} of ${BANNERS.length}`}
-              aria-current={i === banner}
-              className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`}
-            />
-          ))}
-        </div>
+        {slides.length > 1 && (
+          <div className="absolute bottom-4 right-6 flex gap-1.5">
+            {slides.map((_, i) => (
+              <button
+                key={i}
+                onClick={(e) => { e.stopPropagation(); setBanner(i); }}
+                aria-label={`Show promo ${i + 1} of ${slides.length}`}
+                aria-current={i === banner}
+                className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* categories */}
