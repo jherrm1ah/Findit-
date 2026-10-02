@@ -196,12 +196,36 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
     throw new Error(`recording payout: ${insertResult.error.message}`);
   }
 
+  await attemptTransfer({
+    payoutId: id,
+    sellerId: order.sellerId,
+    orderId: order.id,
+    itemName: order.item,
+    amount: order.sellerPayoutAmount,
+    recipientCode,
+  });
+}
+
+// The actual Paystack Transfer call plus outcome-handling, shared by a
+// brand-new payout (initiateSellerPayout, row already inserted as
+// 'processing' above) and a retry of one stuck at manual_required/failed
+// (retrySellerPayout below) — both just need "call Paystack, then update
+// this existing row with whatever actually happened."
+async function attemptTransfer(input: {
+  payoutId: string;
+  sellerId: string;
+  orderId: string;
+  itemName: string;
+  amount: number;
+  recipientCode: string;
+}): Promise<void> {
+  const db = getDb();
   try {
     const transfer = await initiateTransfer({
-      amountNaira: order.sellerPayoutAmount,
-      recipientCode,
-      reference: id,
-      reason: `FindIt payout for order ${order.id}`,
+      amountNaira: input.amount,
+      recipientCode: input.recipientCode,
+      reference: input.payoutId,
+      reason: `FindIt payout for order ${input.orderId}`,
     });
     // Paystack can require a dashboard-level OTP to actually release a
     // transfer — that's a manual step on FindIt's own Paystack account,
@@ -213,14 +237,15 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
       .update({
         status: finalStatus,
         provider_reference: transfer.transferCode,
+        failure_reason: null,
         paid_at: finalStatus === "paid" ? new Date().toISOString() : null,
       })
-      .eq("id", id);
-    const amountStr = `₦${order.sellerPayoutAmount.toLocaleString("en-NG")}`;
+      .eq("id", input.payoutId);
+    const amountStr = `₦${input.amount.toLocaleString("en-NG")}`;
     if (finalStatus === "paid") {
-      await notifyPayoutOutcome(order.sellerId, "Payout sent", `${amountStr} for "${order.item}" is on its way to your bank account.`);
+      await notifyPayoutOutcome(input.sellerId, "Payout sent", `${amountStr} for "${input.itemName}" is on its way to your bank account.`);
     } else if (finalStatus === "manual_required") {
-      await notifyPayoutOutcome(order.sellerId, "Payout needs manual handling", `Your payout of ${amountStr} for "${order.item}" needs an admin to finish it — we'll update you once it's paid.`);
+      await notifyPayoutOutcome(input.sellerId, "Payout needs manual handling", `Your payout of ${amountStr} for "${input.itemName}" needs an admin to finish it — we'll update you once it's paid.`);
     }
     // "processing" gets no notification of its own — it's the normal,
     // expected in-flight state for a transfer, not an outcome yet.
@@ -244,12 +269,86 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
             ? err.message
             : String(err),
       })
-      .eq("id", id);
+      .eq("id", input.payoutId);
     await notifyPayoutOutcome(
-      order.sellerId,
+      input.sellerId,
       "Payout needs manual handling",
-      `Your payout of ₦${order.sellerPayoutAmount.toLocaleString("en-NG")} for "${order.item}" hit an issue and needs an admin to sort out — we'll update you once it's paid.`
+      `Your payout of ₦${input.amount.toLocaleString("en-NG")} for "${input.itemName}" hit an issue and needs an admin to sort out — we'll update you once it's paid.`
     );
+  }
+}
+
+// Re-attempts a payout stuck at 'manual_required' or 'failed' — most
+// commonly because the seller hadn't added a bank account yet when the
+// original attempt ran, and has since added one (see
+// retryStalledPayoutsBestEffort below, called right after a seller saves
+// their payout account). Also reachable directly from the admin "Retry"
+// button for any other manual_required/failed payout — e.g. a transient
+// Paystack error that's since cleared. Refuses the same preconditions the
+// original attempt would have, rather than silently no-op'ing.
+export async function retrySellerPayout(payoutId: string): Promise<void> {
+  const db = getDb();
+  const payoutResult = await db.from("payouts").select("*").eq("id", payoutId).maybeSingle();
+  const payoutRow = assertNoError(payoutResult, "loading payout") as Row | null;
+  if (!payoutRow) throw new ValidationError("Payout not found.");
+  const status = payoutRow.status as string;
+  if (status !== "manual_required" && status !== "failed") {
+    throw new ValidationError(`This payout is already ${status} — nothing to retry.`);
+  }
+
+  const sellerId = payoutRow.seller_id as string;
+  const orderId = payoutRow.order_id as string;
+  const amount = payoutRow.amount as number;
+  const order = await getOrder(orderId);
+  const itemName = order?.item ?? "your order";
+
+  const sellerResult = await db.from("sellers").select("id, paystack_recipient_code").eq("id", sellerId).maybeSingle();
+  const seller = assertNoError(sellerResult, "loading seller for payout retry") as Row | null;
+  const recipientCode = (seller?.paystack_recipient_code as string | null) ?? null;
+
+  if (!isPaystackConfigured()) {
+    throw new ValidationError("Payments aren't set up in this environment yet (no Paystack keys) — mark it paid manually instead.");
+  }
+  if (!recipientCode) {
+    throw new ValidationError("This seller still hasn't added a payout bank account.");
+  }
+
+  const claimResult = await db
+    .from("payouts")
+    .update({ status: "processing" })
+    .eq("id", payoutId)
+    .eq("status", status)
+    .select()
+    .maybeSingle();
+  if (!assertNoError(claimResult, "claiming payout for retry")) {
+    throw new ValidationError("This payout just changed status — refresh and try again.");
+  }
+
+  await attemptTransfer({ payoutId, sellerId, orderId, itemName, amount, recipientCode });
+}
+
+// Best-effort sweep of a seller's own stalled payouts, called right after
+// they save a payout account (see app/api/sellers/me/payout-account's
+// PATCH handler) — closes the exact gap a seller's first sale can fall
+// into if it's confirmed before they've added their bank details. Never
+// awaited by the route that triggers it: the account save has already
+// succeeded and must not wait on, or fail because of, a slow/flaky
+// Paystack transfer call (same fire-and-forget pattern as
+// initiateSellerPayout's own call site in app/api/orders/[id]/confirm).
+// Deliberately 'manual_required' only, not 'failed' — a failed transfer
+// usually means Paystack explicitly rejected it for a reason unrelated to
+// (and not fixed by) a bank-account save, so re-attempting that silently
+// stays an admin's deliberate call via the Retry button instead.
+export async function retryStalledPayoutsBestEffort(sellerId: string): Promise<void> {
+  const db = getDb();
+  const result = await db.from("payouts").select("id").eq("seller_id", sellerId).eq("status", "manual_required");
+  const rows = assertNoError(result, "listing stalled payouts for retry") as Row[];
+  for (const row of rows) {
+    try {
+      await retrySellerPayout(row.id as string);
+    } catch (err) {
+      console.error(`[payout-retry] retry failed for payout ${row.id}:`, err);
+    }
   }
 }
 
@@ -393,6 +492,12 @@ export async function updateSellerPayoutAccount(
     })
     .eq("id", sellerId);
   assertNoError(result, "saving payout account");
+
+  // Fire-and-forget — see retryStalledPayoutsBestEffort's own comment for
+  // why this must never block or fail the account save itself.
+  retryStalledPayoutsBestEffort(sellerId).catch((err) => {
+    console.error(`[payout-retry] sweep failed for seller ${sellerId}:`, err);
+  });
 
   return { accountName: resolved.accountName };
 }

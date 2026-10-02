@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ShieldCheck, Camera, ClipboardCheck, ArrowRight, ArrowLeft,
-  Check, ImagePlus, X, Loader2, AlertCircle, Navigation,
+  Check, ImagePlus, X, Loader2, AlertCircle, Navigation, AlertTriangle,
 } from "lucide-react";
 import { Field } from "./shared";
 import { GROUPS } from "./data";
@@ -165,6 +165,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
   const [submitted, setSubmitted] = useState(false);
   const [priorStatus, setPriorStatus] = useState(null);
   const [rejectionReason, setRejectionReason] = useState(null);
+  const [hasPayoutAccount, setHasPayoutAccount] = useState(true); // true until proven otherwise — never flash a false warning
 
   useEffect(() => {
     let cancelled = false;
@@ -200,6 +201,22 @@ export default function SellerOnboarding({ go, showToast, userId }) {
         if (!cancelled) setLoaded(true);
       }
     })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Best-effort, separate from the verification overview above — a
+    // payout account not being set up yet is advisory here (see the review
+    // step's reminder below), never a reason to block loading this form.
+    api
+      .getPayoutAccount()
+      .then((account) => {
+        if (!cancelled) setHasPayoutAccount(Boolean(account?.hasAccount));
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -524,6 +541,15 @@ export default function SellerOnboarding({ go, showToast, userId }) {
           <motion.p variants={BOUNCE_ITEM} className="text-[11px] text-[#6B6483] pt-2">
             An admin will review this before your Verified badge appears. You can keep selling on FindIt while it's under review.
           </motion.p>
+          {!hasPayoutAccount && (
+            <motion.div variants={BOUNCE_ITEM} className="flex items-start gap-2 bg-[#FFFBEB] border border-[#FDE68A] rounded-xl px-3 py-2.5">
+              <AlertTriangle size={13} className="text-[#B45309] shrink-0 mt-0.5" />
+              <p className="text-[11px] text-[#92400E] leading-relaxed">
+                You haven&apos;t added a payout bank account yet. Without one, your first sale&apos;s payment has to be settled
+                manually by an admin instead of reaching your bank automatically. Add it anytime from Store settings.
+              </p>
+            </motion.div>
+          )}
         </motion.div>
       )}
         </motion.div>

@@ -998,6 +998,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
 
   const handleMarkPayoutPaid = (id) => api.markPayoutPaid(id);
 
+  const handleRetryPayout = (id) => api.retryPayout(id);
+
   const handleLoadPlans = () => api.getAdminSubscriptionPlans();
 
   const handleUpdatePlan = async (id, patch) => {
@@ -1727,6 +1729,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               onSetFeeConfig={handleSetFeeConfig}
               onLoadPayouts={handleLoadPayouts}
               onMarkPayoutPaid={handleMarkPayoutPaid}
+              onRetryPayout={handleRetryPayout}
               onLoadPlans={handleLoadPlans}
               onUpdatePlan={handleUpdatePlan}
               onLoadBoostPlans={handleLoadBoostPlans}
