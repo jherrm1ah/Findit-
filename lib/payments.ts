@@ -203,6 +203,7 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
     itemName: order.item,
     amount: order.sellerPayoutAmount,
     recipientCode,
+    reference: id,
   });
 }
 
@@ -210,7 +211,14 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
 // brand-new payout (initiateSellerPayout, row already inserted as
 // 'processing' above) and a retry of one stuck at manual_required/failed
 // (retrySellerPayout below) — both just need "call Paystack, then update
-// this existing row with whatever actually happened."
+// this existing row with whatever actually happened." `reference` is
+// passed in explicitly rather than always reusing payoutId: Paystack
+// treats a transfer reference as a one-time idempotency key, and
+// reusing one it already has a record for (even from a failed attempt
+// that genuinely reached Paystack) gets rejected as a duplicate — which
+// would make the Retry button silently fail for exactly the "transient
+// error, try again" case it exists for. retrySellerPayout below mints a
+// fresh reference per attempt for that reason.
 async function attemptTransfer(input: {
   payoutId: string;
   sellerId: string;
@@ -218,13 +226,14 @@ async function attemptTransfer(input: {
   itemName: string;
   amount: number;
   recipientCode: string;
+  reference: string;
 }): Promise<void> {
   const db = getDb();
   try {
     const transfer = await initiateTransfer({
       amountNaira: input.amount,
       recipientCode: input.recipientCode,
-      reference: input.payoutId,
+      reference: input.reference,
       reason: `FindIt payout for order ${input.orderId}`,
     });
     // Paystack can require a dashboard-level OTP to actually release a
@@ -324,7 +333,18 @@ export async function retrySellerPayout(payoutId: string): Promise<void> {
     throw new ValidationError("This payout just changed status — refresh and try again.");
   }
 
-  await attemptTransfer({ payoutId, sellerId, orderId, itemName, amount, recipientCode });
+  await attemptTransfer({
+    payoutId,
+    sellerId,
+    orderId,
+    itemName,
+    amount,
+    recipientCode,
+    // A fresh reference per retry — see attemptTransfer's own comment for
+    // why reusing payoutId here would risk Paystack rejecting this as a
+    // duplicate of the original (possibly genuinely-sent) attempt.
+    reference: `${payoutId}-RT${Date.now().toString(36).toUpperCase()}`,
+  });
 }
 
 // Best-effort sweep of a seller's own stalled payouts, called right after

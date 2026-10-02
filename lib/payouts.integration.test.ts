@@ -133,6 +133,27 @@ describe("retrySellerPayout", () => {
     expect(payout.failure_reason).toBeNull();
   });
 
+  // Paystack treats a transfer reference as a one-time idempotency key —
+  // reusing one it already has a record for (even from a failed attempt
+  // that genuinely reached Paystack) gets rejected as a duplicate. A retry
+  // that sent the same reference as the original attempt would silently
+  // fail every time, defeating the whole point of the Retry button.
+  it("uses a different Paystack transfer reference than the original attempt", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "failed", failure_reason: "Insufficient balance in the payout account." }],
+    });
+    initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_456" });
+
+    await retrySellerPayout("payout_1");
+
+    expect(initiateTransfer).toHaveBeenCalledTimes(1);
+    const callArgs = initiateTransfer.mock.calls[0][0];
+    expect(callArgs.reference).not.toBe("payout_1");
+    expect(callArgs.reference).toMatch(/^payout_1-RT/);
+  });
+
   it("refuses to retry a payout that's already paid", async () => {
     seedManualRequiredPayout({ status: "paid" });
     await expect(retrySellerPayout("payout_1")).rejects.toThrow(/nothing to retry/i);
