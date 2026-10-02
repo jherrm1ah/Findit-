@@ -1476,7 +1476,7 @@ function GrantPlan({ onLoadPlans, onGrant, showToast }) {
   );
 }
 
-function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkPayoutPaid, showToast }) {
+function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkPayoutPaid, onRetryPayout, showToast }) {
   const [feeConfig, setFeeConfig] = useState(null);
   const [feeInput, setFeeInput] = useState("");
   const [savingFee, setSavingFee] = useState(false);
@@ -1529,6 +1529,19 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
       showToast?.("Payout marked paid.");
     } catch (err) {
       showToast?.(err.message || "Couldn't mark that payout paid.", "error");
+    } finally {
+      setActingId(null);
+    }
+  };
+
+  const retryPayout = async (id) => {
+    setActingId(id);
+    try {
+      await onRetryPayout(id);
+      setPayouts(await onLoadPayouts(statusFilter || undefined));
+      showToast?.("Payout retried.");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't retry that payout.", "error");
     } finally {
       setActingId(null);
     }
@@ -1608,14 +1621,23 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
               <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2 py-1.5 mb-1.5">{p.failureReason}</p>
             )}
             {(p.status === "manual_required" || p.status === "failed") && (
-              <button
-                onClick={() => markPaid(p.id)}
-                disabled={actingId !== null}
-                className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
-                style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
-              >
-                {actingId === p.id ? "Saving…" : "Mark paid"}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => retryPayout(p.id)}
+                  disabled={actingId !== null}
+                  className="text-[11.5px] font-semibold text-[#7C3AED] bg-white border border-[#ECE9F7] px-3 py-1.5 rounded-lg disabled:opacity-60"
+                >
+                  {actingId === p.id ? "Retrying…" : "Retry"}
+                </button>
+                <button
+                  onClick={() => markPaid(p.id)}
+                  disabled={actingId !== null}
+                  className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
+                  style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                >
+                  {actingId === p.id ? "Saving…" : "Mark paid"}
+                </button>
+              </div>
             )}
           </div>
         ))}
@@ -2851,6 +2873,7 @@ export default function AdminQueue({
   onSetFeeConfig,
   onLoadPayouts,
   onMarkPayoutPaid,
+  onRetryPayout,
   onLoadPlans,
   onUpdatePlan,
   onLoadBoostPlans,
@@ -3053,6 +3076,7 @@ export default function AdminQueue({
             onSetFeeConfig={onSetFeeConfig}
             onLoadPayouts={onLoadPayouts}
             onMarkPayoutPaid={onMarkPayoutPaid}
+            onRetryPayout={onRetryPayout}
             showToast={showToast}
           />
         </>

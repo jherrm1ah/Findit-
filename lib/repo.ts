@@ -1856,7 +1856,7 @@ export async function setSellerStatus(id: string, status: SellerStatus, reason: 
     pending: null,
     approved: {
       title: "You're approved to sell",
-      body: "Your seller account has been approved — you can now list products and respond to requests.",
+      body: "Your seller account has been approved — you can now list products and respond to requests. Add your payout bank account in Store settings so you get paid automatically the moment a buyer confirms delivery.",
     },
     rejected: { title: "Seller application update", body: `Your seller application wasn't approved: ${reason}` },
     suspended: { title: "Your seller account is suspended", body: `FindIt has suspended your selling privileges: ${reason}` },

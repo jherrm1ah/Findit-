@@ -27,8 +27,9 @@ vi.mock("./paystack", async (importOriginal) => {
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { initiateSellerPayout } = await import("./payments");
+const { initiateSellerPayout, retrySellerPayout, retryStalledPayoutsBestEffort } = await import("./payments");
 const { PaystackNetworkError } = await import("./paystack");
+const { ValidationError } = await import("./errors");
 
 function seedOrder(overrides: Partial<Order> = {}): Order {
   return {
@@ -94,5 +95,99 @@ describe("initiateSellerPayout — ambiguous transfer outcome", () => {
 
     const [payout] = fakeDb.dump("payouts");
     expect(payout.status).toBe("paid");
+  });
+});
+
+// Covers the real gap found live: a buyer confirms delivery before the
+// seller has added a payout bank account, so the payout lands
+// manual_required — and nothing used to re-attempt it once the seller
+// finally did add one. retrySellerPayout is the on-demand (admin "Retry"
+// button) half; retryStalledPayoutsBestEffort is the automatic half,
+// fired right after a seller saves their payout account.
+describe("retrySellerPayout", () => {
+  function seedManualRequiredPayout(overrides: Record<string, unknown> = {}) {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: null }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet.", ...overrides }],
+    });
+  }
+
+  it("refuses to retry while the seller still has no payout account", async () => {
+    seedManualRequiredPayout();
+    await expect(retrySellerPayout("payout_1")).rejects.toThrow(/still hasn't added a payout bank account/i);
+  });
+
+  it("succeeds once the seller has added a payout account", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet." }],
+    });
+    initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_456" });
+
+    await retrySellerPayout("payout_1");
+
+    const [payout] = fakeDb.dump("payouts");
+    expect(payout.status).toBe("paid");
+    expect(payout.failure_reason).toBeNull();
+  });
+
+  it("refuses to retry a payout that's already paid", async () => {
+    seedManualRequiredPayout({ status: "paid" });
+    await expect(retrySellerPayout("payout_1")).rejects.toThrow(/nothing to retry/i);
+  });
+
+  it("refuses to retry a payout that doesn't exist", async () => {
+    seedManualRequiredPayout();
+    await expect(retrySellerPayout("payout_missing")).rejects.toThrow(ValidationError);
+  });
+});
+
+describe("retryStalledPayoutsBestEffort", () => {
+  it("retries every manual_required payout for the seller, but never a 'failed' one", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [
+        { id: "order_1", user_id: "buyer_1", item: "Cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" },
+        { id: "order_2", user_id: "buyer_2", item: "Case", seller: "Terra Gadgets", seller_id: "seller_1", price: 3000, status: "Delivered" },
+      ],
+      payouts: [
+        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account" },
+        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "failed", failure_reason: "Paystack rejected this transfer." },
+      ],
+    });
+    initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_789" });
+
+    await retryStalledPayoutsBestEffort("seller_1");
+
+    const payouts = fakeDb.dump("payouts");
+    expect(payouts.find((p) => p.id === "payout_1")?.status).toBe("paid");
+    // The 'failed' payout was left alone — never silently retried.
+    expect(payouts.find((p) => p.id === "payout_2")?.status).toBe("failed");
+    expect(initiateTransfer).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps sweeping the rest even if one payout's retry throws", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [
+        { id: "order_1", user_id: "buyer_1", item: "Cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" },
+        { id: "order_2", user_id: "buyer_2", item: "Case", seller: "Terra Gadgets", seller_id: "seller_1", price: 3000, status: "Delivered" },
+      ],
+      payouts: [
+        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account" },
+        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "manual_required", failure_reason: "no account" },
+      ],
+    });
+    initiateTransfer
+      .mockRejectedValueOnce(new Error("Insufficient balance in the payout account."))
+      .mockResolvedValueOnce({ status: "success", transferCode: "TRF_999" });
+
+    await expect(retryStalledPayoutsBestEffort("seller_1")).resolves.toBeUndefined();
+
+    const payouts = fakeDb.dump("payouts");
+    expect(payouts.find((p) => p.status === "failed")).toBeTruthy();
+    expect(payouts.find((p) => p.status === "paid")).toBeTruthy();
   });
 });

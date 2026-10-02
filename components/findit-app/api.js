@@ -241,6 +241,7 @@ export const api = {
     }),
   getPayouts: (status) => request(`/api/admin/payouts${status ? `?status=${status}` : ""}`).then((d) => d.payouts),
   markPayoutPaid: (id) => request(`/api/admin/payouts/${id}`, { method: "PATCH" }),
+  retryPayout: (id) => request(`/api/admin/payouts/${id}/retry`, { method: "POST" }),
   getBoostPlans: () => request("/api/boost-plans").then((d) => d.plans),
   boostProduct: (productId, boostPlanId) =>
     request(`/api/products/${productId}/boost`, {
