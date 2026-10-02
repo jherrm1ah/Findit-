@@ -471,6 +471,10 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.user),
   logout: () => request("/api/auth/logout", { method: "POST" }),
+  // A soft, advisory lookup — never blocks signup/become-seller/rename.
+  // Reachable without a session (signup hasn't created an account yet).
+  checkBusinessNameTaken: (name) =>
+    request(`/api/sellers/business-name-available?name=${encodeURIComponent(name)}`).then((d) => d.taken),
   sendOtp: (phone, purpose = "signup") =>
     request("/api/auth/send-otp", {
       method: "POST",

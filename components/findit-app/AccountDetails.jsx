@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { User, Store, FileText, Phone, Lock, Pencil } from "lucide-react";
+import { User, Store, FileText, Phone, Lock, Pencil, AlertTriangle } from "lucide-react";
 import { Field } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
+import { useBusinessNameTakenWarning } from "./useBusinessNameCheck";
 import { DURATION, EASE, wiggleIn, press } from "./motion";
 
 // A section card's header row — icon + uppercase label — matching the
@@ -38,6 +39,12 @@ export default function AccountDetails({
   const [businessName, setBusinessName] = useState(user.businessName || "");
   const [savingBusinessName, setSavingBusinessName] = useState(false);
   useEffect(() => setBusinessName(user.businessName || ""), [user.businessName]);
+  // Skipped while it still matches the saved name — no point warning a
+  // seller about a name that's already theirs (the server excludes their
+  // own account from this check anyway, but this also saves the request).
+  const businessNameTaken = useBusinessNameTakenWarning(businessName, {
+    skip: businessName.trim() === (user.businessName || "").trim(),
+  });
 
   const [editingBio, setEditingBio] = useState(false);
   const [bioDraft, setBioDraft] = useState(bio ?? "");
@@ -183,6 +190,13 @@ export default function AccountDetails({
           <p className="text-[11px] text-[#8A8372] mt-2">
             This is what buyers see on your listings, orders, and offers.
           </p>
+          {businessNameTaken && (
+            <p className="flex items-start gap-1.5 text-[11px] text-[#B45309] mt-2">
+              <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+              This name&apos;s already in use by another seller — you can still use it, but a more distinct name
+              helps buyers tell you apart.
+            </p>
+          )}
           <button
             onClick={saveBusinessName}
             disabled={!businessName.trim() || businessName.trim() === user.businessName || savingBusinessName}
