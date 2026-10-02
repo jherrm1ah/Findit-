@@ -398,6 +398,12 @@ export const api = {
       body: JSON.stringify(payload),
     }).then((d) => d.description),
 
+  visualSearch: (file) => {
+    const fd = new FormData();
+    fd.append("photo", file);
+    return request("/api/ai/visual-search", { method: "POST", body: fd }).then((d) => d.result);
+  },
+
   getOpenRequests: () => request("/api/requests").then((d) => d.requests),
   getMyRequests: () => request("/api/requests/mine").then((d) => d.requests),
   createRequest: (payload) =>

@@ -1534,6 +1534,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onToggleSaved={handleToggleSaved}
             myLocation={myLocation}
             go={go}
+            showToast={showToast}
           />
         )}
         {screen === "sellers" && (
