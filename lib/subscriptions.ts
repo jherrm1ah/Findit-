@@ -1089,6 +1089,31 @@ export async function updatePlan(
   id: string,
   patch: Partial<Omit<SubscriptionPlan, "id" | "kind">>
 ): Promise<SubscriptionPlan> {
+  // Same gap as lib/boosts.ts#updateBoostPlan — no range/integer check at
+  // all previously, despite priceMonthly/priceYearly flowing straight into
+  // a real Paystack charge (see previewPlatformPlanChange/
+  // previewStorePlanChange) and productLimit gating real enforcement
+  // (enforceProductLimit). Admin-only input, but a typo is still real money
+  // or a seller silently losing their product limit.
+  if (patch.priceMonthly !== undefined && (!Number.isFinite(patch.priceMonthly) || patch.priceMonthly < 0)) {
+    throw new ValidationError("Monthly price can't be negative.");
+  }
+  if (patch.priceYearly !== undefined && patch.priceYearly !== null && (!Number.isFinite(patch.priceYearly) || patch.priceYearly < 0)) {
+    throw new ValidationError("Yearly price can't be negative.");
+  }
+  if (patch.productLimit !== undefined && patch.productLimit !== null && (!Number.isInteger(patch.productLimit) || patch.productLimit <= 0)) {
+    throw new ValidationError("Product limit must be a positive whole number, or left unlimited.");
+  }
+  if (patch.storageLimitMb !== undefined && patch.storageLimitMb !== null && (!Number.isInteger(patch.storageLimitMb) || patch.storageLimitMb <= 0)) {
+    throw new ValidationError("Storage limit must be a positive whole number of MB, or left unlimited.");
+  }
+  if (patch.trialDays !== undefined && (!Number.isInteger(patch.trialDays) || patch.trialDays < 0)) {
+    throw new ValidationError("Trial days can't be negative.");
+  }
+  if (patch.sortOrder !== undefined && !Number.isInteger(patch.sortOrder)) {
+    throw new ValidationError("Sort order must be a whole number.");
+  }
+
   const columns: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(patch)) {
     const column = PLAN_PATCH_COLUMNS[key];

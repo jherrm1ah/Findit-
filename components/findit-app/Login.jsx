@@ -60,9 +60,16 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
     setResendAvailableAt(Date.now() + resendIn * 1000);
   };
 
+  // Signup's real minimum is enforced server-side (app/api/auth/signup/route.ts,
+  // 8+ characters) — matching it here means a too-short password gets caught
+  // before the OTP step, not after a real SMS was already sent and verified.
+  // Login keeps its looser bar: an existing account could in principle have
+  // been created before this rule, and this is a login attempt, not a place
+  // to newly enforce a password policy.
+  const passwordMinLength = mode === "signup" ? 8 : 4;
   const valid =
     phone.trim().length >= 10 &&
-    password.length >= 4 &&
+    password.length >= passwordMinLength &&
     (mode === "login" || (name.trim() && (role === "buyer" || businessName.trim())));
 
   const doSignup = () => api.signup({ phone, password, name, role, businessName, email: email.trim() || undefined });
@@ -163,7 +170,9 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
   };
 
   const submitNewPassword = async () => {
-    if (newPassword.length < 4 || newPassword !== newPasswordConfirm || loading) return;
+    // Matches resetPasswordForPhone's own 8-character minimum (lib/auth.ts) —
+    // same reasoning as signup's passwordMinLength above.
+    if (newPassword.length < 8 || newPassword !== newPasswordConfirm || loading) return;
     setLoading(true);
     setError(null);
     try {
@@ -253,7 +262,7 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
       </motion.div>
     );
   } else if (mode === "reset" && step === "newPassword") {
-    const validNewPassword = newPassword.length >= 4 && newPassword === newPasswordConfirm;
+    const validNewPassword = newPassword.length >= 8 && newPassword === newPasswordConfirm;
     stepContent = (
       <motion.div
         initial={{ opacity: 0, y: 16 }}

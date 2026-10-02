@@ -284,14 +284,6 @@ export async function updateSellerBusinessName(userId: string, newName: string):
   }
   const oldName = current.business_name as string | null;
 
-  const updateResult = await db
-    .from("users")
-    .update({ business_name: trimmed })
-    .eq("id", userId)
-    .select()
-    .single();
-  const row = assertNoError(updateResult, "updating business name") as Row;
-
   // Products, orders, and offers all store the seller's business name as a
   // plain string rather than a foreign key to this user (see the comments
   // on those tables in supabase/schema.sql) — that's the same assumption
@@ -299,15 +291,28 @@ export async function updateSellerBusinessName(userId: string, newName: string):
   // propagated everywhere the old name was copied, or this seller's
   // existing listings/orders would silently stop matching their own
   // dashboard.
+  //
+  // Deliberately done BEFORE users.business_name/sellers.name themselves
+  // move, and in that order (propagate first, flip the name of record
+  // last) — there's no real multi-table transaction available through this
+  // client, so if any update in the loop throws partway (a transient DB
+  // error), this function just throws too, and because the name of record
+  // hasn't changed yet, nothing is left inconsistent: oldName is still
+  // correct everywhere, and simply retrying this same call picks the
+  // propagation back up (each update is an idempotent `set seller = X
+  // where ...`, safe to repeat). Doing it the other way around — flip the
+  // name first, THEN propagate — would mean a failure partway leaves
+  // sellers.name/users.business_name already on the new name while some
+  // products/orders/offers rows are still stuck on the old one, and a
+  // retry of "rename to this same new name" would then see oldName ===
+  // trimmed and skip the propagation loop entirely, permanently stranding
+  // those rows — sellerOwnsItem (lib/sellerIdentityMatch.ts) requires the
+  // caller's CURRENT business name to match an item's seller text exactly,
+  // so those stranded rows would lock this seller out of their own
+  // existing orders/products until the loop happens to fully succeed.
   if (oldName && oldName !== trimmed) {
-    const sellerResult = await db
-      .from("sellers")
-      .update({ name: trimmed })
-      .eq("user_id", userId)
-      .select("id")
-      .maybeSingle();
-    const sellerRow = assertNoError(sellerResult, "updating seller record") as Row | null;
-    const sellerId = (sellerRow?.id as string | undefined) ?? null;
+    const sellerIdResult = await db.from("sellers").select("id").eq("user_id", userId).maybeSingle();
+    const sellerId = (assertNoError(sellerIdResult, "loading seller record") as Row | null)?.id as string | undefined ?? null;
 
     // business_name has no uniqueness constraint (see lib/sellerIdentityMatch.ts)
     // — a plain `where seller = oldName` update would ALSO rename a
@@ -331,7 +336,20 @@ export async function updateSellerBusinessName(userId: string, newName: string):
         `updating legacy ${table} rows`
       );
     }
+
+    assertNoError(
+      await db.from("sellers").update({ name: trimmed }).eq("user_id", userId),
+      "updating seller record"
+    );
   }
+
+  const updateResult = await db
+    .from("users")
+    .update({ business_name: trimmed })
+    .eq("id", userId)
+    .select()
+    .single();
+  const row = assertNoError(updateResult, "updating business name") as Row;
 
   return rowToUser(row);
 }

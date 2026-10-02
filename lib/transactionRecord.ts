@@ -126,18 +126,31 @@ async function sellerVerificationLevelAt(order: Order): Promise<VerificationLeve
   const seller = assertNoError(sellerResult, "loading seller for transaction record") as Row | null;
   if (!seller) return "new";
 
-  const outcomeResult = await db
-    .from("orders")
-    .select("escrow_status")
-    .eq("seller", order.seller)
-    .in("escrow_status", ["released", "disputed"]);
+  // Scoped by seller_id whenever it's known, exactly like the seller lookup
+  // just above — business_name has no uniqueness constraint (see
+  // lib/sellerIdentityMatch.ts), so a bare `.eq("seller", order.seller)`
+  // here would fold a same-named stranger's entire order history (their
+  // disputes, their ratings) into THIS seller's computed verification
+  // level. The name-only path is restricted to seller_id IS NULL rows so it
+  // only ever reaches legacy, pre-migration-009 data, never a different
+  // seller who happens to share this one's name.
+  const outcomeResult = order.sellerId
+    ? await db
+        .from("orders")
+        .select("escrow_status")
+        .eq("seller_id", order.sellerId)
+        .in("escrow_status", ["released", "disputed"])
+    : await db
+        .from("orders")
+        .select("escrow_status")
+        .eq("seller", order.seller)
+        .is("seller_id", null)
+        .in("escrow_status", ["released", "disputed"]);
   const outcomes = assertNoError(outcomeResult, "loading seller outcomes") as Row[];
 
-  const reviewedResult = await db
-    .from("orders")
-    .select("my_rating")
-    .eq("seller", order.seller)
-    .eq("reviewed", true);
+  const reviewedResult = order.sellerId
+    ? await db.from("orders").select("my_rating").eq("seller_id", order.sellerId).eq("reviewed", true)
+    : await db.from("orders").select("my_rating").eq("seller", order.seller).is("seller_id", null).eq("reviewed", true);
   const reviewed = assertNoError(reviewedResult, "loading seller ratings") as Row[];
   const ratings = reviewed.map((r) => r.my_rating as number | null).filter((r): r is number => typeof r === "number");
 

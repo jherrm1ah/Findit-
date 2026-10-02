@@ -337,6 +337,84 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
   );
 }
 
+// A tiny, schematic mockup of each real storefront layout (app/store/
+// [slug]/StoreBody.tsx) — not a screenshot, just abstract shapes tracing
+// the one structural trait that actually distinguishes each template, so a
+// seller choosing between them has something to look at instead of four
+// identical-looking text buttons: classic's banner+3-square grid, compact's
+// thin banner+stacked rows (the list layout, not a grid at all), gallery's
+// bannerless header+one big "featured" tile, showcase's tall banner with
+// the name sitting ON it (dark overlay) above its own featured tile. Pure
+// CSS — no network request, never out of sync with a real photo.
+function TemplateThumb({ id, accent }) {
+  const grad = { background: `linear-gradient(135deg,${accent.from},${accent.to})` };
+  const base = "relative w-full h-16 rounded-lg overflow-hidden bg-[#FAFAFF] mb-2";
+  const tile = "rounded-[3px] bg-[#EDE9FB]";
+
+  if (id === "compact") {
+    return (
+      <div className={base}>
+        <div className="h-2.5 w-full" style={grad} />
+        <div className="absolute left-2 top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white" style={grad} />
+        <div className="flex flex-col gap-1 px-2 pt-2.5">
+          <div className={`${tile} h-2`} />
+          <div className={`${tile} h-2`} />
+          <div className={`${tile} h-2`} />
+        </div>
+      </div>
+    );
+  }
+  if (id === "gallery") {
+    return (
+      <div className={base}>
+        <div className="flex items-center gap-1 px-2 pt-1.5">
+          <div className="w-3 h-3 rounded-full shrink-0" style={grad} />
+          <div className="h-1.5 w-9 rounded-full bg-[#ECE9F7]" />
+        </div>
+        <div className="px-2 pt-1.5">
+          <div className={`${tile} h-6 mb-1`} style={{ background: accent.tint }} />
+          <div className="flex gap-1">
+            <div className={`${tile} flex-1 h-3`} />
+            <div className={`${tile} flex-1 h-3`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  if (id === "showcase") {
+    return (
+      <div className={base}>
+        <div className="relative h-9 w-full" style={grad}>
+          <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+          <div className="absolute left-2 bottom-1 flex items-end gap-1">
+            <div className="w-4 h-4 rounded-[4px] border-[1.5px] border-white/90" style={grad} />
+            <div className="h-1.5 w-7 rounded-full bg-white/90 mb-0.5" />
+          </div>
+        </div>
+        <div className="px-2 pt-1.5">
+          <div className={`${tile} h-4 mb-1`} style={{ background: accent.tint }} />
+          <div className="flex gap-1">
+            <div className={`${tile} flex-1 h-2.5`} />
+            <div className={`${tile} flex-1 h-2.5`} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // classic — the default/fallback, same as StoreBody.tsx's own switch.
+  return (
+    <div className={base}>
+      <div className="h-5 w-full" style={grad} />
+      <div className="absolute left-2 top-2.5 w-4 h-4 rounded-full border-2 border-white" style={grad} />
+      <div className="flex gap-1 px-2 pt-2.5">
+        <div className={`${tile} flex-1 h-5`} />
+        <div className={`${tile} flex-1 h-5`} />
+        <div className={`${tile} flex-1 h-5`} />
+      </div>
+    </div>
+  );
+}
+
 // Real backing for the plan's "customization" benefit — a Free/Basic seller
 // sees exactly why this is locked and what unlocks it; a Business/Pro
 // seller can actually set the images that show on their public storefront
@@ -363,6 +441,9 @@ function BrandingCard({ plan, branding, storeTemplates = [], storeAccents = [], 
   const locked = !plan || plan.customizationLevel === "none";
   const currentTemplate = branding?.storeTemplate ?? "classic";
   const currentAccent = branding?.storeAccent ?? "violet";
+  // The seller's own live color, so a template thumbnail previews in the
+  // color their real storefront actually uses — not a generic swatch.
+  const previewAccent = storeAccents.find((a) => a.id === currentAccent) ?? { from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" };
 
   const upload = async (file, kind) => {
     const setUploading = kind === "logo" ? setUploadingLogo : setUploadingBanner;
@@ -475,6 +556,7 @@ function BrandingCard({ plan, branding, storeTemplates = [], storeAccents = [], 
                         selected ? "border-[#7C3AED] bg-[#F5F2FC]" : "border-[#ECE9F7] bg-white"
                       } ${t.locked ? "opacity-70" : ""} ${disabledForBusy ? "opacity-50 pointer-events-none" : ""}`}
                     >
+                      <TemplateThumb id={t.id} accent={previewAccent} />
                       <div className="flex items-center justify-between gap-1 mb-0.5">
                         <p className="text-[12px] font-semibold text-[#1E1B4B]">{t.name}</p>
                         {t.locked ? (

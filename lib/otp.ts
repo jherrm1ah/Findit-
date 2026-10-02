@@ -199,9 +199,12 @@ export async function verifyOtp(input: {
   // The real attempt cap — atomic and shared across every serverless
   // instance (see lib/rateLimit.ts#checkRateLimit, backed by migration
   // 022's check_rate_limit(), a single INSERT ... ON CONFLICT statement).
-  // Keyed to this specific OTP row, so a fresh code always gets a fresh
-  // budget, and windowed to the code's own expiry so the cap can't reset
-  // mid-lifetime. This used to be a plain `row.attempts >= row.max_attempts`
+  // Keyed to this specific OTP row — which a resend reuses rather than
+  // replacing (see createOtp's resend branch), so attempts already spent
+  // guessing the previous code still count against a resent one's budget
+  // too, not a fresh one. That's the stricter direction, not a weaker one.
+  // Windowed to the code's own expiry so the cap can't reset mid-lifetime.
+  // This used to be a plain `row.attempts >= row.max_attempts`
   // check followed by a read-then-write increment below — NOT atomic:
   // concurrent guesses all read the same stale `attempts` value and each
   // wrote back stale+1, so N simultaneous wrong guesses only ever cost the

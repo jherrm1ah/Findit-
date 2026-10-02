@@ -92,6 +92,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // the buyer already left can't land late and overwrite whatever they
   // opened next (or resurrect the thread after they went back).
   const threadRequestRef = useRef(0);
+  // Same race guard as threadRequestRef, for the ticket overlay below.
+  const ticketRequestRef = useRef(0);
   // Real in-app support tickets (lib/support.ts) — see HelpSupport.jsx.
   // Reuses <Thread> for the ticket conversation itself: a ticket message's
   // `isAdmin` maps to the same `mine` field Thread already renders around.
@@ -106,6 +108,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const [adminOverview, setAdminOverview] = useState(null);
   const [reportedOrders, setReportedOrders] = useState([]);
   const [sellerVerifications, setSellerVerifications] = useState([]);
+  // Distinct from "no submissions" on purpose — same reasoning as
+  // AlertsAdmin's own `failed` state: a failed fetch used to be
+  // indistinguishable from a genuinely empty queue, so a real backend
+  // error read as "nothing waiting on review" instead of a problem an
+  // admin needed to retry.
+  const [sellerVerificationsFailed, setSellerVerificationsFailed] = useState(false);
   // How many items are in the admin Alert Center right now — shown as a nav
   // badge (see the bottom nav below) so an admin sees something needs
   // attention without having to open the Admin tab and click into Alerts.
@@ -216,6 +224,14 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     storeCart(user?.id, cart);
   }, [cart]);
 
+  // Pulled out so the Verification tab's own "Try again" button can re-run
+  // exactly this fetch, not just the bootstrap effect below that calls it
+  // once on mount.
+  const loadSellerVerifications = () => {
+    setSellerVerificationsFailed(false);
+    api.getSellerVerifications().then(setSellerVerifications).catch(() => setSellerVerificationsFailed(true));
+  };
+
   useEffect(() => {
     // Real, admin-editable categories (lib/categoryCatalog.ts) — fetched
     // once here (works for a signed-out guest browsing Home too) and
@@ -277,7 +293,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       api.getAdminActions().then(setAdminActions).catch(() => {});
       api.getOtpStats().then(setOtpStats).catch(() => {});
       api.getReportedOrders().then(setReportedOrders).catch(() => {});
-      api.getSellerVerifications().then(setSellerVerifications).catch(() => {});
+      loadSellerVerifications();
       api.getAdminOverview().then(setAdminOverview).catch(() => {});
       api.getAdminAlerts().then((alerts) => setAdminAlertCount(alerts.length)).catch(() => {});
     }
@@ -1133,17 +1149,21 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // (see the `mine` mapping below), the same overlay pattern as
   // activeThread/handleOpenThread above.
   const handleOpenTicket = async (id) => {
+    const requestId = ++ticketRequestRef.current;
     setActiveTicket(tickets.find((t) => t.id === id) || { id, subject: "Support" });
     setTicketLoading(true);
     try {
       const { ticket, messages } = await api.getTicket(id);
+      if (ticketRequestRef.current !== requestId) return; // superseded by a newer open/back
       setActiveTicket(ticket);
       setTicketMessages(messages.map((m) => ({ ...m, mine: !m.isAdmin })));
       setTickets((ts) => ts.map((t) => (t.id === id ? { ...t, userHasUnread: false } : t)));
     } catch (err) {
-      showToast(err.message || "Couldn't load that ticket — try again.", "error");
+      if (ticketRequestRef.current === requestId) {
+        showToast(err.message || "Couldn't load that ticket — try again.", "error");
+      }
     } finally {
-      setTicketLoading(false);
+      if (ticketRequestRef.current === requestId) setTicketLoading(false);
     }
   };
 
@@ -1286,7 +1306,14 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     const wantedScreen = params.get("screen");
     if (wantedSeller) {
       handleViewSeller(wantedSeller);
-    } else if (wantedScreen && wantedScreen !== "home") {
+    } else if (wantedScreen && wantedScreen !== "home" && wantedScreen !== "checkout") {
+      // Checkout is the one screen whose render is gated on more than just
+      // `screen` — it also needs `checkoutOrder` (order/product/qty), which
+      // only ever gets set in-memory by buyNow() and has nothing to
+      // reconstruct it from here. Restoring straight to "checkout" with no
+      // order left the buyer looking at a blank body (header/nav only, no
+      // screen content, no error) on every hard refresh of that screen —
+      // falling through to the home default instead is the safe landing.
       go(wantedScreen, params.get("q") || undefined);
     }
   }, []);
@@ -1638,6 +1665,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               currentAdminRole={user.adminRole}
               showToast={showToast}
               sellerVerifications={sellerVerifications}
+              sellerVerificationsFailed={sellerVerificationsFailed}
+              onRetrySellerVerifications={loadSellerVerifications}
               onReviewSellerVerification={handleReviewSellerVerification}
               onLoadUsers={handleLoadUsers}
               onSetUserSuspended={handleSetUserSuspended}
@@ -1839,7 +1868,10 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             otherParty={{ name: activeTicket.subject || "Support" }}
             messages={ticketMessages}
             loading={ticketLoading}
-            onBack={() => setActiveTicket(null)}
+            onBack={() => {
+              ticketRequestRef.current++;
+              setActiveTicket(null);
+            }}
             onSend={handleSendTicketMessage}
           />
         )}

@@ -109,7 +109,9 @@ export default function AccountDetails({
   };
 
   const savePassword = async () => {
-    if (!currentPassword || newPassword.length < 4 || savingPassword) return;
+    // Matches changeUserPassword's real 8-character minimum (lib/auth.ts) —
+    // and the placeholder text below, which already said 8.
+    if (!currentPassword || newPassword.length < 8 || savingPassword) return;
     setSavingPassword(true);
     setPasswordError(null);
     try {
@@ -301,7 +303,7 @@ export default function AccountDetails({
         {passwordError && <p className="text-[12px] text-[#E64980] mt-3">{passwordError}</p>}
         <button
           onClick={savePassword}
-          disabled={!currentPassword || newPassword.length < 4 || savingPassword}
+          disabled={!currentPassword || newPassword.length < 8 || savingPassword}
           className="mt-3 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl disabled:opacity-40"
           style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
         >

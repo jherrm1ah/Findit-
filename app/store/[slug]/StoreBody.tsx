@@ -217,9 +217,15 @@ function ClassicLayout({ profile, categoryLabels }: LayoutProps) {
             </div>
           </div>
 
+          {/* self-end, not a hardcoded margin-top: aligns with the lowered
+              name text when inline alongside it (matching pt-11 above), but
+              degrades cleanly to sitting right under the header — not a
+              large dead gap — once flex-wrap drops it to its own row on a
+              narrow screen, where self-end has nothing else on its line to
+              align against. */}
           <MessageSellerLink
             profile={profile}
-            className="mt-11 shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
+            className="self-end shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
             style={{ background: "#1E1B4B" }}
           />
         </header>
@@ -342,7 +348,12 @@ function CompactLayout({ profile, categoryLabels }: LayoutProps) {
           <EscrowBanner profile={profile} accent={accent} compact />
         </div>
 
-        <StoreListings listings={profile.listings} categoryLabels={categoryLabels} accent={accent} />
+        {/* "Compact" means less scrolling, not just tighter padding — the
+            one real structural lever a template has over its listings
+            (density, see StoreListings.jsx) is what actually delivers that
+            for this one: stacked rows read faster than a photo grid when
+            the whole point is getting to a decision quickly. */}
+        <StoreListings listings={profile.listings} categoryLabels={categoryLabels} density="list" accent={accent} />
 
         <ReviewsSection profile={profile} accent={accent} />
         <StoreFooter accent={accent} />
@@ -423,20 +434,25 @@ function ShowcaseLayout({ profile, categoryLabels }: LayoutProps) {
   const accent = getStoreAccent(profile.storeAccent);
   return (
     <>
-      <div className="relative h-56 sm:h-64 w-full overflow-hidden bg-[#EDE9FB]">
+      {/* The one real "full-bleed editorial" cue Showcase was missing:
+          identity lives ON the banner itself — logo + name overlaid at its
+          base — instead of in a plain header below it, which (apart from
+          bigger numbers) is all the other three templates already do. The
+          gradient is intentionally strong and present even with NO banner
+          image (over the flat accent gradient) so white text stays legible
+          either way, rather than only being tuned for a photo. */}
+      <div className="relative h-64 sm:h-80 w-full overflow-hidden bg-[#EDE9FB]">
         {profile.bannerUrl ? (
           <Image src={profile.bannerUrl} alt="" fill sizes="100vw" priority className="object-cover" />
         ) : (
           <div className="absolute inset-0" style={{ background: gradient(accent) }} />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/35 via-transparent to-transparent" />
-      </div>
+        <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/10" />
 
-      <div className="max-w-3xl mx-auto px-5">
-        <header className="flex items-start justify-between gap-4 flex-wrap -mt-12 mb-5">
-          <div className="flex items-start gap-4 min-w-0">
+        <div className="absolute inset-x-0 bottom-0 w-full">
+          <div className="max-w-3xl mx-auto px-5 pb-5 flex items-end gap-4">
             <div
-              className="relative w-24 h-24 rounded-[22px] shrink-0 overflow-hidden border-4 border-[#FAFAFF] flex items-center justify-center text-white text-[30px] font-bold shadow-lg shadow-[#4C1D95]/15"
+              className="relative w-20 h-20 sm:w-24 sm:h-24 rounded-[20px] shrink-0 overflow-hidden border-[3px] border-white/90 flex items-center justify-center text-white text-[26px] font-bold shadow-lg shadow-black/20"
               style={{ background: gradient(accent) }}
             >
               {profile.logoUrl ? (
@@ -445,29 +461,31 @@ function ShowcaseLayout({ profile, categoryLabels }: LayoutProps) {
                 profile.name.charAt(0).toUpperCase()
               )}
             </div>
-            <div className="min-w-0 pt-14">
+            <div className="min-w-0 pb-1">
               <h1
-                className="text-[25px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap"
+                className="text-[22px] sm:text-[27px] font-bold text-white leading-tight flex items-center gap-2 flex-wrap drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)]"
                 style={{ fontFamily: "Fraunces, serif" }}
               >
                 {profile.name}
                 {profile.proBadge && (
-                  <span
-                    className="text-[10px] font-bold text-white px-2 py-0.5 rounded-full"
-                    style={{ background: gradient(accent) }}
-                  >
+                  <span className="text-[10px] font-bold text-white px-2 py-0.5 rounded-full border border-white/50 bg-white/15 backdrop-blur-sm">
                     PRO
                   </span>
                 )}
               </h1>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto px-5">
+        <div className="flex justify-end mt-4 mb-1">
           <MessageSellerLink
             profile={profile}
-            className="mt-14 shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
+            className="shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-full"
             style={{ background: "#1E1B4B" }}
           />
-        </header>
+        </div>
 
         <div className="mb-5">
           <BadgeRow profile={profile} accent={accent} />

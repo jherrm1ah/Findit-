@@ -72,9 +72,19 @@ export function computeSellerRiskSignals(
   return signals.sort((a, b) => b.disputeRate - a.disputeRate);
 }
 
+// A safety ceiling, not real pagination — same reasoning and precedent as
+// LIST_PRODUCTS_SAFETY_LIMIT in lib/repo.ts. Without it this pulls every
+// order row in the platform's history into memory on every call, and
+// getAdminAlerts() calls this on every single admin page load.
+const RISK_SIGNALS_SAFETY_LIMIT = 20000;
+
 export async function getSellerRiskSignals(): Promise<SellerRiskSignal[]> {
   const db = getDb();
-  const result = await db.from("orders").select("seller, seller_id, escrow_status");
+  const result = await db
+    .from("orders")
+    .select("seller, seller_id, escrow_status")
+    .order("created_at", { ascending: false })
+    .limit(RISK_SIGNALS_SAFETY_LIMIT);
   const rows = assertNoError(result, "loading orders for risk signals") as Row[];
   return computeSellerRiskSignals(
     rows.map((r) => ({

@@ -64,14 +64,6 @@ export const press = {
   transition: SPRING_SNAPPY,
 };
 
-// Same idea for something that shouldn't visually compress (an icon-only
-// circular button, where a scale change can read as a layout jump) —
-// opacity only.
-export const pressFade = {
-  whileTap: { opacity: 0.6 },
-  transition: { duration: DURATION.instant },
-};
-
 // A parent+child pair for "cards cascade in" entrances — mount-triggered,
 // for a grid that's already on screen when its parent appears (not
 // scroll-linked; see revealOnView below for content further down the page).

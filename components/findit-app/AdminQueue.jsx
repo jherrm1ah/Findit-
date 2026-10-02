@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
 import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap } from "lucide-react";
@@ -455,7 +455,7 @@ function SellerIdentityMigration({ onCheckStatus, onPreview, onApply, showToast 
 // can transact at all; this one drives the public New/Verified/Trusted
 // badge). Evidence images are short-lived signed URLs generated fresh on
 // every load of this queue — never stored, never public.
-function VerificationSubmissions({ submissions, onReview, showToast }) {
+function VerificationSubmissions({ submissions, failed, onRetry, onReview, showToast }) {
   const [reviewingId, setReviewingId] = useState(null);
   const [reasonPromptFor, setReasonPromptFor] = useState(null); // { sellerId, action } | null
   const [reason, setReason] = useState("");
@@ -473,6 +473,27 @@ function VerificationSubmissions({ submissions, onReview, showToast }) {
     }
   };
 
+  // Distinct from "0 submissions" on purpose — same reasoning as
+  // AlertsCenter's own failed state: a failed fetch used to read as "no
+  // verification submissions waiting on review," which is worse than no
+  // queue at all, since an admin trusting that false all-clear means a
+  // real seller's verification just sits unreviewed with nothing telling
+  // anyone a fetch actually failed.
+  if (failed) {
+    return (
+      <div className="flex items-start gap-3 bg-[#FDF0F4] rounded-xl p-3 mb-7">
+        <AlertTriangle size={15} className="text-[#E64980] shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-[12px] text-[#514B67] mb-2">
+            Couldn&rsquo;t load verification submissions — this isn&rsquo;t the same as &ldquo;none waiting.&rdquo;
+          </p>
+          <button onClick={onRetry} className="text-[11.5px] font-semibold text-[#E64980]">
+            Try again
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (submissions.length === 0) {
     return <p className="text-[12px] text-[#6B6483] mb-7">No verification submissions waiting on review.</p>;
   }
@@ -2337,10 +2358,12 @@ function AdminTicketThread({ ticket, messages, loading, onBack, onSend, onResolv
     const body = draft.trim();
     if (!body || sending) return;
     setSending(true);
-    setDraft("");
     try {
       await onSend(ticket.id, body);
+      setDraft("");
     } catch (err) {
+      // Keep the draft on failure — same reasoning as Thread.jsx's submit —
+      // so a network blip doesn't make the admin retype a long reply.
       showToast?.(err.message || "Couldn't send that reply.", "error");
     } finally {
       setSending(false);
@@ -2440,6 +2463,10 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
   const [loadingThread, setLoadingThread] = useState(false);
 
   const [ticketsFailed, setTicketsFailed] = useState(false);
+  // Bumped on every open/back so a slow onLoadTicket response for a ticket
+  // the admin already left can't land late and silently swap the screen
+  // back to it — same guard as MainApp.jsx's threadRequestRef/ticketRequestRef.
+  const openRequestRef = useRef(0);
 
   const loadTickets = () => {
     setTicketsFailed(false);
@@ -2451,17 +2478,21 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
   useEffect(loadTickets, [statusFilter]);
 
   const open = async (t) => {
+    const requestId = ++openRequestRef.current;
     setOpenTicket(t);
     setLoadingThread(true);
     try {
       const { ticket, messages: msgs } = await onLoadTicket(t.id);
+      if (openRequestRef.current !== requestId) return;
       setOpenTicket(ticket);
       setMessages(msgs);
       setTickets((ts) => ts?.map((x) => (x.id === t.id ? { ...x, adminHasUnread: false } : x)) ?? ts);
     } catch (err) {
-      showToast?.(err.message || "Couldn't load that ticket.", "error");
+      if (openRequestRef.current === requestId) {
+        showToast?.(err.message || "Couldn't load that ticket.", "error");
+      }
     } finally {
-      setLoadingThread(false);
+      if (openRequestRef.current === requestId) setLoadingThread(false);
     }
   };
 
@@ -2482,7 +2513,10 @@ function SupportAdmin({ onLoadTickets, onLoadTicket, onSendTicketMessage, onReso
         ticket={openTicket}
         messages={messages}
         loading={loadingThread}
-        onBack={() => setOpenTicket(null)}
+        onBack={() => {
+          openRequestRef.current++;
+          setOpenTicket(null);
+        }}
         onSend={send}
         onResolve={resolve}
         showToast={showToast}
@@ -2570,6 +2604,8 @@ export default function AdminQueue({
   currentAdminRole,
   showToast,
   sellerVerifications = [],
+  sellerVerificationsFailed = false,
+  onRetrySellerVerifications,
   onReviewSellerVerification,
   onLoadUsers,
   onSetUserSuspended,
@@ -2727,7 +2763,13 @@ export default function AdminQueue({
           <p className="text-[11px] text-[#6B6483] mb-3 -mt-2">
             Separate from basic account approval — this drives the public New/Verified/Trusted badge.
           </p>
-          <VerificationSubmissions submissions={sellerVerifications} onReview={onReviewSellerVerification} showToast={showToast} />
+          <VerificationSubmissions
+            submissions={sellerVerifications}
+            failed={sellerVerificationsFailed}
+            onRetry={onRetrySellerVerifications}
+            onReview={onReviewSellerVerification}
+            showToast={showToast}
+          />
         </>
       )}
 
