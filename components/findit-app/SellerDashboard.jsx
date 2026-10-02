@@ -786,50 +786,41 @@ function CampaignStatRow({ campaign: c, live }) {
 
 // Paid Sponsored slides in Home's promo carousel (see lib/adCampaigns.ts).
 // Self-contained the same way StoreAnalytics above is: this card owns its
-// own form/upload/submit state rather than threading a dozen fields
-// through the parent, which only ever needs the one onCreateAdCampaign
-// callback plus the plan catalogue and this seller's own campaign history.
-function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUploadImage, showToast }) {
+// own form/submit state rather than threading a dozen fields through the
+// parent, which only ever needs the one onCreateAdCampaign callback plus
+// the plan catalogue, this seller's own listings, and campaign history.
+function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showToast }) {
+  // A campaign always promotes one of the seller's own listings — see
+  // app/api/sellers/me/ad-campaigns, which now rejects anything else. Its
+  // image IS that listing's own photo (no separate upload step), so only
+  // listings that actually have one are eligible to pick from.
+  const eligibleListings = listings.filter((p) => p.imageUrl);
+
   const [open, setOpen] = useState(false);
   const [planId, setPlanId] = useState(plans[0]?.id ?? null);
   const [headline, setHeadline] = useState("");
   const [body, setBody] = useState("");
   const [ctaLabel, setCtaLabel] = useState("Shop now");
-  const [imageUrl, setImageUrl] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [targetProductId, setTargetProductId] = useState("");
+  const [targetProductId, setTargetProductId] = useState(eligibleListings[0]?.id ?? "");
 
   const now = Date.now();
   const live = myCampaigns.filter((c) => new Date(c.endsAt).getTime() > now);
   const past = myCampaigns.filter((c) => new Date(c.endsAt).getTime() <= now);
+  const selectedListing = eligibleListings.find((p) => p.id === targetProductId) ?? null;
 
   const resetForm = () => {
     setHeadline("");
     setBody("");
     setCtaLabel("Shop now");
-    setImageUrl(null);
-    setTargetProductId("");
-  };
-
-  const handlePickImage = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // same reset-after-read as the product-photo picker, so re-picking the same file still fires onChange
-    if (!file) return;
-    setUploading(true);
-    try {
-      setImageUrl(await onUploadImage(file));
-    } catch (err) {
-      showToast?.(err.message || "Couldn't upload that image — try again.", "error");
-    } finally {
-      setUploading(false);
-    }
+    setTargetProductId(eligibleListings[0]?.id ?? "");
   };
 
   const canSubmit =
-    planId && headline.trim() && headline.trim().length <= CAMPAIGN_HEADLINE_MAX &&
+    planId && targetProductId &&
+    headline.trim() && headline.trim().length <= CAMPAIGN_HEADLINE_MAX &&
     body.trim() && body.trim().length <= CAMPAIGN_BODY_MAX &&
     ctaLabel.trim() && ctaLabel.trim().length <= CAMPAIGN_CTA_MAX &&
-    imageUrl && !uploading && !creating;
+    !creating;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -838,8 +829,7 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
       headline: headline.trim(),
       body: body.trim(),
       ctaLabel: ctaLabel.trim(),
-      imageUrl,
-      targetProductId: targetProductId || null,
+      targetProductId,
     });
     resetForm();
     setOpen(false);
@@ -854,17 +844,23 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
           <Megaphone size={14} className="text-[#7C3AED]" />
           <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Advertise on FindIt</p>
         </div>
-        {!open && plans.length > 0 && (
+        {!open && plans.length > 0 && eligibleListings.length > 0 && (
           <button onClick={() => setOpen(true)} className="text-[11.5px] font-semibold text-[#7C3AED]">
             New campaign
           </button>
         )}
       </div>
 
-      {live.length === 0 && past.length === 0 && !open && (
+      {live.length === 0 && past.length === 0 && !open && eligibleListings.length > 0 && (
         <p className="text-[11.5px] text-[#6B6483]">
-          Pay to enter FindIt&apos;s homepage promotional rotation — your campaign shows up in the carousel
-          alongside FindIt&apos;s own features, with real impressions and clicks tracked below.
+          Pay to enter FindIt&apos;s homepage promotional rotation — your campaign promotes one of your own
+          listings, using its own photo, with real impressions and clicks tracked below.
+        </p>
+      )}
+      {myCampaigns.length === 0 && eligibleListings.length === 0 && !open && (
+        <p className="text-[11.5px] text-[#6B6483]">
+          Add a photo to one of your listings first — a campaign always promotes a real listing, using its
+          own photo.
         </p>
       )}
 
@@ -909,19 +905,25 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
                 </div>
               )}
 
-              <button
-                onClick={() => document.getElementById("ad-campaign-image-input")?.click()}
-                className="w-full h-28 rounded-xl border-2 border-dashed border-[#ECE9F7] flex items-center justify-center overflow-hidden relative"
-              >
-                {imageUrl ? (
-                  <NextImage src={imageUrl} alt="" fill sizes="400px" className="object-cover" />
-                ) : (
-                  <span className="text-[11px] text-[#8A8372] flex items-center gap-1.5">
-                    {uploading ? "Uploading…" : (<><ImageIcon size={14} /> Upload a banner image</>)}
+              <Field label="Promote which listing?">
+                <select
+                  value={targetProductId}
+                  onChange={(e) => setTargetProductId(e.target.value)}
+                  className="w-full text-[13px] text-[#1E1B4B] outline-none bg-transparent"
+                >
+                  {eligibleListings.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </Field>
+              {selectedListing && (
+                <div className="relative w-full h-28 rounded-xl overflow-hidden">
+                  <NextImage src={selectedListing.imageUrl} alt="" fill sizes="400px" className="object-cover" />
+                  <span className="absolute bottom-1.5 right-1.5 text-[9px] font-semibold text-white bg-black/50 px-2 py-0.5 rounded-full">
+                    Campaign image — from this listing
                   </span>
-                )}
-              </button>
-              <input id="ad-campaign-image-input" type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+                </div>
+              )}
 
               <Field label={`Headline (${headline.length}/${CAMPAIGN_HEADLINE_MAX})`}>
                 <input
@@ -947,21 +949,6 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
                   className="w-full text-[13px] text-[#1E1B4B] outline-none"
                 />
               </Field>
-              {listings.length > 0 && (
-                <Field label="Links to (optional — defaults to your store)">
-                  <select
-                    value={targetProductId}
-                    onChange={(e) => setTargetProductId(e.target.value)}
-                    className="w-full text-[13px] text-[#1E1B4B] outline-none bg-transparent"
-                  >
-                    <option value="">Your store page</option>
-                    {listings.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </Field>
-              )}
-
               <div className="flex gap-2">
                 <button
                   onClick={() => { setOpen(false); resetForm(); }}
@@ -1612,7 +1599,6 @@ export default function SellerDashboard({
         listings={myListings}
         creating={creatingAdCampaign}
         onCreate={onCreateAdCampaign}
-        onUploadImage={onUploadImage}
         showToast={showToast}
       />
       </>
