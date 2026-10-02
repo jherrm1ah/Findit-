@@ -1620,15 +1620,23 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
             {p.failureReason && (
               <p className="text-[11px] text-[#514B67] bg-[#FDF0F4] rounded-lg px-2 py-1.5 mb-1.5">{p.failureReason}</p>
             )}
+            {p.transferUnconfirmed && (
+              <p className="text-[11px] font-semibold text-[#B45309] bg-[#FFFBEB] border border-[#FDE68A] rounded-lg px-2 py-1.5 mb-1.5">
+                This one's outcome with Paystack is unconfirmed — check Paystack's own transfer history for this
+                order before doing anything, then use Mark paid (never Retry, which could send it twice).
+              </p>
+            )}
             {(p.status === "manual_required" || p.status === "failed") && (
               <div className="flex gap-2">
-                <button
-                  onClick={() => retryPayout(p.id)}
-                  disabled={actingId !== null}
-                  className="text-[11.5px] font-semibold text-[#7C3AED] bg-white border border-[#ECE9F7] px-3 py-1.5 rounded-lg disabled:opacity-60"
-                >
-                  {actingId === p.id ? "Retrying…" : "Retry"}
-                </button>
+                {!p.transferUnconfirmed && (
+                  <button
+                    onClick={() => retryPayout(p.id)}
+                    disabled={actingId !== null}
+                    className="text-[11.5px] font-semibold text-[#7C3AED] bg-white border border-[#ECE9F7] px-3 py-1.5 rounded-lg disabled:opacity-60"
+                  >
+                    {actingId === p.id ? "Retrying…" : "Retry"}
+                  </button>
+                )}
                 <button
                   onClick={() => markPaid(p.id)}
                   disabled={actingId !== null}

@@ -974,6 +974,11 @@ create table if not exists payouts (
   failure_reason text,
   created_at timestamptz not null default now(),
   paid_at timestamptz,
+  -- See migration 037: true only when a transfer attempt reached Paystack
+  -- but its outcome couldn't be confirmed (connection dropped mid-request)
+  -- — the one case retrySellerPayout refuses to auto-retry, since the
+  -- original may have already gone through.
+  transfer_unconfirmed boolean not null default false,
   unique (order_id)
 );
 create index if not exists payouts_seller_id_idx on payouts(seller_id);
