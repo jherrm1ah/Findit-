@@ -636,17 +636,23 @@ function StoreAnalytics({ plan, orders, go }) {
   const level = plan?.analyticsLevel ?? "none";
 
   const data = useMemo(() => {
+    // Only orders that actually collected money and kept it count as
+    // revenue — an "Awaiting payment" order was never charged, and one an
+    // admin resolved as refunded gave the money back to the buyer, so
+    // neither is real revenue for this seller even though both still sit
+    // in `orders`.
+    const paidOrders = orders.filter((o) => o.paymentStatus === "paid" && o.escrowStatus !== "refunded");
     const now = Date.now();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-    const thisMonth = orders.filter((o) => new Date(o.createdAt).getTime() >= monthStart);
+    const thisMonth = paidOrders.filter((o) => new Date(o.createdAt).getTime() >= monthStart);
     const revenueByProduct = new Map();
-    for (const o of orders) revenueByProduct.set(o.item, (revenueByProduct.get(o.item) || 0) + o.price);
+    for (const o of paidOrders) revenueByProduct.set(o.item, (revenueByProduct.get(o.item) || 0) + o.price);
     const topProduct = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
 
     const weeks = [0, 1, 2, 3].map((i) => {
       const end = now - i * REVENUE_MS;
       const start = end - REVENUE_MS;
-      const revenue = orders
+      const revenue = paidOrders
         .filter((o) => {
           const t = new Date(o.createdAt).getTime();
           return t >= start && t < end;
@@ -658,7 +664,7 @@ function StoreAnalytics({ plan, orders, go }) {
     return {
       monthOrders: thisMonth.length,
       monthRevenue: thisMonth.reduce((sum, o) => sum + o.price, 0),
-      avgOrderValue: orders.length ? Math.round(orders.reduce((sum, o) => sum + o.price, 0) / orders.length) : 0,
+      avgOrderValue: paidOrders.length ? Math.round(paidOrders.reduce((sum, o) => sum + o.price, 0) / paidOrders.length) : 0,
       topProduct,
       weeks,
     };
