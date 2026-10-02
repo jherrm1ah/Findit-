@@ -128,6 +128,10 @@ export type Order = {
   requestId: string | null;
   createdAt: string;
   buyerConfirmedAt: string | null;
+  // See migration 039 — when this order first reached 'Dispatched'. The
+  // anchor lib/repo.ts#autoReleaseStaleDeliveries counts its 7-day window
+  // from; null until the seller dispatches.
+  dispatchedAt: string | null;
   escrowStatus: EscrowStatus;
   issueReportedAt: string | null;
   issueNote: string | null;
@@ -926,6 +930,7 @@ function rowToOrder(row: Row): Order {
     requestId: (row.request_id as string | null) ?? null,
     createdAt: row.created_at as string,
     buyerConfirmedAt: (row.buyer_confirmed_at as string | null) ?? null,
+    dispatchedAt: (row.dispatched_at as string | null) ?? null,
     escrowStatus: ((row.escrow_status as EscrowStatus | null) ?? "unpaid"),
     issueReportedAt: (row.issue_reported_at as string | null) ?? null,
     issueNote: (row.issue_note as string | null) ?? null,
@@ -1214,9 +1219,17 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   }
 
   const db = getDb();
+  const update: Record<string, unknown> = { status };
+  // Set once, the moment an order first reaches Dispatched (or skips
+  // straight to a later status) — the anchor autoReleaseStaleDeliveries
+  // below counts its 7-day window from. Never overwritten after that: a
+  // seller can't reset the buyer's clock by re-saving a later status.
+  if (!existing.dispatchedAt && ORDER_STATUSES.indexOf(status as (typeof ORDER_STATUSES)[number]) >= ORDER_STATUSES.indexOf("Dispatched")) {
+    update.dispatched_at = new Date().toISOString();
+  }
   const result = await db
     .from("orders")
-    .update({ status })
+    .update(update)
     .eq("id", id)
     .select()
     .single();
@@ -1337,6 +1350,96 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
   }
 
   return order;
+}
+
+// How many days after an order reaches 'Dispatched' with no buyer action
+// (no confirmation, no reported problem) before escrow auto-releases to
+// the seller. Long enough for a real delivery delay within Nigeria; short
+// enough that a seller isn't waiting indefinitely for money they're owed —
+// matches the window most Nigerian marketplace/escrow platforms use.
+export const AUTO_RELEASE_STALE_DAYS = 7;
+
+// Run daily from app/api/cron/expirations — closes the gap a correctly-
+// dispatched order used to leave open forever if the buyer simply never
+// confirmed AND never reported a problem: nothing else in this app ever
+// paid the seller in that case. Treats "no objection within
+// AUTO_RELEASE_STALE_DAYS of dispatch" as implicit confirmation and
+// applies the exact same effects confirmDelivery does (the buyer's
+// recourse — a post-release report — stays open the same
+// POST_CONFIRMATION_REPORT_WINDOW_MS either way), rather than inventing a
+// separate "auto" state nothing else in the app would understand.
+// Returns the released orders (not just their ids) so the caller — the
+// cron route, not this file — can trigger each one's real payout via
+// lib/payments.ts#initiateSellerPayout without this module importing that
+// one back (payments.ts already imports from repo.ts).
+export async function autoReleaseStaleDeliveries(): Promise<Order[]> {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - AUTO_RELEASE_STALE_DAYS * 24 * 60 * 60 * 1000).toISOString();
+
+  const staleResult = await db
+    .from("orders")
+    .select("*")
+    .eq("payment_status", "paid")
+    .eq("escrow_status", "held")
+    .is("buyer_confirmed_at", null)
+    .is("issue_reported_at", null)
+    .not("dispatched_at", "is", null)
+    .lte("dispatched_at", cutoff)
+    .limit(100);
+  const staleRows = assertNoError(staleResult, "listing stale dispatched orders") as Row[];
+
+  const released: Order[] = [];
+  for (const row of staleRows) {
+    const now = new Date().toISOString();
+    // Same CAS pattern as confirmDelivery's own update — conditioned on
+    // escrow_status/buyer_confirmed_at still matching what the listing
+    // query above just read, so a buyer confirming (or reporting a
+    // problem) in the gap between that read and this write wins cleanly
+    // instead of racing this sweep.
+    const releaseResult = await db
+      .from("orders")
+      .update({
+        status: "Delivered",
+        buyer_confirmed_at: now,
+        escrow_status: "released",
+        can_review: true,
+      })
+      .eq("id", row.id as string)
+      .eq("escrow_status", "held")
+      .is("buyer_confirmed_at", null)
+      .select()
+      .maybeSingle();
+    const releasedRow = assertNoError(releaseResult, "auto-releasing a stale delivery") as Row | null;
+    if (!releasedRow) continue; // lost the race to the buyer's own action — skip, not an error
+
+    const order = rowToOrder(releasedRow);
+    released.push(order);
+
+    // Same completion record every other release path writes — never
+    // throws, matching confirmDelivery's own reasoning: a release that
+    // already committed must not fail because the record couldn't be.
+    await recordCompletedTransaction(order);
+
+    const seller = order.sellerId
+      ? await findUserForSellerId(order.sellerId)
+      : await findUserByBusinessName(order.seller);
+    if (seller) {
+      await notifyBestEffort({
+        userId: seller.id,
+        type: "delivery",
+        title: "Delivery confirmed",
+        body: `"${order.item}" was auto-confirmed after ${AUTO_RELEASE_STALE_DAYS} days with no reported issue. Your payment has been released.`,
+      });
+    }
+    await notifyBestEffort({
+      userId: order.userId,
+      type: "delivery",
+      title: "Order marked delivered",
+      body: `We marked "${order.item}" as delivered — it's been ${AUTO_RELEASE_STALE_DAYS} days since it was dispatched with no reported issue. If something's wrong, contact support.`,
+    });
+  }
+
+  return released;
 }
 
 // How long after confirming delivery a buyer may still report a problem.

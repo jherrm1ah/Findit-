@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { notifyExpiredBoosts } from "@/lib/boosts";
 import { sweepLapsedSubscriptions } from "@/lib/subscriptions";
+import { autoReleaseStaleDeliveries } from "@/lib/repo";
+import { initiateSellerPayout } from "@/lib/payments";
 
 // Forced dynamic so Next never tries to statically prerender this at build
 // time (same reason app/api/boost-plans/route.ts is) — a GET with no
@@ -17,10 +19,11 @@ export const dynamic = "force-dynamic";
 // the notifications it sends) on demand. Left unset in local/dev, where
 // there's nothing to protect and no Vercel Cron to receive it from anyway.
 //
-// Both sweeps are the "nothing else would ever trigger this" half of
-// boost/subscription expiry — see lib/boosts.ts#notifyExpiredBoosts and
-// lib/subscriptions.ts#sweepLapsedSubscriptions for why neither a normal
-// page load nor the sort-order logic they ride on needed this before.
+// All three sweeps are the "nothing else would ever trigger this" half of
+// their own feature — see lib/boosts.ts#notifyExpiredBoosts,
+// lib/subscriptions.ts#sweepLapsedSubscriptions, and
+// lib/repo.ts#autoReleaseStaleDeliveries for why neither a normal page
+// load nor the logic those features otherwise ride on needed this before.
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (secret) {
@@ -30,10 +33,30 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [boostsNotified, subscriptionsResolved] = await Promise.all([
+  const [boostsNotified, subscriptionsResolved, releasedOrders] = await Promise.all([
     notifyExpiredBoosts(),
     sweepLapsedSubscriptions(),
+    autoReleaseStaleDeliveries(),
   ]);
 
-  return NextResponse.json({ boostsNotified, subscriptionsResolved });
+  // Payout initiation stays separate from the release itself — same
+  // reasoning as app/api/orders/[id]/confirm: the release already
+  // committed and must not be undone by a slow/failed Paystack call, which
+  // records its own outcome on the payouts ledger either way. Awaited
+  // here (unlike that route) since there's no client response to keep
+  // fast — this run already has every released order in hand, so it's the
+  // one place that can trigger them all without a second sweep.
+  for (const order of releasedOrders) {
+    try {
+      await initiateSellerPayout(order);
+    } catch (err) {
+      console.error("[cron/expirations] payout initiation failed for auto-released order", order.id, err);
+    }
+  }
+
+  return NextResponse.json({
+    boostsNotified,
+    subscriptionsResolved,
+    autoReleasedOrders: releasedOrders.map((o) => o.id),
+  });
 }

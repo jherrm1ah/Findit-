@@ -484,6 +484,10 @@ create table if not exists orders (
   -- Delivery is confirmed by the BUYER, never the seller: "Delivered" means
   -- the person who paid said the item arrived. See migration 008.
   buyer_confirmed_at timestamptz,
+  -- See migration 039 — when this order first reached 'Dispatched' (or
+  -- skipped straight past it). The anchor the 7-day escrow auto-release
+  -- timer counts from; null until the seller dispatches.
+  dispatched_at timestamptz,
   -- unpaid | held | released | disputed | refunded — where the money
   -- stands. An order starts 'unpaid' (see payment_status below) and only
   -- ever becomes 'held' once a real Paystack charge is confirmed by
