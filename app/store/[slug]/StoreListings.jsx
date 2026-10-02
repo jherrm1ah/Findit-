@@ -2,8 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { Search, X } from "lucide-react";
+import { ArtBlock } from "../../../components/findit-app/shared";
+import { categoryGroup } from "../../../components/findit-app/data";
 
 // Number(...) coercion matches components/findit-app/data.js's shared naira()
 // helper — degrades to ₦0/₦NaN instead of throwing if amount is ever not a
@@ -16,19 +17,91 @@ const naira = (amount) => `₦${Number(amount).toLocaleString("en-NG")}`;
 // link (this page is server-rendered and has no session, see page.tsx) get
 // a consistent feel. Filtering happens entirely in the browser: a single
 // seller's listing count never justifies a server round trip per keystroke.
-// density="spacious" is what the gallery/showcase storefront templates ask
-// for — a 2-column grid with a taller image area, versus the default
-// 2/3-column, more compact grid every other template (classic, compact)
-// uses. Purely a CSS/layout difference; the data and filtering below are
-// identical either way.
+//
+// `density` is the one real structural lever a template gets over how its
+// listings render: "cozy" (classic) is the original 2/3-col grid; "spacious"
+// (gallery/showcase) is a 2-col grid with a taller image area AND a large
+// featured first item, leaning all the way into "the product photography is
+// the point"; "list" (compact) trades the grid for stacked rows — true to
+// what "compact" is supposed to mean (less scrolling, not just less
+// padding), the same row shape Cart.jsx already uses for a line item.
+//
 // accent carries the seller's curated color pair (see
 // lib/subscriptions.ts#STORE_ACCENTS) — defaults to the original violet so
 // a caller that doesn't pass one (there currently isn't one) still renders
 // exactly as before.
 const DEFAULT_ACCENT = { from: "#A855F7", to: "#7C3AED", tint: "#F1ECFD" };
 
+function ProductThumb({ product, className }) {
+  return <ArtBlock icon={categoryGroup(product.category).icon} art={product.art ?? 0} imageUrl={product.imageUrl} className={className} />;
+}
+
+function GridCard({ product, spacious }) {
+  return (
+    <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group">
+      <div
+        className={`relative rounded-[20px] overflow-hidden mb-2 transition-shadow duration-200 group-hover:shadow-lg group-hover:shadow-[#4C1D95]/15 ${spacious ? "h-44" : "h-32"}`}
+      >
+        <div className="absolute inset-0 transition-transform duration-300 ease-out group-hover:scale-[1.04]">
+          <ProductThumb product={product} className="h-full w-full" />
+        </div>
+      </div>
+      <p className={`font-medium text-[#1E1B4B] leading-tight line-clamp-2 transition-colors group-hover:text-[#7C3AED] ${spacious ? "text-[13.5px]" : "text-[12.5px]"}`}>
+        {product.name}
+      </p>
+      <p className={`font-bold text-[#1E1B4B] mt-0.5 ${spacious ? "text-[14.5px]" : "text-[13px]"}`}>{naira(product.price)}</p>
+    </Link>
+  );
+}
+
+function FeaturedCard({ product, categoryLabel }) {
+  return (
+    <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group mb-5">
+      <div className="relative rounded-[24px] overflow-hidden mb-3 h-56 sm:h-72 transition-shadow duration-200 group-hover:shadow-xl group-hover:shadow-[#4C1D95]/20">
+        <div className="absolute inset-0 transition-transform duration-300 ease-out group-hover:scale-[1.03]">
+          <ProductThumb product={product} className="h-full w-full" />
+        </div>
+        {categoryLabel && (
+          <span className="absolute top-3 left-3 bg-white/95 text-[11px] font-semibold text-[#514B67] px-2.5 py-1 rounded-full">
+            {categoryLabel}
+          </span>
+        )}
+      </div>
+      <p className="text-[16px] font-bold text-[#1E1B4B] leading-tight line-clamp-2 transition-colors group-hover:text-[#7C3AED]">{product.name}</p>
+      <p className="text-[17px] font-bold text-[#1E1B4B] mt-0.5">{naira(product.price)}</p>
+    </Link>
+  );
+}
+
+function ListRow({ product, accent }) {
+  return (
+    <li>
+      <Link
+        href={`/?product=${encodeURIComponent(product.id)}`}
+        className="group flex items-center gap-3 bg-white border border-[#ECE9F7] rounded-[18px] p-3 shadow-sm shadow-[#4C1D95]/5 transition-shadow hover:shadow-md hover:shadow-[#4C1D95]/10"
+      >
+        <div className="w-16 h-16 rounded-[14px] overflow-hidden shrink-0">
+          <ProductThumb product={product} className="h-16 w-16" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[13px] font-medium text-[#1E1B4B] leading-tight line-clamp-1 mb-0.5 transition-colors group-hover:text-[#7C3AED]">
+            {product.name}
+          </p>
+          {product.condition && (
+            <p className="text-[11px] text-[#8A8372]">{product.condition}</p>
+          )}
+        </div>
+        <p className="text-[13.5px] font-bold text-[#1E1B4B] shrink-0" style={{ color: accent.to }}>
+          {naira(product.price)}
+        </p>
+      </Link>
+    </li>
+  );
+}
+
 export default function StoreListings({ listings, categoryLabels, density = "cozy", accent = DEFAULT_ACCENT }) {
   const spacious = density === "spacious";
+  const list = density === "list";
   const accentGradient = `linear-gradient(135deg,${accent.from},${accent.to})`;
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
@@ -60,6 +133,13 @@ export default function StoreListings({ listings, categoryLabels, density = "coz
       </div>
     );
   }
+
+  // Gallery/showcase lean all the way into "the product is the point": the
+  // first result (of whatever's currently filtered, so it stays correct as
+  // the buyer searches/filters rather than freezing on the pre-filter item)
+  // gets a large, full-width featured treatment; the rest follow in the
+  // normal spacious grid.
+  const [featured, rest] = spacious && filtered.length > 0 ? [filtered[0], filtered.slice(1)] : [null, filtered];
 
   return (
     <div>
@@ -114,22 +194,23 @@ export default function StoreListings({ listings, categoryLabels, density = "coz
         <p className="text-[13px] text-[#6B6483] py-10 text-center bg-white border border-[#ECE9F7] rounded-2xl">
           No listings match {query ? `"${query}"` : "that category"}.
         </p>
-      ) : (
-        <ul className={`grid gap-x-4 gap-y-6 list-none p-0 m-0 ${spacious ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+      ) : list ? (
+        <ul className="flex flex-col gap-2.5 list-none p-0 m-0">
           {filtered.map((product) => (
-            <li key={product.id}>
-              <Link href={`/?product=${encodeURIComponent(product.id)}`} className="block group">
-                <div className={`relative rounded-2xl overflow-hidden bg-[#EDE9FB] mb-2 ${spacious ? "h-44" : "h-32"}`}>
-                  {product.imageUrl && (
-                    <Image src={product.imageUrl} alt="" fill sizes={spacious ? "50vw" : "(max-width: 640px) 50vw, 33vw"} className="object-cover" />
-                  )}
-                </div>
-                <p className={`font-medium text-[#1E1B4B] leading-tight line-clamp-2 ${spacious ? "text-[13.5px]" : "text-[12.5px]"}`}>{product.name}</p>
-                <p className={`font-bold text-[#1E1B4B] mt-0.5 ${spacious ? "text-[14.5px]" : "text-[13px]"}`}>{naira(product.price)}</p>
-              </Link>
-            </li>
+            <ListRow key={product.id} product={product} accent={accent} />
           ))}
         </ul>
+      ) : (
+        <>
+          {featured && <FeaturedCard product={featured} categoryLabel={categoryLabels[featured.category] || featured.category} />}
+          <ul className={`grid gap-x-4 gap-y-6 list-none p-0 m-0 ${spacious ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+            {rest.map((product) => (
+              <li key={product.id}>
+                <GridCard product={product} spacious={spacious} />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
