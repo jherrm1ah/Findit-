@@ -75,6 +75,9 @@ describe("initiateSellerPayout — ambiguous transfer outcome", () => {
     expect(payout.status).toBe("manual_required");
     expect(payout.failure_reason).toMatch(/may have actually gone through/i);
     expect(payout.failure_reason).toMatch(/double payment/i);
+    // The flag retrySellerPayout checks before ever allowing a retry — see
+    // the "refuses to retry an unconfirmed-outcome payout" test below.
+    expect(payout.transfer_unconfirmed).toBe(true);
   });
 
   it("marks the payout plainly 'failed' when Paystack explicitly rejected the transfer", async () => {
@@ -86,6 +89,7 @@ describe("initiateSellerPayout — ambiguous transfer outcome", () => {
     expect(payout.status).toBe("failed");
     expect(payout.failure_reason).toBe("Insufficient balance in the payout account.");
     expect(payout.failure_reason).not.toMatch(/double payment/i);
+    expect(payout.transfer_unconfirmed).toBe(false);
   });
 
   it("still marks the payout 'paid' on an actual success", async () => {
@@ -95,6 +99,7 @@ describe("initiateSellerPayout — ambiguous transfer outcome", () => {
 
     const [payout] = fakeDb.dump("payouts");
     expect(payout.status).toBe("paid");
+    expect(payout.transfer_unconfirmed).toBe(false);
   });
 });
 
@@ -109,7 +114,7 @@ describe("retrySellerPayout", () => {
     fakeDb.reset({
       sellers: [{ id: "seller_1", paystack_recipient_code: null }],
       orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
-      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet.", ...overrides }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet.", transfer_unconfirmed: false, ...overrides }],
     });
   }
 
@@ -122,7 +127,7 @@ describe("retrySellerPayout", () => {
     fakeDb.reset({
       sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
       orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
-      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet." }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "This seller hasn't added a payout bank account yet.", transfer_unconfirmed: false }],
     });
     initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_456" });
 
@@ -131,6 +136,43 @@ describe("retrySellerPayout", () => {
     const [payout] = fakeDb.dump("payouts");
     expect(payout.status).toBe("paid");
     expect(payout.failure_reason).toBeNull();
+  });
+
+  // The real safety fix: a payout stuck manual_required because its
+  // transfer outcome was never confirmed (connection dropped mid-request)
+  // must NEVER be silently retried — the original may have already sent
+  // the money, and there's no Paystack transfer-verification call in this
+  // codebase to check first. An admin has to look at Paystack directly.
+  it("refuses to retry a payout whose transfer outcome was never confirmed, even with a valid payout account", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "unconfirmed", transfer_unconfirmed: true }],
+    });
+
+    await expect(retrySellerPayout("payout_1")).rejects.toThrow(/never confirmed/i);
+    expect(initiateTransfer).not.toHaveBeenCalled();
+  });
+
+  // Paystack treats a transfer reference as a one-time idempotency key —
+  // reusing one it already has a record for (even from a failed attempt
+  // that genuinely reached Paystack) gets rejected as a duplicate. A retry
+  // that sent the same reference as the original attempt would silently
+  // fail every time, defeating the whole point of the Retry button.
+  it("uses a different Paystack transfer reference than the original attempt", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "USB-C cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [{ id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "failed", failure_reason: "Insufficient balance in the payout account.", transfer_unconfirmed: false }],
+    });
+    initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_456" });
+
+    await retrySellerPayout("payout_1");
+
+    expect(initiateTransfer).toHaveBeenCalledTimes(1);
+    const callArgs = initiateTransfer.mock.calls[0][0];
+    expect(callArgs.reference).not.toBe("payout_1");
+    expect(callArgs.reference).toMatch(/^payout_1-RT/);
   });
 
   it("refuses to retry a payout that's already paid", async () => {
@@ -153,8 +195,8 @@ describe("retryStalledPayoutsBestEffort", () => {
         { id: "order_2", user_id: "buyer_2", item: "Case", seller: "Terra Gadgets", seller_id: "seller_1", price: 3000, status: "Delivered" },
       ],
       payouts: [
-        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account" },
-        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "failed", failure_reason: "Paystack rejected this transfer." },
+        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account", transfer_unconfirmed: false },
+        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "failed", failure_reason: "Paystack rejected this transfer.", transfer_unconfirmed: false },
       ],
     });
     initiateTransfer.mockResolvedValue({ status: "success", transferCode: "TRF_789" });
@@ -176,8 +218,8 @@ describe("retryStalledPayoutsBestEffort", () => {
         { id: "order_2", user_id: "buyer_2", item: "Case", seller: "Terra Gadgets", seller_id: "seller_1", price: 3000, status: "Delivered" },
       ],
       payouts: [
-        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account" },
-        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "manual_required", failure_reason: "no account" },
+        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "no account", transfer_unconfirmed: false },
+        { id: "payout_2", seller_id: "seller_1", order_id: "order_2", amount: 2850, status: "manual_required", failure_reason: "no account", transfer_unconfirmed: false },
       ],
     });
     initiateTransfer
@@ -189,5 +231,26 @@ describe("retryStalledPayoutsBestEffort", () => {
     const payouts = fakeDb.dump("payouts");
     expect(payouts.find((p) => p.status === "failed")).toBeTruthy();
     expect(payouts.find((p) => p.status === "paid")).toBeTruthy();
+  });
+
+  // The query-level half of the same safety fix: an unconfirmed-outcome
+  // payout must never even be attempted by the automatic sweep, not just
+  // refused by retrySellerPayout — this is what proves the sweep's own
+  // filter excludes it, rather than relying solely on the catch-and-log
+  // around each retrySellerPayout call to save it.
+  it("never attempts a manual_required payout whose transfer outcome was never confirmed", async () => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", paystack_recipient_code: "RCP_test" }],
+      orders: [{ id: "order_1", user_id: "buyer_1", item: "Cable", seller: "Terra Gadgets", seller_id: "seller_1", price: 5000, status: "Delivered" }],
+      payouts: [
+        { id: "payout_1", seller_id: "seller_1", order_id: "order_1", amount: 4750, status: "manual_required", failure_reason: "unconfirmed", transfer_unconfirmed: true },
+      ],
+    });
+
+    await retryStalledPayoutsBestEffort("seller_1");
+
+    expect(initiateTransfer).not.toHaveBeenCalled();
+    const [payout] = fakeDb.dump("payouts");
+    expect(payout.status).toBe("manual_required");
   });
 });

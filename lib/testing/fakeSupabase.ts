@@ -41,12 +41,28 @@ const UNIQUE_COLUMNS: Record<string, string[]> = {
   boosts: ["id", "payment_id"],
 };
 
+// Multi-column UNIQUE constraints — a conflict needs every listed column to
+// match, unlike UNIQUE_COLUMNS above where any one column matching is
+// already a conflict. Add an entry here only when a test depends on it.
+const COMPOUND_UNIQUE_COLUMNS: Record<string, string[][]> = {
+  // migration 038 — stops two referrals for the same referrer, qualifying
+  // at nearly the same instant, from both issuing a reward for one
+  // milestone crossing.
+  referral_rewards: [["user_id", "milestone_number"]],
+};
+
 // Mirrors Postgres: a null never conflicts with another null.
 function uniqueViolation(table: string, rows: Row[], candidate: Row): string | null {
   for (const column of UNIQUE_COLUMNS[table] ?? []) {
     const value = candidate[column];
     if (value === undefined || value === null) continue;
     if (rows.some((existing) => existing[column] === value)) return column;
+  }
+  for (const columns of COMPOUND_UNIQUE_COLUMNS[table] ?? []) {
+    if (columns.some((c) => candidate[c] === undefined || candidate[c] === null)) continue;
+    if (rows.some((existing) => columns.every((c) => existing[c] === candidate[c]))) {
+      return columns.join(", ");
+    }
   }
   return null;
 }

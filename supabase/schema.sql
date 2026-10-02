@@ -974,6 +974,11 @@ create table if not exists payouts (
   failure_reason text,
   created_at timestamptz not null default now(),
   paid_at timestamptz,
+  -- See migration 037: true only when a transfer attempt reached Paystack
+  -- but its outcome couldn't be confirmed (connection dropped mid-request)
+  -- — the one case retrySellerPayout refuses to auto-retry, since the
+  -- original may have already gone through.
+  transfer_unconfirmed boolean not null default false,
   unique (order_id)
 );
 create index if not exists payouts_seller_id_idx on payouts(seller_id);
@@ -1016,10 +1021,16 @@ create table if not exists referral_rewards (
   remaining_amount integer,
   constraint referral_rewards_remaining_amount_range
     check (remaining_amount is null or (remaining_amount >= 0 and remaining_amount <= amount)),
+  -- See migration 038: which Nth-referral milestone this reward is for,
+  -- for this user. The unique constraint below is what actually stops two
+  -- referrals qualifying for the same referrer at nearly the same instant
+  -- from both independently issuing a reward for the same milestone.
+  milestone_number integer not null,
   meta jsonb,
   created_at timestamptz not null default now(),
   issued_at timestamptz,
-  claimed_at timestamptz
+  claimed_at timestamptz,
+  unique (user_id, milestone_number)
 );
 create index if not exists referral_rewards_user_idx on referral_rewards(user_id);
 create index if not exists referral_rewards_referral_idx on referral_rewards(referral_id);

@@ -127,7 +127,23 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .update({ amount: 0, status: "success", provider: "referral_credit", paid_at: new Date().toISOString(), metadata: { orderId: order.id, creditApplied } })
         .eq("id", reference);
       assertNoError(coveredResult, "recording a fully credit-covered payment");
-      await confirmOrderPayment(order.id, creditApplied);
+      try {
+        await confirmOrderPayment(order.id, creditApplied);
+      } catch (err) {
+        // Unlike a real Paystack-backed order, nothing ever retries this —
+        // there's no webhook, since no real transaction was ever created
+        // for a fully credit-covered order. Leaving the payment "success"
+        // with the order still unpaid would strand it forever. Undo back
+        // to "failed" (same recovery as the initializeTransaction catch
+        // below) and give the reserved credit back, so the buyer's very
+        // next tap starts a clean new attempt instead of hitting a dead one.
+        await db
+          .from("payments")
+          .update({ status: "failed", metadata: { orderId: order.id, creditApplied, confirmError: err instanceof Error ? err.message : String(err) } })
+          .eq("id", reference);
+        if (creditApplied > 0) await releaseCredit(reference);
+        throw err;
+      }
       return NextResponse.json({ applied: true, paymentRequired: false, configured: true, amount: 0, creditApplied });
     }
 

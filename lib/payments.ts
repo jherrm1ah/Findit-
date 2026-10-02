@@ -203,6 +203,7 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
     itemName: order.item,
     amount: order.sellerPayoutAmount,
     recipientCode,
+    reference: id,
   });
 }
 
@@ -210,7 +211,14 @@ export async function initiateSellerPayout(order: Order): Promise<void> {
 // brand-new payout (initiateSellerPayout, row already inserted as
 // 'processing' above) and a retry of one stuck at manual_required/failed
 // (retrySellerPayout below) — both just need "call Paystack, then update
-// this existing row with whatever actually happened."
+// this existing row with whatever actually happened." `reference` is
+// passed in explicitly rather than always reusing payoutId: Paystack
+// treats a transfer reference as a one-time idempotency key, and
+// reusing one it already has a record for (even from a failed attempt
+// that genuinely reached Paystack) gets rejected as a duplicate — which
+// would make the Retry button silently fail for exactly the "transient
+// error, try again" case it exists for. retrySellerPayout below mints a
+// fresh reference per attempt for that reason.
 async function attemptTransfer(input: {
   payoutId: string;
   sellerId: string;
@@ -218,13 +226,14 @@ async function attemptTransfer(input: {
   itemName: string;
   amount: number;
   recipientCode: string;
+  reference: string;
 }): Promise<void> {
   const db = getDb();
   try {
     const transfer = await initiateTransfer({
       amountNaira: input.amount,
       recipientCode: input.recipientCode,
-      reference: input.payoutId,
+      reference: input.reference,
       reason: `FindIt payout for order ${input.orderId}`,
     });
     // Paystack can require a dashboard-level OTP to actually release a
@@ -238,6 +247,7 @@ async function attemptTransfer(input: {
         status: finalStatus,
         provider_reference: transfer.transferCode,
         failure_reason: null,
+        transfer_unconfirmed: false,
         paid_at: finalStatus === "paid" ? new Date().toISOString() : null,
       })
       .eq("id", input.payoutId);
@@ -268,6 +278,11 @@ async function attemptTransfer(input: {
           : err instanceof Error
             ? err.message
             : String(err),
+        // See retrySellerPayout — this is the flag that stops the Retry
+        // button (and the automatic post-bank-account-save sweep) from
+        // ever re-sending a transfer whose real outcome at Paystack is
+        // unknown. Only ever true for this exact branch.
+        transfer_unconfirmed: unconfirmed,
       })
       .eq("id", input.payoutId);
     await notifyPayoutOutcome(
@@ -294,6 +309,19 @@ export async function retrySellerPayout(payoutId: string): Promise<void> {
   const status = payoutRow.status as string;
   if (status !== "manual_required" && status !== "failed") {
     throw new ValidationError(`This payout is already ${status} — nothing to retry.`);
+  }
+  // The one case this refuses outright rather than re-attempting: the
+  // PREVIOUS transfer call reached Paystack but its outcome was never
+  // confirmed (the connection dropped) — it may have already succeeded.
+  // Retrying would risk paying the seller twice, and there is no transfer-
+  // verification call in lib/paystack.ts today to check the real outcome
+  // first. An admin has to check Paystack's own transfer history directly,
+  // then settle this with "Mark paid" (if it did go through) rather than
+  // Retry — see the failure_reason already written for this row.
+  if (payoutRow.transfer_unconfirmed) {
+    throw new ValidationError(
+      "This payout's outcome with Paystack was never confirmed — it may have already gone through. Check the Paystack dashboard's transfer history for this order, then use \"Mark paid\" instead of Retry."
+    );
   }
 
   const sellerId = payoutRow.seller_id as string;
@@ -324,7 +352,18 @@ export async function retrySellerPayout(payoutId: string): Promise<void> {
     throw new ValidationError("This payout just changed status — refresh and try again.");
   }
 
-  await attemptTransfer({ payoutId, sellerId, orderId, itemName, amount, recipientCode });
+  await attemptTransfer({
+    payoutId,
+    sellerId,
+    orderId,
+    itemName,
+    amount,
+    recipientCode,
+    // A fresh reference per retry — see attemptTransfer's own comment for
+    // why reusing payoutId here would risk Paystack rejecting this as a
+    // duplicate of the original (possibly genuinely-sent) attempt.
+    reference: `${payoutId}-RT${Date.now().toString(36).toUpperCase()}`,
+  });
 }
 
 // Best-effort sweep of a seller's own stalled payouts, called right after
@@ -338,10 +377,18 @@ export async function retrySellerPayout(payoutId: string): Promise<void> {
 // Deliberately 'manual_required' only, not 'failed' — a failed transfer
 // usually means Paystack explicitly rejected it for a reason unrelated to
 // (and not fixed by) a bank-account save, so re-attempting that silently
-// stays an admin's deliberate call via the Retry button instead.
+// stays an admin's deliberate call via the Retry button instead. Also
+// excludes transfer_unconfirmed rows — retrySellerPayout would refuse
+// those anyway, but filtering here means this sweep doesn't even try (and
+// skips logging a ValidationError that isn't actually unexpected).
 export async function retryStalledPayoutsBestEffort(sellerId: string): Promise<void> {
   const db = getDb();
-  const result = await db.from("payouts").select("id").eq("seller_id", sellerId).eq("status", "manual_required");
+  const result = await db
+    .from("payouts")
+    .select("id")
+    .eq("seller_id", sellerId)
+    .eq("status", "manual_required")
+    .eq("transfer_unconfirmed", false);
   const rows = assertNoError(result, "listing stalled payouts for retry") as Row[];
   for (const row of rows) {
     try {
@@ -515,6 +562,7 @@ export type PayoutListItem = {
   status: string;
   providerReference: string | null;
   failureReason: string | null;
+  transferUnconfirmed: boolean;
   createdAt: string;
   paidAt: string | null;
 };
@@ -534,6 +582,7 @@ export async function listPayoutsForAdmin(status?: string): Promise<PayoutListIt
     status: r.status as string,
     providerReference: (r.provider_reference as string | null) ?? null,
     failureReason: (r.failure_reason as string | null) ?? null,
+    transferUnconfirmed: Boolean(r.transfer_unconfirmed),
     createdAt: r.created_at as string,
     paidAt: (r.paid_at as string | null) ?? null,
   }));
