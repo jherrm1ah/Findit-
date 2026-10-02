@@ -87,3 +87,10 @@ create index if not exists referral_settings_created_at_idx on referral_settings
 insert into referral_settings (id, active_qualifying_action, created_by)
 values ('rs_default', 'first_purchase', null)
 on conflict (id) do nothing;
+
+-- Defense-in-depth only, same as every other table — see the AUTHORIZATION
+-- MODEL comment at the top of schema.sql. Real access control is in the
+-- API route code (service role bypasses RLS entirely), not here.
+alter table referrals enable row level security;
+alter table referral_rewards enable row level security;
+alter table referral_settings enable row level security;
