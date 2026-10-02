@@ -367,11 +367,15 @@ async function maybeIssueMilestoneReward(referrerUserId: string, justQualifiedRe
     .in("status", ["qualified", "rewarded"]);
   const qualifiedReferrals = assertNoError(countResult, "counting qualified referrals") as Row[];
   if (qualifiedReferrals.length === 0 || qualifiedReferrals.length % milestoneSize !== 0) return;
+  const milestoneNumber = qualifiedReferrals.length / milestoneSize;
 
   // Conditioned on the just-qualified referral's own reward_status still
-  // being 'none' — the same re-entrancy guard pattern as the qualify update
-  // above, so two qualifying events landing at once can't both see "count
-  // is a multiple of milestoneSize" and both issue a reward for one batch.
+  // being 'none' — a cheap first-pass guard, but NOT sufficient on its own:
+  // two DIFFERENT referrals for the same referrer qualifying at nearly the
+  // same instant each read their own fresh count, each see it land on a
+  // multiple of milestoneSize, and each pass this check (it's keyed per
+  // referral, not per milestone) — see migration 038's own comment. The
+  // insert below is what actually stops a double-issue.
   const claimResult = await db
     .from("referrals")
     .update({ reward_status: "issued" })
@@ -390,9 +394,22 @@ async function maybeIssueMilestoneReward(referrerUserId: string, justQualifiedRe
     status: "issued",
     amount: rewardAmount,
     remaining_amount: rewardAmount,
+    milestone_number: milestoneNumber,
     issued_at: new Date().toISOString(),
   });
-  assertNoError(rewardResult, "issuing milestone reward");
+  if (rewardResult.error) {
+    // A unique violation on (user_id, milestone_number) means a different
+    // referral for this same referrer already claimed this exact milestone
+    // slot (the race described above) — back out this referral's own flag
+    // so it doesn't sit marked 'issued' with no real reward behind it. The
+    // milestone was still correctly paid out exactly once, just via the
+    // other referral.
+    if (rewardResult.error.code === "23505") {
+      await db.from("referrals").update({ reward_status: "none" }).eq("id", justQualifiedReferralId).eq("reward_status", "issued");
+      return;
+    }
+    throw new Error(`issuing milestone reward: ${rewardResult.error.message}`);
+  }
 
   await notifyReferrer(
     referrerUserId,
@@ -505,24 +522,51 @@ export async function releaseCredit(paymentId: string): Promise<void> {
     if (applications.length === 0) return;
 
     for (const application of applications) {
-      const rewardResult = await db
-        .from("referral_rewards")
-        .select("remaining_amount, status")
-        .eq("id", application.reward_id as string)
-        .maybeSingle();
-      const reward = assertNoError(rewardResult, "loading reward to release") as Row | null;
-      if (!reward) continue;
+      const rewardId = application.reward_id as string;
+      const amount = application.amount as number;
 
-      const restored = ((reward.remaining_amount as number | null) ?? 0) + (application.amount as number);
-      await db
-        .from("referral_rewards")
-        .update({ remaining_amount: restored, status: "issued", claimed_at: null })
-        .eq("id", application.reward_id as string);
+      // Retried under optimistic concurrency, same pattern as
+      // reserveCredit's own CAS above — two releases landing at once
+      // against the SAME reward row (plausible: a user's credit is spent
+      // oldest-first, so two failed checkout attempts easily draw from the
+      // same reward) must never silently lose one restoration to the
+      // other's overwrite. Re-reads and retries rather than reserveCredit's
+      // "move on to a different row" — there is no other row to fall back
+      // to, this exact amount has to land back on this exact reward.
+      let restoredOk = false;
+      for (let attempt = 0; attempt < 5 && !restoredOk; attempt++) {
+        const rewardResult = await db
+          .from("referral_rewards")
+          .select("remaining_amount")
+          .eq("id", rewardId)
+          .maybeSingle();
+        const reward = assertNoError(rewardResult, "loading reward to release") as Row | null;
+        if (!reward) break; // reward row gone — nothing left to restore to
 
-      await db
+        const current = (reward.remaining_amount as number | null) ?? 0;
+        const updateResult = await db
+          .from("referral_rewards")
+          .update({ remaining_amount: current + amount, status: "issued", claimed_at: null })
+          .eq("id", rewardId)
+          .eq("remaining_amount", current)
+          .select("id")
+          .maybeSingle();
+        if (assertNoError(updateResult, "restoring released credit")) restoredOk = true;
+      }
+      if (!restoredOk) {
+        // Same best-effort tolerance as the outer catch below — leaves
+        // this application unreleased (still excluded by future releases
+        // via released_at IS NULL) rather than marking it released when
+        // the restore never actually landed.
+        console.error(`[referrals] couldn't restore credit for application ${application.id} — reward ${rewardId} kept changing under us`);
+        continue;
+      }
+
+      const releasedResult = await db
         .from("referral_credit_applications")
         .update({ released_at: new Date().toISOString() })
         .eq("id", application.id as string);
+      assertNoError(releasedResult, "marking credit application released");
     }
   } catch (err) {
     // Best-effort — a failure to release just means that credit stays

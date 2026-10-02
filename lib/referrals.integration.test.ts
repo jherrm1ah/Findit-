@@ -227,6 +227,35 @@ describe("milestone batching", () => {
     await qualifyReferral("referred_4", "first_purchase");
     expect(fakeDb.dump("referral_rewards")).toHaveLength(1);
   });
+
+  // Two DIFFERENT referrals for the same referrer qualifying at nearly the
+  // same instant — e.g. two requests landing together — each run their own
+  // fresh "how many qualified referrals does this referrer have" count.
+  // Run concurrently (not awaited one at a time), the fake DB's genuinely
+  // async resolution lets both qualifyReferral calls interleave exactly
+  // like two real concurrent requests would, so both can see the same
+  // pre-milestone count and both attempt to issue the reward. Only one
+  // must actually win.
+  it("issues exactly one reward even when two referrals cross the milestone at the same instant", async () => {
+    seedWorld({ activeQualifyingAction: "first_purchase", milestoneSize: 2, rewardAmount: 900 });
+    await attributeReferralBestEffort("referred_1", "ABCDEFGH");
+    await attributeReferralBestEffort("referred_2", "ABCDEFGH");
+
+    await Promise.all([
+      qualifyReferral("referred_1", "first_purchase"),
+      qualifyReferral("referred_2", "first_purchase"),
+    ]);
+
+    const rewards = fakeDb.dump("referral_rewards");
+    expect(rewards).toHaveLength(1);
+    expect(rewards[0].amount).toBe(900);
+
+    // Exactly one of the two referrals ends up actually carrying the
+    // reward flag — never both, never neither.
+    const referrals = fakeDb.dump("referrals");
+    const issuedCount = referrals.filter((r) => r.reward_status === "issued").length;
+    expect(issuedCount).toBe(1);
+  });
 });
 
 describe("the qualifying-action setting", () => {
@@ -340,6 +369,40 @@ describe("credit ledger", () => {
     expect(fakeDb.dump("referral_rewards")[0].remaining_amount).toBe(1100);
     expect(await getAvailableCredit("referrer_1")).toBe(1100);
     expect(fakeDb.dump("referral_credit_applications")[0].released_at).not.toBeNull();
+  });
+
+  // Credit is spent oldest-first, so two separate failed checkout attempts
+  // easily end up drawing from — and needing to release back to — the SAME
+  // reward row. Run concurrently, a naive "read remaining_amount, then
+  // write remaining_amount + this application's amount" would let one
+  // release's write silently overwrite the other's. Both must land.
+  it("never loses one release's restoration to another's, when two releases hit the same reward row at once", async () => {
+    seedWorld();
+    fakeDb.reset({
+      ...Object.fromEntries(["users", "referral_settings", "referral_reward_config"].map((t) => [t, fakeDb.dump(t)])),
+      referral_rewards: [
+        { id: "rw1", referral_id: "ref1", user_id: "referrer_1", reward_type: "credit", status: "claimed", amount: 1500, remaining_amount: 0, issued_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+      ],
+      referral_credit_applications: [
+        { id: "rca_1", reward_id: "rw1", user_id: "referrer_1", payment_id: "pay_1", order_id: "order_1", amount: 800, created_at: "2026-01-01T00:00:00.000Z", released_at: null },
+        { id: "rca_2", reward_id: "rw1", user_id: "referrer_1", payment_id: "pay_2", order_id: "order_2", amount: 700, created_at: "2026-01-02T00:00:00.000Z", released_at: null },
+      ],
+      payments: [
+        { id: "pay_1", user_id: "referrer_1", order_id: "order_1", kind: "order", amount: 0, status: "pending" },
+        { id: "pay_2", user_id: "referrer_1", order_id: "order_2", kind: "order", amount: 0, status: "pending" },
+      ],
+      orders: [
+        { id: "order_1", user_id: "referrer_1", price: 800 },
+        { id: "order_2", user_id: "referrer_1", price: 700 },
+      ],
+    });
+
+    await Promise.all([releaseCredit("pay_1"), releaseCredit("pay_2")]);
+
+    // Both restorations must have landed — not 800 or 700, but both.
+    expect(fakeDb.dump("referral_rewards")[0].remaining_amount).toBe(1500);
+    const applications = fakeDb.dump("referral_credit_applications");
+    expect(applications.every((a) => a.released_at !== null)).toBe(true);
   });
 
   it("releaseCredit is a no-op for a payment with nothing reserved", async () => {
