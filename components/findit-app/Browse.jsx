@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, X, SlidersHorizontal, CheckCircle2, BadgeCheck, Star, MapPin, PackageSearch } from "lucide-react";
+import { Search, X, SlidersHorizontal, CheckCircle2, BadgeCheck, Star, MapPin, PackageSearch, Camera, Loader2 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { ArtBlock } from "./shared";
 import { FavoriteButton } from "./sharedMotion";
+import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { DURATION, EASE, SPRING_SOFT, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 
@@ -19,13 +20,37 @@ const BOUNCE_ITEM = {
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
 };
 
-export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation, go }) {
+export default function Browse({ initialGroup, openProduct, products, savedIds, onToggleSaved, myLocation, go, showToast }) {
   const [group, setGroup] = useState(initialGroup || "all");
   const [query, setQuery] = useState("");
   const [verifiedOnly, setVerifiedOnly] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [searchingPhoto, setSearchingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
 
   useEffect(() => { setGroup(initialGroup || "all"); }, [initialGroup]);
+
+  // The camera button — turns a photo into the same text+category filter
+  // typing would, not a real image-similarity search (see lib/ai.ts's own
+  // comment on classifyProductPhoto for why: no embeddings/vector index
+  // exist in this schema). category defaults back to "all" rather than
+  // keeping whatever was selected before — an unmatched category guess
+  // hiding real text-matched results would be worse than casting wider.
+  const handlePhotoSearch = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // same file can be re-picked later and still fire onChange
+    if (!file) return;
+    setSearchingPhoto(true);
+    try {
+      const result = await api.visualSearch(file);
+      setQuery(result.query);
+      setGroup(result.category || "all");
+    } catch (err) {
+      showToast?.(err.message || "Couldn't search with that photo — try again.", "error");
+    } finally {
+      setSearchingPhoto(false);
+    }
+  };
 
   const list = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,6 +90,28 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
           />
           {query && <button onClick={() => setQuery("")} aria-label="Clear search"><X size={14} className="text-[#8A8372]" /></button>}
         </div>
+        <input
+          ref={photoInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          onChange={handlePhotoSearch}
+          className="hidden"
+        />
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY}>
+          <button
+            onClick={() => !searchingPhoto && photoInputRef.current?.click()}
+            disabled={searchingPhoto}
+            aria-label="Search by photo"
+            className="w-11 h-11 rounded-xl border border-[#ECE9F7] bg-white flex items-center justify-center shrink-0 disabled:opacity-60"
+          >
+            {searchingPhoto ? (
+              <Loader2 size={16} className="text-[#7C3AED] animate-spin" />
+            ) : (
+              <Camera size={16} className="text-[#7C3AED]" />
+            )}
+          </button>
+        </motion.div>
         <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY}>
           <button
             onClick={() => setShowFilters((s) => !s)}

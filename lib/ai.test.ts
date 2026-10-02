@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { classifyRequest, generateProductDescription } from "./ai";
+import { classifyRequest, generateProductDescription, classifyProductPhoto } from "./ai";
 import { ValidationError } from "./errors";
 
 // Only the length-cap rejection paths — both functions validate BEFORE
@@ -46,5 +46,11 @@ describe("generateProductDescription — input validation", () => {
     await expect(
       generateProductDescription({ name: "Chair", categoryLabel: "Furniture", variation: "x".repeat(61) })
     ).rejects.toThrow(/variation.*under 60/i);
+  });
+});
+
+describe("classifyProductPhoto — input validation", () => {
+  it("rejects an empty photo buffer before ever touching the AI client", async () => {
+    await expect(classifyProductPhoto(Buffer.alloc(0), "image/jpeg")).rejects.toThrow(ValidationError);
   });
 });

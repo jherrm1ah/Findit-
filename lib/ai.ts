@@ -192,3 +192,94 @@ export async function generateProductDescription(input: {
   }
   return text;
 }
+
+// The search bar's camera button (Browse.jsx) — a buyer photographs
+// something they want and this turns it into the same text+category filter
+// typing would have produced, rather than any real image-similarity search
+// (no vector index/embeddings exist in this schema — see FINDIT_FULL_AUDIT.md
+// for that general class of gap). Deliberately returns an empty query
+// instead of guessing when the photo doesn't clearly show a real item, same
+// "don't invent a signal that isn't there" principle as classifyRequest's
+// budget fields above.
+export type VisualSearchResult = {
+  query: string;
+  category: string | null;
+  categoryLabel: string | null;
+};
+
+export async function classifyProductPhoto(buffer: Buffer, mimeType: string): Promise<VisualSearchResult> {
+  if (buffer.length === 0) {
+    throw new ValidationError("That photo looks empty — try another.");
+  }
+
+  const ai = getClient();
+  const categories = await listCategories();
+  if (categories.length === 0) {
+    throw new ValidationError("No categories are configured yet — an admin needs to add at least one.");
+  }
+  const categoryKeys = categories.map((c) => c.id);
+  const categoryLabels = new Map(categories.map((c) => [c.id, c.label]));
+  const categoryList = categories.map((c) => `${c.id}: ${c.label}`).join("\n");
+
+  let response;
+  try {
+    response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          text:
+            "A buyer on a Nigerian marketplace app photographed something they want to find similar " +
+            "listings for. Identify the main physical item shown and turn it into a short search phrase " +
+            '(2-5 words, just the item itself — e.g. "wireless earbuds", "blue ceramic mug", "men\'s ' +
+            'leather wallet") and, only if one clearly fits, the best-matching category (leave it null ' +
+            "rather than guessing). If the photo doesn't clearly show a real, sellable item, return an " +
+            "empty query rather than inventing one.\n\n" +
+            `Categories (use the key, not the label):\n${categoryList}`,
+        },
+        { inlineData: { mimeType, data: buffer.toString("base64") } },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            query: { type: Type.STRING },
+            category: { type: Type.STRING, enum: categoryKeys, nullable: true },
+          },
+          required: ["query"],
+        },
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (/quota|rate.?limit|RESOURCE_EXHAUSTED/i.test(message)) {
+      throw new ValidationError("Visual search is rate-limited right now — try again in a moment.");
+    }
+    throw new ValidationError("Couldn't read that photo — try again.");
+  }
+
+  const text = response.text;
+  if (!text) {
+    throw new ValidationError("Couldn't make sense of that photo — try a clearer shot.");
+  }
+
+  let parsed: { query?: unknown; category?: unknown };
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new ValidationError("Couldn't make sense of that photo — try again.");
+  }
+
+  const query = typeof parsed.query === "string" ? parsed.query.trim() : "";
+  if (!query) {
+    throw new ValidationError("Couldn't recognize a product in that photo — try a clearer, closer shot.");
+  }
+
+  const category = typeof parsed.category === "string" && categoryKeys.includes(parsed.category) ? parsed.category : null;
+
+  return {
+    query,
+    category,
+    categoryLabel: category ? (categoryLabels.get(category) as string) : null,
+  };
+}
