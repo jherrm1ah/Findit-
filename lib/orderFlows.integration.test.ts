@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createFakeSupabase, type FakeSupabase } from "./testing/fakeSupabase";
-import { acceptOffer, confirmDelivery, listOrders, resolveOrderIssue, reportOrderIssue } from "./repo";
+import { acceptOffer, confirmDelivery, listOrders, resolveOrderIssue, reportOrderIssue, updateOrderStatus, autoReleaseStaleDeliveries, AUTO_RELEASE_STALE_DAYS } from "./repo";
 import { confirmOrderPayment, refundOrderPayment } from "./payments";
 
 // These exercise the ACTUAL lib/repo.ts / lib/payments.ts functions against
@@ -490,5 +490,151 @@ describe("refundOrderPayment — guards against paying twice", () => {
 
     expect(result.refunded).toBe(false);
     expect(result.reason).toMatch(/no successful payment/i);
+  });
+});
+
+describe("updateOrderStatus — dispatched_at anchor", () => {
+  function seedPaidOrder(overrides: Record<string, unknown> = {}) {
+    fakeDb.reset({
+      orders: [
+        {
+          id: "ORD-1",
+          user_id: "buyer_1",
+          item: "Blender",
+          seller: "Kemi's Kitchen",
+          seller_id: "seller_1",
+          price: 15000,
+          status: "Seller preparing",
+          escrow_status: "held",
+          payment_status: "paid",
+          buyer_confirmed_at: null,
+          dispatched_at: null,
+          created_at: new Date().toISOString(),
+          ...overrides,
+        },
+      ],
+    });
+  }
+
+  it("sets dispatched_at the first time an order reaches Dispatched", async () => {
+    seedPaidOrder();
+
+    const order = await updateOrderStatus("ORD-1", "Dispatched");
+
+    expect(order?.dispatchedAt).not.toBeNull();
+  });
+
+  it("sets dispatched_at even if the order skips straight to a later status", async () => {
+    seedPaidOrder();
+
+    const order = await updateOrderStatus("ORD-1", "Out for delivery");
+
+    expect(order?.dispatchedAt).not.toBeNull();
+  });
+
+  it("never overwrites dispatched_at once set — a seller can't reset the buyer's clock", async () => {
+    const original = "2026-01-01T00:00:00.000Z";
+    seedPaidOrder({ status: "Dispatched", dispatched_at: original });
+
+    const order = await updateOrderStatus("ORD-1", "Out for delivery");
+
+    expect(order?.dispatchedAt).toBe(original);
+  });
+
+  it("leaves dispatched_at null for a status before Dispatched", async () => {
+    seedPaidOrder();
+
+    const order = await updateOrderStatus("ORD-1", "Seller preparing");
+
+    expect(order?.dispatchedAt).toBeNull();
+  });
+});
+
+describe("autoReleaseStaleDeliveries — the escrow auto-release timer", () => {
+  function daysAgo(n: number): string {
+    return new Date(Date.now() - n * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  function seedDispatchedOrder(overrides: Record<string, unknown> = {}) {
+    fakeDb.reset({
+      orders: [
+        {
+          id: "ORD-1",
+          user_id: "buyer_1",
+          item: "Blender",
+          seller: "Kemi's Kitchen",
+          seller_id: "seller_1",
+          price: 15000,
+          status: "Dispatched",
+          escrow_status: "held",
+          payment_status: "paid",
+          platform_fee_bps: 500,
+          platform_fee_amount: 750,
+          seller_payout_amount: 14250,
+          buyer_confirmed_at: null,
+          issue_reported_at: null,
+          dispatched_at: daysAgo(AUTO_RELEASE_STALE_DAYS + 1),
+          created_at: daysAgo(AUTO_RELEASE_STALE_DAYS + 2),
+          ...overrides,
+        },
+      ],
+    });
+  }
+
+  it("releases an order dispatched more than the stale window ago with no buyer action", async () => {
+    seedDispatchedOrder();
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released.map((o) => o.id)).toEqual(["ORD-1"]);
+    const [order] = fakeDb.dump("orders");
+    expect(order.status).toBe("Delivered");
+    expect(order.escrow_status).toBe("released");
+    expect(order.can_review).toBe(true);
+    expect(order.buyer_confirmed_at).not.toBeNull();
+  });
+
+  it("leaves an order alone if it was dispatched less than the stale window ago", async () => {
+    seedDispatchedOrder({ dispatched_at: daysAgo(AUTO_RELEASE_STALE_DAYS - 1) });
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released).toHaveLength(0);
+    const [order] = fakeDb.dump("orders");
+    expect(order.escrow_status).toBe("held");
+  });
+
+  it("leaves an order alone if the buyer already confirmed it themselves", async () => {
+    seedDispatchedOrder({ buyer_confirmed_at: daysAgo(1), status: "Delivered", escrow_status: "released" });
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released).toHaveLength(0);
+  });
+
+  it("leaves an order alone if the buyer reported a problem", async () => {
+    seedDispatchedOrder({ issue_reported_at: daysAgo(1), escrow_status: "disputed" });
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released).toHaveLength(0);
+    const [order] = fakeDb.dump("orders");
+    expect(order.escrow_status).toBe("disputed");
+  });
+
+  it("never touches an order that was never actually paid for", async () => {
+    seedDispatchedOrder({ escrow_status: "unpaid", payment_status: "pending" });
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released).toHaveLength(0);
+  });
+
+  it("never touches an order that was never dispatched (dispatched_at still null)", async () => {
+    seedDispatchedOrder({ dispatched_at: null });
+
+    const released = await autoReleaseStaleDeliveries();
+
+    expect(released).toHaveLength(0);
   });
 });
