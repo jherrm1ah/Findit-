@@ -7,7 +7,7 @@ import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 
 // A browsing/support screen (Group A) — local bouncy stagger for the FAQ
 // and tickets lists, same spirit as Home's BOUNCE_CONTAINER/ITEM.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 20, scale: 0.88, rotate: -2 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

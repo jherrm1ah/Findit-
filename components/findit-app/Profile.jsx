@@ -10,7 +10,7 @@ import { SPRING_BOUNCY, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
 // Profile is a browsing/account-overview screen (Group A) — a local bouncy
 // stagger for its card lists, same spirit as Home's BOUNCE_CONTAINER/ITEM.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 20, scale: 0.9, rotate: -2 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

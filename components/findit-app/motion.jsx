@@ -14,11 +14,15 @@
 import { useMotionValue, useTransform, animate, motion } from "motion/react";
 import { useEffect, useRef } from "react";
 
+// Trimmed ~20% off every duration/spring-settle-time below (keeping each
+// preset's character — snappy stays snappy, bouncy stays exactly as bouncy,
+// just resolves faster) — interacting with the app was starting to feel a
+// beat behind the tap rather than instant.
 export const DURATION = {
-  instant: 0.12, // press/toggle feedback
-  fast: 0.18, // small UI transitions (badges, chips)
-  base: 0.28, // overlay/screen transitions, card entrances
-  slow: 0.5, // the handful of deliberately memorable moments
+  instant: 0.1, // press/toggle feedback
+  fast: 0.14, // small UI transitions (badges, chips)
+  base: 0.22, // overlay/screen transitions, card entrances
+  slow: 0.4, // the handful of deliberately memorable moments
 };
 
 // A controlled deceleration curve — starts quickly, settles smoothly, no
@@ -27,9 +31,9 @@ export const EASE = [0.22, 1, 0.36, 1];
 
 // For things that are directly touched (press feedback, the cart badge
 // bump) — snappy and quick to settle rather than bouncy.
-export const SPRING_SNAPPY = { type: "spring", stiffness: 500, damping: 32, mass: 0.5 };
+export const SPRING_SNAPPY = { type: "spring", stiffness: 600, damping: 35, mass: 0.5 };
 // For things that enter on their own (cards, sheets) — a touch softer.
-export const SPRING_SOFT = { type: "spring", stiffness: 300, damping: 28 };
+export const SPRING_SOFT = { type: "spring", stiffness: 360, damping: 31 };
 
 // A deliberately playful spring with real overshoot — for the handful of
 // screens (Home's browsing surface, not checkout/payment/forms) that should
@@ -37,7 +41,7 @@ export const SPRING_SOFT = { type: "spring", stiffness: 300, damping: 28 };
 // opt-in addition rather than changed in place on SPRING_SNAPPY/SOFT above,
 // so nothing already relying on those defaults (press feedback across the
 // whole app, including money-moving screens) changes shape underneath it.
-export const SPRING_BOUNCY = { type: "spring", stiffness: 420, damping: 14, mass: 0.7 };
+export const SPRING_BOUNCY = { type: "spring", stiffness: 500, damping: 15, mass: 0.7 };
 
 // A slow, continuous up/down drift for decorative shapes — loops forever,
 // so it's only for background elements nothing else depends on the exact
@@ -69,7 +73,7 @@ export const press = {
 // scroll-linked; see revealOnView below for content further down the page).
 export const STAGGER_CONTAINER = {
   hidden: {},
-  visible: { transition: { staggerChildren: 0.055 } },
+  visible: { transition: { staggerChildren: 0.045 } },
 };
 export const STAGGER_ITEM = {
   hidden: { opacity: 0, y: 14 },

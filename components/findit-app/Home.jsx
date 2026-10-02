@@ -47,7 +47,7 @@ function markSigninNudgeDismissed() {
 // payment and forms elsewhere keep the base system's restrained feel (see
 // motion.jsx). A bouncier stagger just for this screen's product grid, not
 // a change to STAGGER_ITEM/CONTAINER themselves.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.056 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

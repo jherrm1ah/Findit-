@@ -14,7 +14,7 @@ import { DURATION, EASE, SPRING_SOFT, SPRING_BOUNCY, press, wiggleIn } from "./m
 // Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
 // themselves. Kept slightly tighter (0.05) than Home's since this grid can
 // hold the full catalogue rather than a fixed 8-item shelf.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.04 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
