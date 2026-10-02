@@ -197,6 +197,29 @@ describe("confirmOrderPayment — webhook redelivery", () => {
     expect(fakeDb.dump("orders")).toHaveLength(1);
     expect(fakeDb.dump("notifications")).toHaveLength(1); // not 2
   });
+
+  // A referral credit is FindIt subsidizing the buyer, never a discount
+  // the seller pays for — this is the one invariant that must never break:
+  // the fee split and seller_payout_amount are computed from the order's
+  // FULL price regardless of how much credit reduced what the buyer
+  // actually paid via Paystack. credit_applied is recorded for display/
+  // audit only.
+  it("snapshots credit_applied without touching the fee split or seller payout", async () => {
+    seedPendingOrder();
+
+    await confirmOrderPayment("ORD-1", 1100);
+
+    const [order] = fakeDb.dump("orders");
+    expect(order.credit_applied).toBe(1100);
+    expect(order.platform_fee_amount).toBe(750); // still 15000 * 5%, unaffected by the credit
+    expect(order.seller_payout_amount).toBe(14250); // still the full payout
+  });
+
+  it("defaults credit_applied to 0 when no credit was involved", async () => {
+    seedPendingOrder();
+    await confirmOrderPayment("ORD-1");
+    expect(fakeDb.dump("orders")[0].credit_applied).toBe(0);
+  });
 });
 
 describe("listOrders — business-name collision", () => {

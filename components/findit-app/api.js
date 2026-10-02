@@ -114,7 +114,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
-  payForOrder: (orderId) => request(`/api/orders/${orderId}/pay`, { method: "POST" }),
+  payForOrder: (orderId, applyCredit) =>
+    request(`/api/orders/${orderId}/pay`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ applyCredit: Boolean(applyCredit) }),
+    }),
   submitOrderReview: (orderId, payload) =>
     request(`/api/orders/${orderId}`, {
       method: "PATCH",
@@ -258,6 +263,12 @@ export const api = {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ activeQualifyingAction }),
+    }),
+  setReferralRewardConfig: (milestoneSize, rewardAmount) =>
+    request("/api/admin/referrals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ milestoneSize, rewardAmount }),
     }),
   getMyTickets: () => request("/api/support/tickets").then((d) => d.tickets),
   createTicket: (subject, body) =>

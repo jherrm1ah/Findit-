@@ -6,6 +6,8 @@ import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
+import { confirmOrderPayment } from "@/lib/payments";
+import { getAvailableCredit, reserveCredit, releaseCredit } from "@/lib/referrals";
 
 const MAX_CHECKOUT_ATTEMPTS = 10;
 const CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
@@ -42,6 +44,18 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     );
   }
 
+  // The only thing trusted from the body: whether the buyer WANTS to apply
+  // credit. The amount is never read from here — see getAvailableCredit/
+  // reserveCredit below, which compute it server-side from the real ledger.
+  let applyCredit = false;
+  try {
+    const body = await req.json();
+    applyCredit = body?.applyCredit === true;
+  } catch {
+    // No body (or not JSON) is the normal case for a plain "Pay now" with
+    // no credit involved — not a request error.
+  }
+
   try {
     if (!isPaystackConfigured()) {
       return NextResponse.json({
@@ -63,13 +77,19 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const recentPending = assertNoError(recentPendingResult, "checking for a pending payment") as { created_at: string } | null;
+    const recentPending = assertNoError(recentPendingResult, "checking for a pending payment") as { id: string; created_at: string } | null;
     if (recentPending && Date.now() - new Date(recentPending.created_at).getTime() < PENDING_PAYMENT_STALE_MS) {
       return NextResponse.json(
         { error: "You already have a checkout in progress for this order. Finish that payment, or wait a few minutes and try again." },
         { status: 409 }
       );
     }
+    // A pending attempt old enough to retry past is also old enough to
+    // treat as abandoned — release any credit it had reserved (see
+    // releaseCredit's own comment) so this new attempt can actually use it,
+    // instead of that credit staying locked against a checkout nobody is
+    // going to finish.
+    if (recentPending) await releaseCredit(recentPending.id as string);
 
     const reference = "findit_ord_" + crypto.randomUUID();
     const insertResult = await db.from("payments").insert({
@@ -85,6 +105,38 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     });
     assertNoError(insertResult, "recording pending payment");
 
+    // Reserved against THIS payment row (already inserted above, so the
+    // credit-ledger's foreign key has something to point at) before any
+    // Paystack call — see reserveCredit's own comment for why eager
+    // reservation, not reservation-at-confirmation, is what actually
+    // prevents the same naira of credit being spent on two orders at once.
+    let creditApplied = 0;
+    if (applyCredit) {
+      const available = await getAvailableCredit(user.id);
+      const desired = Math.min(available, order.price);
+      if (desired > 0) creditApplied = await reserveCredit(user.id, order.id, reference, desired);
+    }
+    const payableAmount = order.price - creditApplied;
+
+    if (payableAmount <= 0) {
+      // Fully covered by credit — there is no real charge for Paystack to
+      // make, so there's no checkout to start and nothing for the webhook
+      // to confirm later. This payments row IS the whole transaction.
+      const coveredResult = await db
+        .from("payments")
+        .update({ amount: 0, status: "success", provider: "referral_credit", paid_at: new Date().toISOString(), metadata: { orderId: order.id, creditApplied } })
+        .eq("id", reference);
+      assertNoError(coveredResult, "recording a fully credit-covered payment");
+      await confirmOrderPayment(order.id, creditApplied);
+      return NextResponse.json({ applied: true, paymentRequired: false, configured: true, amount: 0, creditApplied });
+    }
+
+    const metadataResult = await db
+      .from("payments")
+      .update({ amount: payableAmount, metadata: { orderId: order.id, creditApplied } })
+      .eq("id", reference);
+    assertNoError(metadataResult, "recording the credit-adjusted payment amount");
+
     let authorizationUrl: string;
     try {
       // Most accounts have no email (this app is phone-first) — Paystack's
@@ -95,25 +147,27 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       // as "not a valid email" even though the format otherwise looks fine.
       ({ authorizationUrl } = await initializeTransaction({
         email: user.email || `${user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
-        amountNaira: order.price,
+        amountNaira: payableAmount,
         reference,
-        metadata: { orderId: order.id },
+        metadata: { orderId: order.id, creditApplied },
       }));
     } catch (err) {
       // initializeTransaction can throw after the pending row above already
       // committed — leaving it "pending" would block every retry for the
       // next PENDING_PAYMENT_STALE_MS (the check above only matches
       // status='pending'), even though this attempt never actually reached
-      // Paystack successfully. Mark it failed so the buyer's very next tap
-      // isn't blocked by an attempt that never got anywhere.
+      // Paystack successfully. Mark it failed, and give back any credit
+      // this attempt had reserved, so the buyer's very next tap isn't
+      // blocked (or short a reward) over an attempt that never got anywhere.
       await db
         .from("payments")
-        .update({ status: "failed", metadata: { orderId: order.id, initError: err instanceof Error ? err.message : String(err) } })
+        .update({ status: "failed", metadata: { orderId: order.id, creditApplied, initError: err instanceof Error ? err.message : String(err) } })
         .eq("id", reference);
+      if (creditApplied > 0) await releaseCredit(reference);
       throw err;
     }
 
-    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: order.price });
+    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: payableAmount, creditApplied });
   } catch (err) {
     return errorResponse(err, "Couldn't start payment for that order.");
   }

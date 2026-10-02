@@ -5,6 +5,7 @@ import { changeStorePlan, changePlatformSubscription, markSubscriptionPastDue, B
 import { confirmOrderPayment } from "@/lib/payments";
 import { activateBoost } from "@/lib/boosts";
 import { ValidationError } from "@/lib/errors";
+import { releaseCredit } from "@/lib/referrals";
 
 type Row = Record<string, unknown>;
 
@@ -103,7 +104,8 @@ export async function POST(req: NextRequest) {
     // that. Returning non-2xx keeps it retrying until this succeeds.
     if (payment.order_id) {
       try {
-        await confirmOrderPayment(payment.order_id as string);
+        const creditApplied = (payment.metadata as { creditApplied?: number } | null)?.creditApplied ?? 0;
+        await confirmOrderPayment(payment.order_id as string, creditApplied);
       } catch (err) {
         console.error("[paystack-webhook] retry: order confirmation still failing", err);
         return NextResponse.json({ error: "order confirmation failed" }, { status: 500 });
@@ -161,7 +163,8 @@ export async function POST(req: NextRequest) {
 
     if (payment.order_id) {
       try {
-        await confirmOrderPayment(payment.order_id as string);
+        const creditApplied = (payment.metadata as { creditApplied?: number } | null)?.creditApplied ?? 0;
+        await confirmOrderPayment(payment.order_id as string, creditApplied);
       } catch (err) {
         // Non-2xx (rather than swallowing this like the subscription branch
         // below does) so Paystack redelivers the webhook — see the
@@ -206,6 +209,10 @@ export async function POST(req: NextRequest) {
     }
     if (payment.order_id) {
       await db.from("orders").update({ payment_status: "failed" }).eq("id", payment.order_id as string);
+      // Give back any referral credit this attempt had reserved — the
+      // charge never went through, so the discount it was backing never
+      // happened either.
+      await releaseCredit(payment.id as string);
     }
   }
 

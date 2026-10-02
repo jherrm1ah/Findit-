@@ -54,6 +54,7 @@ function seedOrder(overrides: Partial<Order> = {}): Order {
     platformFeeBps: 500,
     platformFeeAmount: 250,
     sellerPayoutAmount: 4750,
+    creditApplied: 0,
     ...overrides,
   };
 }

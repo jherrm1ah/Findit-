@@ -141,6 +141,11 @@ export type Order = {
   platformFeeBps: number | null;
   platformFeeAmount: number | null;
   sellerPayoutAmount: number | null;
+  // Snapshot of how much FindIt referral credit reduced what the buyer
+  // actually paid via Paystack (migration 036) — display/audit only, never
+  // part of the fee split above. 0 until paymentStatus === "paid"; never
+  // negative, never more than price.
+  creditApplied: number;
 };
 
 export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
@@ -929,6 +934,7 @@ function rowToOrder(row: Row): Order {
     platformFeeBps: (row.platform_fee_bps as number | null) ?? null,
     platformFeeAmount: (row.platform_fee_amount as number | null) ?? null,
     sellerPayoutAmount: (row.seller_payout_amount as number | null) ?? null,
+    creditApplied: (row.credit_applied as number | null) ?? 0,
   };
 }
 

@@ -55,6 +55,7 @@ function completedOrder(overrides: Partial<AnyOrder> = {}): AnyOrder {
     platformFeeBps: 200,
     platformFeeAmount: 17000,
     sellerPayoutAmount: 833000,
+    creditApplied: 0,
     ...overrides,
   } as AnyOrder;
 }

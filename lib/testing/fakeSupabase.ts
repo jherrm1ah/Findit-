@@ -32,6 +32,8 @@ const UNIQUE_COLUMNS: Record<string, string[]> = {
   payments: ["id", "provider_reference"],
   users: ["id", "phone", "referral_code"],
   referrals: ["id", "referred_user_id"],
+  referral_rewards: ["id"],
+  referral_credit_applications: ["id"],
   orders: ["id"],
   products: ["id"],
   reviews: ["id", "order_id"],

@@ -3,11 +3,12 @@ import { createFakeSupabase, type FakeSupabase } from "./testing/fakeSupabase";
 
 // The guarantees that actually matter here: a referral can't be self-made,
 // an account can only ever be attributed once, qualifying only happens for
-// the currently-active action, and qualifying is idempotent (calling it
-// again for an already-qualified referral must not create a second
-// reward) — exactly the anti-abuse properties the referral system exists
-// to enforce, exercised against real lib/referrals.ts logic rather than
-// reimplemented test-only versions of it.
+// the currently-active action, qualifying is idempotent, a reward only
+// issues once a milestone batch is actually complete, and credit can be
+// spent (fully or partially) and given back if a checkout attempt never
+// finishes — exactly the anti-abuse and money-safety properties the
+// referral system exists to enforce, exercised against real
+// lib/referrals.ts logic rather than reimplemented test-only versions of it.
 
 const fakeDb: FakeSupabase = createFakeSupabase();
 
@@ -25,17 +26,24 @@ const {
   qualifyReferral,
   getActiveQualifyingAction,
   setActiveQualifyingAction,
+  getReferralRewardConfig,
+  setReferralRewardConfig,
   getReferralDashboard,
   getAdminReferralOverview,
   listReferralsForAdmin,
+  getAvailableCredit,
+  reserveCredit,
+  releaseCredit,
 } = await import("./referrals");
 
-function seedWorld(overrides: { activeQualifyingAction?: string } = {}) {
+function seedWorld(overrides: { activeQualifyingAction?: string; milestoneSize?: number; rewardAmount?: number } = {}) {
   fakeDb.reset({
     users: [
       { id: "referrer_1", name: "Amaka", notifications_enabled: true, referral_code: "ABCDEFGH" },
       { id: "referred_1", name: "Bello", notifications_enabled: true },
       { id: "referred_2", name: "Chidi", notifications_enabled: true },
+      { id: "referred_3", name: "Dapo", notifications_enabled: true },
+      { id: "referred_4", name: "Efe", notifications_enabled: true },
     ],
     referral_settings: [
       {
@@ -45,9 +53,25 @@ function seedWorld(overrides: { activeQualifyingAction?: string } = {}) {
         created_at: "2026-01-01T00:00:00.000Z",
       },
     ],
+    // Defaults to a milestone of 1 — so tests about qualification mechanics
+    // itself (not specifically about batching) still see an immediate
+    // reward, same as before milestones existed. The dedicated "milestone
+    // batching" describe block below overrides this to something larger.
+    referral_reward_config: [
+      {
+        id: "rrc_default",
+        milestone_size: overrides.milestoneSize ?? 1,
+        reward_amount: overrides.rewardAmount ?? 1100,
+        created_by: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+      },
+    ],
     referrals: [],
     referral_rewards: [],
+    referral_credit_applications: [],
     notifications: [],
+    payments: [],
+    orders: [],
   });
 }
 
@@ -117,6 +141,7 @@ describe("attributeReferralBestEffort", () => {
     fakeDb.reset({
       users: fakeDb.dump("users"),
       referral_settings: fakeDb.dump("referral_settings"),
+      referral_reward_config: fakeDb.dump("referral_reward_config"),
       referrals: [
         { id: "ref_existing", referrer_user_id: "referrer_1", referred_user_id: "referred_1", referral_code: "ABCDEFGH", status: "pending", reward_status: "none", created_at: "2026-01-01T00:00:00.000Z" },
       ],
@@ -126,8 +151,8 @@ describe("attributeReferralBestEffort", () => {
   });
 });
 
-describe("qualifyReferral", () => {
-  it("qualifies a pending referral when the action matches the active setting", async () => {
+describe("qualifyReferral (milestone size 1 — every qualification rewards)", () => {
+  it("qualifies a pending referral and issues real credit when the action matches", async () => {
     seedWorld({ activeQualifyingAction: "first_purchase" });
     await attributeReferralBestEffort("referred_1", "ABCDEFGH");
 
@@ -136,9 +161,15 @@ describe("qualifyReferral", () => {
     const referral = fakeDb.dump("referrals")[0];
     expect(referral.status).toBe("qualified");
     expect(referral.qualifying_action).toBe("first_purchase");
-    expect(referral.reward_status).toBe("pending");
-    expect(fakeDb.dump("referral_rewards")).toHaveLength(1);
-    expect(fakeDb.dump("referral_rewards")[0].user_id).toBe("referrer_1");
+    expect(referral.reward_status).toBe("issued");
+
+    const rewards = fakeDb.dump("referral_rewards");
+    expect(rewards).toHaveLength(1);
+    expect(rewards[0].user_id).toBe("referrer_1");
+    expect(rewards[0].reward_type).toBe("credit");
+    expect(rewards[0].amount).toBe(1100);
+    expect(rewards[0].remaining_amount).toBe(1100);
+    expect(rewards[0].status).toBe("issued");
   });
 
   it("does nothing when the action isn't the currently-active one", async () => {
@@ -168,6 +199,36 @@ describe("qualifyReferral", () => {
   });
 });
 
+describe("milestone batching", () => {
+  it("only issues a reward on the Nth qualified referral, not every one", async () => {
+    seedWorld({ activeQualifyingAction: "first_purchase", milestoneSize: 3, rewardAmount: 900 });
+    await attributeReferralBestEffort("referred_1", "ABCDEFGH");
+    await attributeReferralBestEffort("referred_2", "ABCDEFGH");
+    await attributeReferralBestEffort("referred_3", "ABCDEFGH");
+    await attributeReferralBestEffort("referred_4", "ABCDEFGH");
+
+    await qualifyReferral("referred_1", "first_purchase");
+    expect(fakeDb.dump("referral_rewards")).toHaveLength(0);
+
+    await qualifyReferral("referred_2", "first_purchase");
+    expect(fakeDb.dump("referral_rewards")).toHaveLength(0);
+
+    await qualifyReferral("referred_3", "first_purchase");
+    const rewardsAfterThird = fakeDb.dump("referral_rewards");
+    expect(rewardsAfterThird).toHaveLength(1);
+    expect(rewardsAfterThird[0].amount).toBe(900);
+    // Attached to the referral that actually completed the batch.
+    const thirdReferral = fakeDb.dump("referrals").find((r) => r.referred_user_id === "referred_3");
+    expect(thirdReferral?.reward_status).toBe("issued");
+    const firstReferral = fakeDb.dump("referrals").find((r) => r.referred_user_id === "referred_1");
+    expect(firstReferral?.reward_status).toBe("none");
+
+    // The 4th starts a fresh batch — no reward yet.
+    await qualifyReferral("referred_4", "first_purchase");
+    expect(fakeDb.dump("referral_rewards")).toHaveLength(1);
+  });
+});
+
 describe("the qualifying-action setting", () => {
   it("defaults to the seeded setting and changes are append-only", async () => {
     seedWorld({ activeQualifyingAction: "first_purchase" });
@@ -185,9 +246,111 @@ describe("the qualifying-action setting", () => {
   });
 });
 
+describe("the reward config setting", () => {
+  it("defaults to the seeded config and changes are append-only", async () => {
+    seedWorld({ milestoneSize: 10, rewardAmount: 1100 });
+    expect(await getReferralRewardConfig()).toEqual({ milestoneSize: 10, rewardAmount: 1100 });
+
+    await setReferralRewardConfig(5, 2000, "admin_1");
+    expect(await getReferralRewardConfig()).toEqual({ milestoneSize: 5, rewardAmount: 2000 });
+    expect(fakeDb.dump("referral_reward_config")).toHaveLength(2);
+  });
+
+  it("rejects a non-positive milestone size or a negative amount", async () => {
+    seedWorld();
+    await expect(setReferralRewardConfig(0, 1000, "admin_1")).rejects.toThrow(/milestone size/i);
+    await expect(setReferralRewardConfig(10, -5, "admin_1")).rejects.toThrow(/non-negative/i);
+  });
+});
+
+describe("credit ledger", () => {
+  it("getAvailableCredit sums only unspent, issued rewards", async () => {
+    seedWorld();
+    fakeDb.reset({
+      ...Object.fromEntries(["users", "referral_settings", "referral_reward_config"].map((t) => [t, fakeDb.dump(t)])),
+      referral_rewards: [
+        { id: "rw1", referral_id: "ref1", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 1100, remaining_amount: 1100, created_at: "2026-01-01T00:00:00.000Z" },
+        { id: "rw2", referral_id: "ref2", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 1100, remaining_amount: 400, created_at: "2026-01-02T00:00:00.000Z" },
+        { id: "rw3", referral_id: "ref3", user_id: "referrer_1", reward_type: "credit", status: "claimed", amount: 1100, remaining_amount: 0, created_at: "2026-01-03T00:00:00.000Z" },
+      ],
+    });
+    expect(await getAvailableCredit("referrer_1")).toBe(1500);
+  });
+
+  it("reserveCredit spends oldest-first and can partially consume a reward", async () => {
+    seedWorld();
+    fakeDb.reset({
+      ...Object.fromEntries(["users", "referral_settings", "referral_reward_config"].map((t) => [t, fakeDb.dump(t)])),
+      referral_rewards: [
+        { id: "rw_old", referral_id: "ref1", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 1100, remaining_amount: 1100, issued_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+        { id: "rw_new", referral_id: "ref2", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 1100, remaining_amount: 1100, issued_at: "2026-01-02T00:00:00.000Z", created_at: "2026-01-02T00:00:00.000Z" },
+      ],
+      payments: [{ id: "pay_1", user_id: "referrer_1", order_id: "order_1", kind: "order", amount: 400, status: "pending" }],
+      orders: [{ id: "order_1", user_id: "referrer_1", price: 1500 }],
+    });
+
+    const reserved = await reserveCredit("referrer_1", "order_1", "pay_1", 1500);
+    expect(reserved).toBe(1500); // 1100 from rw_old + 400 from rw_new
+
+    const rwOld = fakeDb.dump("referral_rewards").find((r) => r.id === "rw_old");
+    expect(rwOld?.remaining_amount).toBe(0);
+    expect(rwOld?.status).toBe("claimed");
+
+    const rwNew = fakeDb.dump("referral_rewards").find((r) => r.id === "rw_new");
+    expect(rwNew?.remaining_amount).toBe(700);
+    expect(rwNew?.status).toBe("issued");
+
+    const applications = fakeDb.dump("referral_credit_applications");
+    expect(applications).toHaveLength(2);
+    expect(applications.reduce((sum, a) => sum + (a.amount as number), 0)).toBe(1500);
+  });
+
+  it("never reserves more than is actually available", async () => {
+    seedWorld();
+    fakeDb.reset({
+      ...Object.fromEntries(["users", "referral_settings", "referral_reward_config"].map((t) => [t, fakeDb.dump(t)])),
+      referral_rewards: [
+        { id: "rw1", referral_id: "ref1", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 500, remaining_amount: 500, issued_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+      ],
+      payments: [{ id: "pay_1", user_id: "referrer_1", order_id: "order_1", kind: "order", amount: 2000, status: "pending" }],
+      orders: [{ id: "order_1", user_id: "referrer_1", price: 2500 }],
+    });
+
+    const reserved = await reserveCredit("referrer_1", "order_1", "pay_1", 2500);
+    expect(reserved).toBe(500); // only what existed, even though 2500 was desired
+  });
+
+  it("releaseCredit gives back exactly what an unreleased application reserved", async () => {
+    seedWorld();
+    fakeDb.reset({
+      ...Object.fromEntries(["users", "referral_settings", "referral_reward_config"].map((t) => [t, fakeDb.dump(t)])),
+      referral_rewards: [
+        { id: "rw1", referral_id: "ref1", user_id: "referrer_1", reward_type: "credit", status: "issued", amount: 1100, remaining_amount: 1100, issued_at: "2026-01-01T00:00:00.000Z", created_at: "2026-01-01T00:00:00.000Z" },
+      ],
+      payments: [{ id: "pay_1", user_id: "referrer_1", order_id: "order_1", kind: "order", amount: 0, status: "pending" }],
+      orders: [{ id: "order_1", user_id: "referrer_1", price: 1100 }],
+    });
+
+    await reserveCredit("referrer_1", "order_1", "pay_1", 1100);
+    expect(fakeDb.dump("referral_rewards")[0].status).toBe("claimed");
+    expect(await getAvailableCredit("referrer_1")).toBe(0);
+
+    await releaseCredit("pay_1");
+    expect(fakeDb.dump("referral_rewards")[0].status).toBe("issued");
+    expect(fakeDb.dump("referral_rewards")[0].remaining_amount).toBe(1100);
+    expect(await getAvailableCredit("referrer_1")).toBe(1100);
+    expect(fakeDb.dump("referral_credit_applications")[0].released_at).not.toBeNull();
+  });
+
+  it("releaseCredit is a no-op for a payment with nothing reserved", async () => {
+    seedWorld();
+    await expect(releaseCredit("pay_never_reserved")).resolves.toBeUndefined();
+  });
+});
+
 describe("getReferralDashboard", () => {
-  it("reflects real counts, not estimates", async () => {
-    seedWorld({ activeQualifyingAction: "first_purchase" });
+  it("reflects real counts and available credit, not estimates", async () => {
+    seedWorld({ activeQualifyingAction: "first_purchase", milestoneSize: 1, rewardAmount: 1100 });
     await attributeReferralBestEffort("referred_1", "ABCDEFGH");
     await attributeReferralBestEffort("referred_2", "ABCDEFGH");
     await qualifyReferral("referred_1", "first_purchase");
@@ -200,6 +363,20 @@ describe("getReferralDashboard", () => {
     expect(dashboard.pendingReferrals).toBe(1);
     expect(dashboard.rewardsEarned).toBe(1);
     expect(dashboard.progressPercent).toBe(50);
+    expect(dashboard.availableCredit).toBe(1100);
+    expect(dashboard.milestoneSize).toBe(1);
+    expect(dashboard.referralsUntilNextReward).toBe(1);
+  });
+
+  it("reports how many referrals remain until the next milestone", async () => {
+    seedWorld({ activeQualifyingAction: "first_purchase", milestoneSize: 3, rewardAmount: 900 });
+    await attributeReferralBestEffort("referred_1", "ABCDEFGH");
+    await qualifyReferral("referred_1", "first_purchase");
+
+    const dashboard = await getReferralDashboard("referrer_1");
+    expect(dashboard.successfulReferrals).toBe(1);
+    expect(dashboard.referralsUntilNextReward).toBe(2);
+    expect(dashboard.availableCredit).toBe(0); // no milestone hit yet
   });
 });
 

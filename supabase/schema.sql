@@ -506,6 +506,13 @@ create table if not exists orders (
   platform_fee_bps integer,
   platform_fee_amount integer,
   seller_payout_amount integer,
+  -- Display/audit snapshot only (migration 036) — how much FindIt referral
+  -- credit reduced what the buyer paid via Paystack. Never part of the fee
+  -- split above: seller_payout_amount is still computed from the FULL
+  -- price, so a referral credit is FindIt subsidizing the buyer, never a
+  -- discount taken out of the seller's payout.
+  credit_applied integer not null default 0,
+  constraint orders_credit_applied_nonneg check (credit_applied >= 0),
   -- ---- Money invariants (migration 021) ----
   -- Already enforced in application code (lib/payments.ts) before these
   -- existed — these are the backstop, not a replacement for those checks.
@@ -1002,6 +1009,13 @@ create table if not exists referral_rewards (
   reward_type text check (reward_type in ('credit', 'discount', 'voucher', 'subscription_benefit', 'physical_gift')),
   status text not null default 'pending' check (status in ('pending', 'issued', 'claimed', 'void')),
   amount numeric,
+  -- How much of `amount` is still unspent (migration 036) — a lump credit
+  -- rarely matches an order's price exactly, so this supports partial
+  -- spend across one or more orders. Null for the inert, pre-036 shell
+  -- rows; a reward only flips to 'claimed' once this reaches 0.
+  remaining_amount integer,
+  constraint referral_rewards_remaining_amount_range
+    check (remaining_amount is null or (remaining_amount >= 0 and remaining_amount <= amount)),
   meta jsonb,
   created_at timestamptz not null default now(),
   issued_at timestamptz,
@@ -1017,6 +1031,37 @@ create table if not exists referral_settings (
   created_at timestamptz not null default now()
 );
 create index if not exists referral_settings_created_at_idx on referral_settings(created_at desc);
+
+-- referral_reward_config / referral_credit_applications (migration 036) —
+-- see that migration file for the full design note. In short:
+-- referral_reward_config mirrors referral_settings just above (admin-
+-- editable, append-only); referral_credit_applications is the ledger of
+-- exactly how much of which reward went toward which checkout attempt, so
+-- an abandoned/failed checkout can give reserved credit back instead of
+-- losing it (see lib/referrals.ts#reserveCredit / releaseCredit).
+
+create table if not exists referral_reward_config (
+  id text primary key,
+  milestone_size integer not null check (milestone_size > 0),
+  reward_amount integer not null check (reward_amount >= 0),
+  created_by text references users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists referral_reward_config_created_at_idx on referral_reward_config(created_at desc);
+
+create table if not exists referral_credit_applications (
+  id text primary key,
+  reward_id text not null references referral_rewards(id) on delete cascade,
+  user_id text not null references users(id) on delete cascade,
+  payment_id text not null references payments(id) on delete cascade,
+  order_id text not null references orders(id) on delete cascade,
+  amount integer not null check (amount > 0),
+  created_at timestamptz not null default now(),
+  released_at timestamptz
+);
+create index if not exists referral_credit_applications_reward_idx on referral_credit_applications(reward_id);
+create index if not exists referral_credit_applications_user_idx on referral_credit_applications(user_id);
+create index if not exists referral_credit_applications_payment_idx on referral_credit_applications(payment_id);
 
 -- ---------------------------------------------------------------------------
 -- boost_plans / boosts (migration 018)
@@ -1087,6 +1132,8 @@ alter table platform_fee_config enable row level security;
 alter table payouts enable row level security;
 alter table referrals enable row level security;
 alter table referral_rewards enable row level security;
+alter table referral_reward_config enable row level security;
+alter table referral_credit_applications enable row level security;
 alter table referral_settings enable row level security;
 alter table categories enable row level security;
 alter table boost_plans enable row level security;
@@ -1141,6 +1188,10 @@ on conflict (id) do nothing;
 
 insert into referral_settings (id, active_qualifying_action, created_by)
 values ('rs_default', 'first_purchase', null)
+on conflict (id) do nothing;
+
+insert into referral_reward_config (id, milestone_size, reward_amount, created_by)
+values ('rrc_default', 10, 1100, null)
 on conflict (id) do nothing;
 
 insert into boost_plans (id, name, duration_days, price, sort_order) values
