@@ -11,7 +11,7 @@ import { useBusinessNameTakenWarning } from "./useBusinessNameCheck";
 // stagger for the "what happens next" list, same spirit as Home's
 // BOUNCE_CONTAINER/ITEM. The submit button below stays a plain press — it
 // changes a real account into a seller account.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.056 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 22, scale: 0.88, rotate: -2 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

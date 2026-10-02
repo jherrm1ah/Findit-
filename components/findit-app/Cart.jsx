@@ -10,7 +10,7 @@ import { AnimatedNumber, DURATION, EASE, SPRING_SNAPPY, SPRING_BOUNCY, press, wi
 // A bouncier stagger for the cart line items' entrance — screen-local, like
 // Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
 // themselves.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

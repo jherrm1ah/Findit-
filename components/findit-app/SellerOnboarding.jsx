@@ -18,7 +18,7 @@ import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 // Home's BOUNCE_ITEM. Step navigation (Back/Continue/Submit) and the
 // business-type/location chips keep a plain scale-only press: they drive
 // this verification form, not a decorative browsing surface.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 16, scale: 0.9 },
   visible: { opacity: 1, y: 0, scale: 1, transition: SPRING_BOUNCY },

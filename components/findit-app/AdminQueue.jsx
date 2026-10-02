@@ -16,7 +16,7 @@ import { SPRING_BOUNCY, wiggleIn } from "./motion";
 // and every approve/reject/suspend/promote/demote action below keeps its
 // plain press feedback untouched — this screen changes real account and
 // moderation state.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.04 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 14, scale: 0.9 },
   visible: { opacity: 1, y: 0, scale: 1, transition: SPRING_BOUNCY },

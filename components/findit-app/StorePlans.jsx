@@ -13,7 +13,7 @@ const TIER_ICONS = { store_free: Store, store_basic: Store, store_business: Stor
 // The actual upgrade/switch/cancel buttons below keep a plain scale-only
 // press (no rotate) — they change a real subscription, same reasoning as
 // this session's Checkout.jsx edits.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.056 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 22, scale: 0.9, rotate: -2 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

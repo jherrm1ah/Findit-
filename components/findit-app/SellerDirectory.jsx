@@ -12,7 +12,7 @@ import { DURATION, EASE, SPRING_BOUNCY, wiggleIn } from "./motion";
 // A bouncier stagger for the seller list's entrance — screen-local, like
 // Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
 // themselves. Kept tight (0.05) since this list isn't capped like Home's grid.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.04 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 26, scale: 0.75, rotate: -4 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

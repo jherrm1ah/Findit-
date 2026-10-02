@@ -7,7 +7,7 @@ import { SPRING_BOUNCY, wiggleIn } from "./motion";
 // About is a browsing/marketing screen (see this session's Group A) — a
 // local bouncy stagger, same spirit as Home's BOUNCE_CONTAINER/ITEM, rather
 // than the base system's restrained STAGGER_CONTAINER/ITEM.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.07 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.056 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 22, scale: 0.85, rotate: -3 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

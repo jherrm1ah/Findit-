@@ -8,7 +8,7 @@ import { DURATION, EASE, SPRING_BOUNCY, floatLoop } from "./motion";
 // A bouncier stagger for this screen's notification rows — matching Home's
 // browsing-surface treatment rather than a change to STAGGER_ITEM/CONTAINER
 // themselves.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.04 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 18, scale: 0.88, rotate: -3 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

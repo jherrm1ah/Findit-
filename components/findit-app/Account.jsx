@@ -13,7 +13,7 @@ import { DURATION, EASE, SPRING_BOUNCY, press } from "./motion";
 // each card (pay, confirm delivery, report, review) keep the restrained
 // `press` feedback — only the cards' own entrance and the saved-item tiles
 // (pure browsing, not money-moving) pick up the bounce.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 20, scale: 0.85, rotate: -3 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },

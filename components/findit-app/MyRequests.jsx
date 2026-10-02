@@ -11,7 +11,7 @@ import { DURATION, EASE, SPRING_BOUNCY, press } from "./motion";
 // Home's browsing-surface treatment. The money-moving controls inside each
 // card (accept offer & pay, cancel) keep the restrained `press` feedback;
 // only the cards' own entrance picks up the bounce.
-const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.06 } } };
+const BOUNCE_CONTAINER = { hidden: {}, visible: { transition: { staggerChildren: 0.05 } } };
 const BOUNCE_ITEM = {
   hidden: { opacity: 0, y: 20, scale: 0.85, rotate: -3 },
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
