@@ -18,6 +18,7 @@ import { isValidCategoryKey } from "./categoryCatalog";
 import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./requestMatching";
 import { recordReview } from "./reviews";
 import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
+import { qualifyReferral } from "./referrals";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -749,6 +750,19 @@ export async function createProduct(input: {
     .single();
   assertNoError(result, "creating product");
   await replaceProductImages(db, id, images);
+
+  // The "first published product" qualifying action, if a referral is
+  // waiting on it — fired on every new listing, not just a seller's
+  // literal first (see qualifyReferral's own comment for why that's
+  // equivalent and safe). Looked up from sellerId rather than threaded
+  // through as a new parameter, since every existing caller already has
+  // sellerId but not necessarily the owning user's id.
+  if (input.sellerId) {
+    const ownerResult = await db.from("sellers").select("user_id").eq("id", input.sellerId).maybeSingle();
+    const owner = assertNoError(ownerResult, "loading seller for referral qualification") as Row | null;
+    if (owner?.user_id) await qualifyReferral(owner.user_id as string, "first_product");
+  }
+
   return getProduct(id) as Promise<Product>;
 }
 

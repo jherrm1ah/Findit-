@@ -10,6 +10,7 @@ import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
+import { storePendingReferralCode } from "./referral";
 import { getStoredCart, storeCart } from "./cart";
 import { applyCategoryOverrides } from "./data";
 import Home from "./Home";
@@ -37,6 +38,7 @@ import Thread from "./Thread";
 import SellerProfile from "./SellerProfile";
 import SellerDirectory from "./SellerDirectory";
 import MyRequests from "./MyRequests";
+import Referrals from "./Referrals";
 
 function tabsFor(role) {
   const middle =
@@ -406,7 +408,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // so they don't need a second layer of protection.
   const AUTH_REQUIRED_SCREENS = new Set([
     "profile", "accountDetails", "becomeSeller", "notifPrefs",
-    "account", "messages", "notifications", "myRequests", "request",
+    "account", "messages", "notifications", "myRequests", "request", "referrals",
   ]);
 
   const go = (s, group) => {
@@ -1225,6 +1227,27 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
+  // A /ref/[code] link (see app/ref/[code]/page.tsx) hands off here as
+  // /?ref=<code>. Stashed in localStorage rather than acted on directly —
+  // there's no account yet to attribute to if this is a guest's first
+  // visit, and even a signed-in visitor clicking someone else's link isn't
+  // signing up right now. lib/auth.ts#createUser is where attribution
+  // actually happens, reading this back via Login.jsx's signup call.
+  // Runs unconditionally on mount, independent of products/user, unlike
+  // the two deep links below.
+  const refDeepLinkHandled = useRef(false);
+  useEffect(() => {
+    if (refDeepLinkHandled.current) return;
+    refDeepLinkHandled.current = true;
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get("ref");
+    if (!ref) return;
+    storePendingReferralCode(ref);
+    params.delete("ref");
+    const query = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${query ? `?${query}` : ""}`);
+  }, []);
+
   // A shared store link points each listing at /?product=<id> (see
   // app/store/[slug]/page.tsx). Without this the buyer would land on Home
   // with no idea which item they clicked. Runs once products are loaded, and
@@ -1770,6 +1793,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
           <HelpSupport tickets={tickets} onOpenTicket={handleOpenTicket} onCreateTicket={handleCreateTicket} />
         )}
         {screen === "about" && <About />}
+        {screen === "referrals" && <Referrals showToast={showToast} />}
         {screen === "messages" && (
           <Messages conversations={conversations} onOpenThread={handleOpenThread} />
         )}

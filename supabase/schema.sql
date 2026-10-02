@@ -62,6 +62,9 @@ create table if not exists users (
   -- default for every admin so nothing loses capability by default.
   admin_role text
     check (admin_role in ('super_admin', 'verification_admin', 'support_admin', 'finance_admin', 'moderation_admin')),
+  -- Issued lazily (lib/referrals.ts#ensureReferralCode) on first use rather
+  -- than backfilled for every existing account at once — see migration 035.
+  referral_code text unique,
   -- Platform-level suspension — independent of a seller's own status
   -- (sellers.status above only restricts selling; this restricts using the
   -- account at all). See lib/auth.ts#getUserForToken: a suspended account
@@ -970,6 +973,52 @@ create index if not exists payouts_seller_id_idx on payouts(seller_id);
 create index if not exists payouts_status_idx on payouts(status);
 
 -- ---------------------------------------------------------------------------
+-- referrals (migration 035) — see that migration file for the full design
+-- note. referral_settings mirrors platform_fee_config just above: admin-
+-- editable, append-only, read as "the most recent row".
+-- ---------------------------------------------------------------------------
+
+create table if not exists referrals (
+  id text primary key,
+  referrer_user_id text not null references users(id) on delete cascade,
+  referred_user_id text not null unique references users(id) on delete cascade,
+  referral_code text not null,
+  status text not null default 'pending' check (status in ('pending', 'qualified', 'rewarded')),
+  qualifying_action text check (qualifying_action in ('registration', 'first_purchase', 'seller_verification', 'first_product')),
+  qualified_at timestamptz,
+  reward_status text not null default 'none' check (reward_status in ('none', 'pending', 'issued', 'claimed')),
+  reward_claimed_at timestamptz,
+  created_at timestamptz not null default now(),
+  constraint referrals_no_self_referral check (referrer_user_id <> referred_user_id)
+);
+create index if not exists referrals_referrer_idx on referrals(referrer_user_id);
+create index if not exists referrals_code_idx on referrals(referral_code);
+create index if not exists referrals_status_idx on referrals(status);
+
+create table if not exists referral_rewards (
+  id text primary key,
+  referral_id text not null references referrals(id) on delete cascade,
+  user_id text not null references users(id) on delete cascade,
+  reward_type text check (reward_type in ('credit', 'discount', 'voucher', 'subscription_benefit', 'physical_gift')),
+  status text not null default 'pending' check (status in ('pending', 'issued', 'claimed', 'void')),
+  amount numeric,
+  meta jsonb,
+  created_at timestamptz not null default now(),
+  issued_at timestamptz,
+  claimed_at timestamptz
+);
+create index if not exists referral_rewards_user_idx on referral_rewards(user_id);
+create index if not exists referral_rewards_referral_idx on referral_rewards(referral_id);
+
+create table if not exists referral_settings (
+  id text primary key,
+  active_qualifying_action text not null check (active_qualifying_action in ('registration', 'first_purchase', 'seller_verification', 'first_product')),
+  created_by text references users(id),
+  created_at timestamptz not null default now()
+);
+create index if not exists referral_settings_created_at_idx on referral_settings(created_at desc);
+
+-- ---------------------------------------------------------------------------
 -- boost_plans / boosts (migration 018)
 --
 -- A real Paystack-paid promotion for one of a seller's own listings — see
@@ -1085,6 +1134,10 @@ on conflict (id) do update set
 -- before launch, not treat 5% as a permanent decision made here.
 insert into platform_fee_config (id, fee_bps, created_by)
 values ('fee_default', 500, null)
+on conflict (id) do nothing;
+
+insert into referral_settings (id, active_qualifying_action, created_by)
+values ('rs_default', 'first_purchase', null)
 on conflict (id) do nothing;
 
 insert into boost_plans (id, name, duration_days, price, sort_order) values

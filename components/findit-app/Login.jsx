@@ -6,6 +6,7 @@ import { ArrowRight, User, Store, X } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api } from "./api";
+import { getPendingReferralCode, clearPendingReferralCode } from "./referral";
 import OtpInput from "./OtpInput";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 
@@ -72,7 +73,15 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
     password.length >= passwordMinLength &&
     (mode === "login" || (name.trim() && (role === "buyer" || businessName.trim())));
 
-  const doSignup = () => api.signup({ phone, password, name, role, businessName, email: email.trim() || undefined });
+  const doSignup = async () => {
+    const referralCode = getPendingReferralCode() || undefined;
+    const user = await api.signup({ phone, password, name, role, businessName, email: email.trim() || undefined, referralCode });
+    // One attribution attempt per code per device, win or lose (an unknown
+    // or self-referencing code is a silent no-op server-side) — see
+    // components/findit-app/referral.js.
+    clearPendingReferralCode();
+    return user;
+  };
 
   const submit = async () => {
     if (!valid || loading) return;

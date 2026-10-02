@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap, Gift } from "lucide-react";
 import { Pill } from "./shared";
+import { api } from "./api";
 import { naira } from "./data";
 import { SELLER_TYPES } from "@/lib/sellerVerificationLevels";
 import { ADMIN_ROLES, hasAdminPermission } from "@/lib/adminRolesLevels";
@@ -800,6 +801,127 @@ function AdminOverview({ overview, onNavigate }) {
           <StatCard label="Cancelled (30d)" value={overview.finance.cancellations30d} />
           <StatCard label="Expired (30d)" value={overview.finance.expirations30d} />
         </OverviewSection>
+      )}
+    </div>
+  );
+}
+
+const QUALIFYING_ACTION_OPTIONS = [
+  { value: "registration", label: "Account registration" },
+  { value: "first_purchase", label: "First completed purchase" },
+  { value: "seller_verification", label: "Seller verification approved" },
+  { value: "first_product", label: "First published product" },
+];
+
+// Self-contained — fetches and mutates via `api` directly (like
+// Referrals.jsx, the buyer-facing version of this screen) rather than
+// through MainApp-owned handler props, since nothing else on this tab
+// needs MainApp's own state. Every number here is the real
+// referrals/referral_rewards data from lib/referrals.ts — nothing mocked.
+function AdminReferrals({ showToast }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [savingAction, setSavingAction] = useState(false);
+
+  const load = () => {
+    setLoading(true);
+    api
+      .getAdminReferrals()
+      .then(setData)
+      .catch((err) => setError(err.message || "Couldn't load referral data."))
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(load, []);
+
+  const changeQualifyingAction = async (value) => {
+    if (!data || value === data.activeQualifyingAction) return;
+    setSavingAction(true);
+    try {
+      await api.setReferralQualifyingAction(value);
+      showToast?.("Referral qualifying action updated.", "success");
+      load();
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update the qualifying action.", "error");
+    } finally {
+      setSavingAction(false);
+    }
+  };
+
+  if (loading && !data) return <p className="text-[12px] text-[#6B6483]">Loading referral data…</p>;
+  if (error) return <p className="text-[12px] text-[#B91C1C]">{error}</p>;
+  if (!data) return null;
+
+  const { overview, referrals, suspicious } = data;
+
+  return (
+    <div>
+      <motion.div className="grid grid-cols-2 gap-2.5 mb-5" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
+        <StatCard label="Users with a referral code" value={overview.totalUsersWithCode} />
+        <StatCard label="Total referrals" value={overview.totalReferrals} />
+        <StatCard label="Successful" value={overview.successfulReferrals} />
+        <StatCard label="Pending" value={overview.pendingReferrals} />
+        <StatCard label="Rewards issued" value={overview.rewardsIssued} />
+      </motion.div>
+
+      <div className="bg-white border border-[#ECE9F7] rounded-2xl p-4 mb-5">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Qualifying action</p>
+        <p className="text-[11px] text-[#6B6483] mb-3">
+          What a referred account must do for the referral to count as successful. Changing this never affects a
+          referral that already qualified under the old setting.
+        </p>
+        <select
+          value={data.activeQualifyingAction}
+          onChange={(e) => changeQualifyingAction(e.target.value)}
+          disabled={savingAction}
+          className="w-full text-[13px] border border-[#ECE9F7] rounded-xl px-3 py-2.5 text-[#1E1B4B] bg-white disabled:opacity-60"
+        >
+          {QUALIFYING_ACTION_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {suspicious.length > 0 && (
+        <div className="mb-5">
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2 flex items-center gap-1.5">
+            <ShieldAlert size={13} className="text-[#B91C1C]" /> Suspicious activity
+          </p>
+          <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-2xl divide-y divide-[#FECACA]">
+            {suspicious.map((s) => (
+              <div key={s.referrerUserId} className="px-4 py-2.5">
+                <p className="text-[12.5px] font-medium text-[#1E1B4B]">{s.referrerName || s.referrerUserId}</p>
+                <p className="text-[11px] text-[#8A3A3A]">
+                  {s.referralCount} referrals total — a cluster landed within 24 hours of each other.
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-2">Recent referrals</p>
+      {referrals.length === 0 ? (
+        <p className="text-[12px] text-[#6B6483]">No referrals yet.</p>
+      ) : (
+        <div className="bg-white border border-[#ECE9F7] rounded-2xl divide-y divide-[#ECE9F7]">
+          {referrals.map((r) => (
+            <div key={r.id} className="px-4 py-3 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[12.5px] font-medium text-[#1E1B4B] truncate">
+                  {r.referrerName || r.referrerUserId} → {r.referredName || r.referredUserId}
+                </p>
+                <p className="text-[11px] text-[#8A8372]">
+                  {new Date(r.createdAt).toLocaleDateString()} · {r.qualifyingAction ? QUALIFYING_ACTION_OPTIONS.find((o) => o.value === r.qualifyingAction)?.label ?? r.qualifyingAction : "Not yet qualified"}
+                </p>
+              </div>
+              <Pill tone={r.status === "qualified" || r.status === "rewarded" ? "green" : "gold"}>
+                {r.status}
+              </Pill>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -2657,6 +2779,7 @@ export default function AdminQueue({
     can("moderation") && { key: "sellers", label: "Sellers", icon: Store },
     can("verification") && { key: "verification", label: "Verification", icon: BadgeCheck },
     can("users") && { key: "users", label: "Users", icon: Users },
+    can("users") && { key: "referrals", label: "Referrals", icon: Gift },
     can("finance") && { key: "payments", label: "Payments", icon: CreditCard },
     can("finance") && { key: "plans", label: "Plans", icon: Settings2 },
     can("finance") && { key: "analytics", label: "Analytics", icon: BarChart3 },
@@ -2782,6 +2905,15 @@ export default function AdminQueue({
             Platform-wide suspend/reactivate — independent of a seller's own approve/reject/suspend status above.
           </p>
           <UsersManagement onLoadUsers={onLoadUsers} onSetSuspended={onSetUserSuspended} currentAdminId={currentAdminId} />
+        </>
+      )}
+
+      {activeTab === "referrals" && can("users") && (
+        <>
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3 flex items-center gap-1.5">
+            <Gift size={13} className="text-[#7C3AED]" /> Referral program
+          </p>
+          <AdminReferrals showToast={showToast} />
         </>
       )}
 

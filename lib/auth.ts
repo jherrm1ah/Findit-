@@ -5,6 +5,7 @@ import { ValidationError } from "./repo";
 import { normalizeE164 } from "./phone";
 import type { AdminRole } from "./adminRoles";
 import { ensureDefaultStoreSubscription } from "./subscriptions";
+import { ensureReferralCode, attributeReferralBestEffort, qualifyReferral } from "./referrals";
 
 export const SESSION_COOKIE = "findit_session";
 const SESSION_DAYS = 30;
@@ -82,6 +83,11 @@ export async function createUser(input: {
   businessName: string | null;
   phoneVerified: boolean;
   email?: string | null;
+  // The code from whatever /ref/[code] link (or signup form field) the
+  // signer-up arrived through, if any — see lib/referrals.ts. Best-effort:
+  // an invalid, unknown, or self-referencing code never blocks the signup
+  // itself, it just means no referral row gets created.
+  referralCode?: string | null;
 }): Promise<User> {
   const db = getDb();
   const phone = normalizePhone(input.phone);
@@ -137,6 +143,17 @@ export async function createUser(input: {
       console.error("[auth] couldn't provision default Free subscription", err)
     );
   }
+
+  // Every registered user gets a code immediately — not deferred to their
+  // first dashboard visit — so a link they share minutes after signing up
+  // already works.
+  await ensureReferralCode(id).catch((err) => console.error("[auth] couldn't issue referral code", err));
+  await attributeReferralBestEffort(id, input.referralCode ?? null);
+  // Registration only actually "qualifies" a referral when it's the
+  // currently-active qualifying action (see lib/referrals.ts) — most of
+  // the time this is a no-op that leaves the referral 'pending' until a
+  // real purchase/verification/listing happens instead.
+  await qualifyReferral(id, "registration");
 
   const row = assertNoError(
     await db.from("users").select("*").eq("id", id).single(),
