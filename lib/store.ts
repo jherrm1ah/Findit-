@@ -267,12 +267,17 @@ export async function listActiveStoreSlugs(): Promise<{ slug: string; updatedAt:
   const db = getDb();
   const result = await db
     .from("sellers")
-    .select("store_slug, updated_at")
+    .select("store_slug")
     .eq("status", "approved")
     .not("store_slug", "is", null);
   const rows = assertNoError(result, "listing store slugs for sitemap") as Row[];
+  // sellers has no updated_at column — nothing on this table tracks when a
+  // storefront's content last actually changed (created_at means "account
+  // created," not that), so there is no honest value to put here. app/
+  // sitemap.ts already treats a null updatedAt as "omit <lastmod>," which
+  // is the correct behavior when this genuinely isn't known.
   return rows.map((r) => ({
     slug: r.store_slug as string,
-    updatedAt: (r.updated_at as string | null) ?? null,
+    updatedAt: null,
   }));
 }
