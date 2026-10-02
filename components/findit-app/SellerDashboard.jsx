@@ -744,6 +744,46 @@ const CAMPAIGN_HEADLINE_MAX = 60;
 const CAMPAIGN_BODY_MAX = 140;
 const CAMPAIGN_CTA_MAX = 24;
 
+// One campaign's real performance — impressions and clicks are counted
+// server-side (lib/adCampaigns.ts#pickAdCampaignForImpression /
+// #recordAdCampaignClick), never estimated. This is what makes "entered
+// the rotation" a legitimate product instead of a vague promise: a seller
+// can see exactly how many times their slide was actually shown.
+function CampaignStatRow({ campaign: c, live }) {
+  const ctr = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(1) : "0.0";
+  return (
+    <div className="bg-[#F5F2FC] rounded-xl p-3">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{c.headline}</p>
+        <span
+          className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+            live ? "text-[#10B981] bg-[#10B981]/12" : "text-[#8A8372] bg-[#8A8372]/12"
+          }`}
+        >
+          {live ? "Live" : "Ended"}
+        </span>
+      </div>
+      <p className="text-[9.5px] text-[#8A8372] mb-2">
+        {live ? "Until" : "Ended"} {new Date(c.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+      </p>
+      <div className="flex gap-4">
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{c.impressions.toLocaleString("en-NG")}</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">Impressions</p>
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{c.clicks.toLocaleString("en-NG")}</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">Clicks</p>
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{ctr}%</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">CTR</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Paid Sponsored slides in Home's promo carousel (see lib/adCampaigns.ts).
 // Self-contained the same way StoreAnalytics above is: this card owns its
 // own form/upload/submit state rather than threading a dozen fields
@@ -823,29 +863,24 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
 
       {live.length === 0 && past.length === 0 && !open && (
         <p className="text-[11.5px] text-[#6B6483]">
-          Pay to show a Sponsored slide in every buyer&apos;s home screen carousel, alongside FindIt&apos;s own features.
+          Pay to enter FindIt&apos;s homepage promotional rotation — your campaign shows up in the carousel
+          alongside FindIt&apos;s own features, with real impressions and clicks tracked below.
         </p>
       )}
 
       {live.length > 0 && (
         <div className="space-y-2 mb-2">
           {live.map((c) => (
-            <div key={c.id} className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3">
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{c.headline}</p>
-                <p className="text-[9.5px] text-[#8A8372]">
-                  Live until {new Date(c.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
-                </p>
-              </div>
-              <span className="text-[9.5px] font-semibold text-[#10B981] bg-[#10B981]/12 px-2 py-0.5 rounded-full shrink-0">Live</span>
-            </div>
+            <CampaignStatRow key={c.id} campaign={c} live />
           ))}
         </div>
       )}
       {past.length > 0 && !open && (
-        <p className="text-[10px] text-[#8A8372]">
-          {past.length} past campaign{past.length === 1 ? "" : "s"}.
-        </p>
+        <div className="space-y-2">
+          {past.map((c) => (
+            <CampaignStatRow key={c.id} campaign={c} live={false} />
+          ))}
+        </div>
       )}
 
       <AnimatePresence>

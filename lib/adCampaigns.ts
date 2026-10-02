@@ -51,6 +51,11 @@ export type AdCampaign = {
   endsAt: string;
   takenDownAt: string | null;
   takenDownReason: string | null;
+  // Migration 041 — real, counted-at-serve-time (impressions) and
+  // counted-at-tap-time (clicks) numbers, never projected. See
+  // pickAdCampaignForImpression/recordAdCampaignClick below.
+  impressions: number;
+  clicks: number;
   createdAt: string;
 };
 
@@ -69,6 +74,8 @@ function rowToAdCampaign(row: Row): AdCampaign {
     endsAt: row.ends_at as string,
     takenDownAt: (row.taken_down_at as string | null) ?? null,
     takenDownReason: (row.taken_down_reason as string | null) ?? null,
+    impressions: (row.impressions as number | null) ?? 0,
+    clicks: (row.clicks as number | null) ?? 0,
     createdAt: row.created_at as string,
   };
 }
@@ -166,12 +173,12 @@ export function isCampaignActive(endsAt: string, now: number = Date.now()): bool
   return new Date(endsAt).getTime() > now;
 }
 
-// What Home's carousel renders — every currently-active campaign, oldest
-// first (so a longer-running campaign doesn't get bumped by a newer one;
-// Home itself decides how many slides to actually show). Deliberately a
-// plain .gt query, not a fetch-all-then-filter-in-JS: the set of live
-// campaigns is small by construction (each is a paid, time-boxed slide),
-// but there's no reason to ship rows that are already over.
+// Every currently-active campaign — the eligible pool
+// pickAdCampaignForImpression below draws from. Not what Home renders
+// directly: showing all of them at once is the exact "10 advertisers
+// fighting over one homepage card" problem the rotation system below
+// exists to avoid. Deliberately a plain .gt query, not a fetch-all-then-
+// filter-in-JS: there's no reason to ship rows that are already over.
 export async function listActiveAdCampaigns(): Promise<AdCampaign[]> {
   const db = getDb();
   const result = await db
@@ -181,6 +188,42 @@ export async function listActiveAdCampaigns(): Promise<AdCampaign[]> {
     .order("created_at", { ascending: true });
   const rows = assertNoError(result, "listing active ad campaigns") as Row[];
   return rows.map(rowToAdCampaign);
+}
+
+// The rotation engine, v1 — what Home's carousel actually calls. Picks ONE
+// eligible campaign at random (uniform for now; a later slice can weight
+// this by remaining budget/priority once those concepts exist) and counts
+// showing it as a real impression, so exposure is spread across whatever's
+// currently running instead of every buyer seeing every advertiser at
+// once. Returns null when nothing is active — Home already handles "no
+// campaign slide" today since it only ever had the static BANNERS before
+// this feature existed at all.
+export async function pickAdCampaignForImpression(): Promise<AdCampaign | null> {
+  const active = await listActiveAdCampaigns();
+  if (active.length === 0) return null;
+  const picked = active[Math.floor(Math.random() * active.length)];
+
+  const db = getDb();
+  // Read-then-write, not a CAS retry loop — see migration 041's note: a
+  // lost increment under a rare concurrent pick just slightly undercounts
+  // a display metric, not a money field.
+  const updateResult = await db.from("ad_campaigns").update({ impressions: picked.impressions + 1 }).eq("id", picked.id);
+  assertNoError(updateResult, "recording an ad campaign impression");
+
+  return { ...picked, impressions: picked.impressions + 1 };
+}
+
+// Called when a buyer actually taps a campaign slide — see
+// app/api/ad-campaigns/[id]/click. Silently a no-op for an id that
+// doesn't exist (a stale link, a double-tap after takedown) rather than
+// throwing; a click landing a moment too late to matter isn't an error.
+export async function recordAdCampaignClick(id: string): Promise<void> {
+  const db = getDb();
+  const result = await db.from("ad_campaigns").select("clicks").eq("id", id).maybeSingle();
+  const row = assertNoError(result, "loading ad campaign for a click") as Row | null;
+  if (!row) return;
+  const updateResult = await db.from("ad_campaigns").update({ clicks: (row.clicks as number) + 1 }).eq("id", id);
+  assertNoError(updateResult, "recording an ad campaign click");
 }
 
 export async function listAdCampaignsForSeller(sellerId: string): Promise<AdCampaign[]> {

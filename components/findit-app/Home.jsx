@@ -99,7 +99,7 @@ export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
   orders = [], myRequests = [], cartCount = 0, onRequireAuth,
-  adCampaigns = [], onViewSeller,
+  adCampaign = null, onViewSeller, onAdCampaignClick,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -116,14 +116,19 @@ export default function Home({
   };
 
   // The carousel's real slide list: FindIt's own BANNERS, unchanged and
-  // always first, with any currently-active paid campaigns appended after
-  // them — never the other way around, so advertising can never push the
-  // app's own Request-first feature out of the default/first position. A
+  // always first, with AT MOST ONE paid campaign appended after them — the
+  // rotation engine (lib/adCampaigns.ts#pickAdCampaignForImpression)
+  // already picked this one load's slide server-side and counted it as an
+  // impression, so there is never a list to choose from here. Showing
+  // every active campaign at once was the exact "10 advertisers fighting
+  // over one homepage card" problem the rotation exists to avoid — never
+  // the other way around either, so advertising can never push the app's
+  // own Request-first feature out of the default/first position. A
   // campaign slide is marked "Sponsored" in the render below; BANNERS never
   // are, because neither is an advertisement.
   const slides = [
     ...BANNERS.map((b) => ({ kind: "static", ...b })),
-    ...adCampaigns.map((c) => ({ kind: "campaign", campaign: c })),
+    ...(adCampaign ? [{ kind: "campaign", campaign: adCampaign }] : []),
   ];
 
   // The promo banner used to only change on a manual dot tap — auto-advance
@@ -145,12 +150,16 @@ export default function Home({
 
   // Static slides (BANNERS) navigate to another screen; a campaign slide
   // goes to the specific listing it's promoting when it has one, or
-  // otherwise to the advertiser's own store page — never a dead tap.
+  // otherwise to the advertiser's own store page — never a dead tap. Also
+  // records a real click (fire-and-forget — never awaited, so it can't
+  // delay the navigation itself) for the seller's own impressions/clicks/
+  // CTR numbers on their Advertise card.
   const handleSlideTap = (slide) => {
     if (slide.kind === "static") {
       go(slide.action);
       return;
     }
+    onAdCampaignClick?.(slide.campaign.id);
     const product = slide.campaign.targetProductId
       ? products.find((p) => p.id === slide.campaign.targetProductId)
       : null;

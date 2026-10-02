@@ -164,10 +164,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // Real, admin-editable boost pricing (lib/boosts.ts) — see
   // GET /api/boost-plans.
   const [boostPlans, setBoostPlans] = useState([]);
-  // Every currently-active Sponsored slide for Home's promo carousel —
-  // public, loaded for every visitor the same way products is, not just
-  // sellers/admins. See lib/adCampaigns.ts#listActiveAdCampaigns.
-  const [adCampaigns, setAdCampaigns] = useState([]);
+  // This load's one Sponsored slide for Home's promo carousel — the
+  // rotation engine picks it server-side and counts a real impression on
+  // each fetch, so it's deliberately a single value, not a list. Public,
+  // loaded for every visitor the same way products is, not just sellers/
+  // admins. See lib/adCampaigns.ts#pickAdCampaignForImpression.
+  const [adCampaign, setAdCampaign] = useState(null);
   // Real, admin-editable ad campaign pricing — see GET /api/ad-campaign-plans.
   const [adCampaignPlans, setAdCampaignPlans] = useState([]);
   // This seller's own campaigns (live and past) — the Advertise card's
@@ -259,11 +261,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     // applyCategoryOverrides in ./data for why this isn't setState.
     api.getCategories().then(applyCategoryOverrides).catch(() => {});
 
-    // Every currently-active Sponsored slide for Home's promo carousel —
-    // same "works for a signed-out guest too" reasoning as getCategories
-    // above, kept out of the preloadedMainData bundle so a slow or failed
-    // campaign fetch can never hold up (or take down) products/orders.
-    api.getActiveAdCampaigns().then(setAdCampaigns).catch(() => {});
+    // This load's Sponsored slide for Home's promo carousel — same "works
+    // for a signed-out guest too" reasoning as getCategories above, kept
+    // out of the preloadedMainData bundle so a slow or failed campaign
+    // fetch can never hold up (or take down) products/orders. The pick
+    // itself (and its impression count) happens server-side on this call.
+    api.getActiveAdCampaign().then(setAdCampaign).catch(() => {});
 
     // App.jsx starts this same fetch as soon as the session check resolves
     // — overlapping it with the splash screen's own display time instead of
@@ -867,6 +870,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
+  // Fire-and-forget — see the click route's own comment for why this is
+  // never awaited before Home actually navigates the buyer away.
+  const handleAdCampaignClick = (campaignId) => {
+    api.recordAdCampaignClick(campaignId);
+  };
+
   const handleCancelStorePlan = async () => {
     setChangingPlan(true);
     try {
@@ -1084,10 +1093,11 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const handleTakeDownAdCampaign = async (id, reason) => {
     const campaign = await api.takeDownAdCampaign(id, reason);
     api.getAdminActions().then(setAdminActions).catch(() => {});
-    // Home's own carousel reads the public active-campaigns list — refresh
-    // it too so a taken-down campaign stops appearing there right away
-    // rather than waiting for this buyer's next full page load.
-    api.getActiveAdCampaigns().then(setAdCampaigns).catch(() => {});
+    // Re-picks this admin's own Home carousel slide so a campaign they
+    // just took down can't keep showing in their own session until their
+    // next full page load. Another buyer's already-fetched session isn't
+    // affected either way — the rotation re-picks fresh on every load.
+    api.getActiveAdCampaign().then(setAdCampaign).catch(() => {});
     return campaign;
   };
 
@@ -1645,7 +1655,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             myRequests={myRequests}
             cartCount={cartCount}
             onRequireAuth={onRequireAuth}
-            adCampaigns={adCampaigns}
+            adCampaign={adCampaign}
+            onAdCampaignClick={handleAdCampaignClick}
             onViewSeller={handleViewSeller}
           />
         )}

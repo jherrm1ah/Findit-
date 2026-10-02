@@ -2450,6 +2450,8 @@ function AdCampaignCard({ campaign, onTakeDown }) {
         <p className="text-[10px] text-[#8A8372]">
           {naira(campaign.amount)} · {isLive ? "until" : campaign.takenDownAt ? "taken down" : "ended"}{" "}
           {new Date(campaign.takenDownAt ?? campaign.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+          {" · "}
+          {campaign.impressions.toLocaleString("en-NG")} impressions · {campaign.clicks.toLocaleString("en-NG")} clicks
         </p>
 
         {isLive && !reasoning && (

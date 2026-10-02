@@ -256,7 +256,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     }).then((d) => d.plan),
-  getActiveAdCampaigns: () => request("/api/ad-campaigns/active").then((d) => d.campaigns),
+  // One campaign (or null) per call — the rotation engine picks and counts
+  // the impression server-side; see lib/adCampaigns.ts#pickAdCampaignForImpression.
+  getActiveAdCampaign: () => request("/api/ad-campaigns/active").then((d) => d.campaign),
+  // Fire-and-forget from Home.jsx — never awaited before navigating, see
+  // the click route's own comment for why a failure here is silent.
+  recordAdCampaignClick: (id) => request(`/api/ad-campaigns/${id}/click`, { method: "POST" }).catch(() => {}),
   getAdCampaignPlans: () => request("/api/ad-campaign-plans").then((d) => d.plans),
   getMyAdCampaigns: () => request("/api/sellers/me/ad-campaigns").then((d) => d.campaigns),
   createAdCampaign: (input) =>
