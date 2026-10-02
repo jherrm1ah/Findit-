@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { getDb, assertNoError } from "./db";
 import { computeVerificationLevel, type VerificationLevel, type VerificationStatus } from "./sellerVerificationLevels";
 import type { Order } from "./repo";
+import { qualifyReferral } from "./referrals";
 
 /* -------------------------------------------------------------------------- */
 /*  The public identifier                                                      */
@@ -175,6 +176,12 @@ export async function recordCompletedTransaction(order: Order): Promise<Transact
     // Refuses to invent a verified record for anything that isn't actually
     // complete, even if a future caller gets this wrong.
     if (order.escrowStatus !== "released" || order.paymentStatus !== "paid") return null;
+
+    // The buyer's first genuinely completed purchase, if a referral is
+    // waiting on one — safe to call on every completion of every order,
+    // not just a buyer's first (see qualifyReferral's own comment): it
+    // only ever has an effect the one time it matters.
+    await qualifyReferral(order.userId, "first_purchase");
 
     const db = getDb();
     const existingResult = await db

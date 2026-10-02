@@ -30,7 +30,8 @@ const UNIQUE_COLUMNS: Record<string, string[]> = {
   store_slug_aliases: ["slug"],
   payouts: ["id", "order_id"],
   payments: ["id", "provider_reference"],
-  users: ["id", "phone"],
+  users: ["id", "phone", "referral_code"],
+  referrals: ["id", "referred_user_id"],
   orders: ["id"],
   products: ["id"],
   reviews: ["id", "order_id"],
@@ -48,6 +49,17 @@ function uniqueViolation(table: string, rows: Row[], candidate: Row): string | n
   return null;
 }
 type QueryResult = { data: unknown; error: { message: string; code?: string } | null; count?: number };
+
+// Real Postgres fills created_at from `default now()` when an insert omits
+// it — several append-only patterns (platform_fee_config, referral_settings)
+// depend on "the latest row" ordering by it. A monotonic counter rather than
+// Date.now() twice: two inserts in the same test, same millisecond, must
+// still sort in call order, not tie.
+let fakeClock = Date.now();
+function nextTimestamp(): string {
+  fakeClock += 1;
+  return new Date(fakeClock).toISOString();
+}
 
 class FakeQueryBuilder implements PromiseLike<QueryResult> {
   private filters: Array<(row: Row) => boolean> = [];
@@ -101,6 +113,15 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
     this.filters.push((r) => (r[col] ?? null) === val);
     return this;
   }
+  // Only the 'is' operator is implemented — the one real call site
+  // (lib/referrals.ts#getAdminReferralOverview, counting users with a
+  // referral_code) needs. Extend for another operator only when an actual
+  // test needs it, same rule as every other method here.
+  not(col: string, operator: "is", val: null | boolean) {
+    if (operator !== "is") throw new Error(`FakeQueryBuilder.not: unsupported operator "${operator}"`);
+    this.filters.push((r) => (r[col] ?? null) !== val);
+    return this;
+  }
   order(col: string, opts?: { ascending?: boolean }) {
     this.orderSpec = { col, ascending: opts?.ascending ?? true };
     return this;
@@ -118,7 +139,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
     const rows = this.getRows(this.table);
 
     if (this.op === "insert") {
-      const items = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((r) => ({ ...r }));
+      const items = (Array.isArray(this.payload) ? this.payload : [this.payload]).map((r) => ({
+        created_at: nextTimestamp(),
+        ...r,
+      }));
       const accepted: Row[] = [...rows];
       for (const item of items) {
         const conflict = uniqueViolation(this.table, accepted, item);

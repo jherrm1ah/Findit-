@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     role?: string;
     businessName?: string;
     email?: string;
+    referralCode?: string;
   };
   try {
     body = await req.json();
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
       businessName: role === "seller" ? businessName!.trim() : null,
       phoneVerified,
       email: body.email,
+      referralCode: body.referralCode,
     });
     if (isSmsConfigured()) await clearOtp(normalizedPhone, "signup");
     const token = await createSession(user.id);

@@ -2,6 +2,7 @@ import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
 import { uploadVerificationEvidence, getSignedEvidenceUrl } from "./storage";
 import { notifyBestEffort, logAdminAction } from "./repo";
+import { qualifyReferral } from "./referrals";
 import {
   SellerType,
   VerificationStatus,
@@ -339,4 +340,8 @@ export async function adminReviewVerification(
           ? `FindIt needs a bit more before approving your verification: ${reason}`
           : `Your seller verification wasn't approved: ${reason}`,
   });
+
+  if (action === "approved") {
+    await qualifyReferral(seller.user_id as string, "seller_verification");
+  }
 }

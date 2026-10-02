@@ -251,6 +251,14 @@ export const api = {
       body: JSON.stringify(patch),
     }).then((d) => d.plan),
   getRiskSignals: () => request("/api/admin/risk-signals").then((d) => d.signals),
+  getReferralDashboard: () => request("/api/referrals/me"),
+  getAdminReferrals: () => request("/api/admin/referrals"),
+  setReferralQualifyingAction: (activeQualifyingAction) =>
+    request("/api/admin/referrals", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ activeQualifyingAction }),
+    }),
   getMyTickets: () => request("/api/support/tickets").then((d) => d.tickets),
   createTicket: (subject, body) =>
     request("/api/support/tickets", {

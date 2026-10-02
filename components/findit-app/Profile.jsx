@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle, Crown } from "lucide-react";
+import { ShieldCheck, ListOrdered, Bell, LayoutDashboard, User, ChevronRight, LogOut, MessageCircle, PackageSearch, Camera, Clock, CheckCircle2, XCircle, Crown, Gift } from "lucide-react";
 import { Pill } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
 import { SPRING_BOUNCY, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
@@ -71,6 +71,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
       label: "FindIt Pro",
       subtitle: findItPro?.subscription ? "Active" : "Account-wide membership",
     },
+    { key: "referrals", icon: Gift, label: "Refer & earn", subtitle: "Invite friends to FindIt" },
     {
       key: "seller",
       icon: LayoutDashboard,
