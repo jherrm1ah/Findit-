@@ -142,6 +142,9 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // exists for sellers.
   const [findItPro, setFindItPro] = useState(null);
   const [changingFindItPro, setChangingFindItPro] = useState(false);
+  // Real, spendable FindIt referral credit (naira) — see lib/referrals.ts.
+  // Refreshed below alongside the user's other account-scoped data.
+  const [availableCredit, setAvailableCredit] = useState(0);
   // { logoUrl, bannerUrl } | null — real backing for the plan's
   // "customization" benefit; see PATCH /api/sellers/me/branding.
   const [storeBranding, setStoreBranding] = useState(null);
@@ -302,6 +305,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     if (user) {
       api.getFindItPro().then(setFindItPro).catch(() => {});
       api.getSavedIds().then(setSavedIds).catch(() => {});
+      api.getReferralDashboard().then((d) => setAvailableCredit(d.availableCredit)).catch(() => {});
       // Fetched here too (not just on navigating to the Messages screen) so
       // Profile's "Messages" card can show an unread count up front, the
       // same way its "Notifications" card already does — otherwise you'd
@@ -519,6 +523,31 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     } catch (err) {
       showToast(err.message || "Couldn't place that order — try again.", "error");
     }
+  };
+
+  // Thin wrapper around api.payForOrder. When credit fully covers an order
+  // (result.applied === true), there's no Paystack redirect to come back
+  // from — nothing else will ever refresh this order's paid status or the
+  // spent balance, so this patches both directly, the same way a real
+  // redirect-back would. The partial/no-credit paths are unaffected: they
+  // redirect to Paystack, and the existing flow picks up from there.
+  const handlePayOrder = async (orderId, applyCredit) => {
+    const result = await api.payForOrder(orderId, applyCredit);
+    if (result.applied) {
+      api.getReferralDashboard().then((d) => setAvailableCredit(d.availableCredit)).catch(() => {});
+      try {
+        const freshOrders = await api.getOrders();
+        setOrders(freshOrders);
+        const freshOrder = freshOrders.find((o) => o.id === orderId);
+        if (freshOrder) {
+          setCheckoutOrder((co) => (co && co.order.id === orderId ? { ...co, order: freshOrder } : co));
+        }
+      } catch {
+        // best-effort — the order IS paid server-side regardless; worst
+        // case the buyer only sees the confirmation on their next visit.
+      }
+    }
+    return result;
   };
 
   const handleAddToCart = async (prod, qty) => {
@@ -1823,7 +1852,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             order={checkoutOrder.order}
             product={checkoutOrder.product}
             qty={checkoutOrder.qty}
-            onPay={api.payForOrder}
+            onPay={handlePayOrder}
+            availableCredit={availableCredit}
             showToast={showToast}
             go={go}
           />

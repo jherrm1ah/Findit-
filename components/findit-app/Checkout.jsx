@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "motion/react";
-import { CreditCard, ShieldCheck, CheckCircle2 } from "lucide-react";
+import { CreditCard, ShieldCheck, CheckCircle2, Gift } from "lucide-react";
 import { STEPS, naira } from "./data";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
 
@@ -16,12 +16,18 @@ const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 // Paystack charge, confirmed by app/api/payments/paystack/webhook. Nothing
 // here marks the order paid on its own; the button only ever starts a real
 // checkout or reports honestly that payments aren't configured yet.
-export default function Checkout({ order, product, qty, onPay, showToast, go }) {
+export default function Checkout({ order, product, qty, onPay, availableCredit = 0, showToast, go }) {
   const [paying, setPaying] = useState(false);
   const [notConfigured, setNotConfigured] = useState(false);
   const total = product.price * qty;
   const alreadyPaid = order?.paymentStatus === "paid";
   const activeIdx = alreadyPaid ? 1 : 0;
+
+  // Pre-selected whenever there's credit to spend — the server always caps
+  // this at the order's own price (see the pay route), this is just intent.
+  const [useCredit, setUseCredit] = useState(availableCredit > 0);
+  const creditToApply = useCredit ? Math.min(availableCredit, total) : 0;
+  const payable = total - creditToApply;
 
   // The signature moment plays once — the first time this screen actually
   // witnesses paymentStatus flip to "paid", never on a later visit to an
@@ -43,7 +49,7 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
     if (!order) return;
     setPaying(true);
     try {
-      const result = await onPay(order.id);
+      const result = await onPay(order.id, useCredit);
       if (result.configured === false) {
         setNotConfigured(true);
         showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
@@ -144,11 +150,34 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
       >
         <p className="text-[12px] text-[#6B6483] mb-1">{product.name} · Qty {qty}</p>
         <p className="text-[15px] font-semibold text-[#1E1B4B] mb-1">{product.seller}</p>
-        <p className="text-[18px] font-bold text-[#7C3AED]">{naira(total)}</p>
+        {creditToApply > 0 ? (
+          <div className="flex items-baseline gap-2">
+            <p className="text-[13px] text-[#8A8372] line-through">{naira(total)}</p>
+            <p className="text-[18px] font-bold text-[#7C3AED]">{naira(payable)}</p>
+          </div>
+        ) : (
+          <p className="text-[18px] font-bold text-[#7C3AED]">{naira(total)}</p>
+        )}
       </motion.div>
 
       {!alreadyPaid && !notConfigured && (
         <>
+          {availableCredit > 0 && (
+            <motion.button
+              type="button"
+              onClick={() => setUseCredit((v) => !v)}
+              {...bouncyPress}
+              className="w-full flex items-center gap-2.5 rounded-[20px] p-4 mb-5 text-left border border-[#ECE9F7] bg-white"
+            >
+              <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${useCredit ? "bg-[#7C3AED] border-[#7C3AED]" : "border-[#B7AFD6]"}`}>
+                {useCredit && <CheckCircle2 size={11} className="text-white" />}
+              </div>
+              <Gift size={15} className="text-[#7C3AED] shrink-0" />
+              <p className="text-[12.5px] text-[#1E1B4B] flex-1">
+                Use {naira(Math.min(availableCredit, total))} FindIt credit on this order
+              </p>
+            </motion.button>
+          )}
           <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-5 flex items-start gap-2.5">
             <ShieldCheck size={16} className="text-[#7C3AED] mt-0.5 shrink-0" />
             <p className="text-[12px] text-[#514B67]">
@@ -162,7 +191,7 @@ export default function Checkout({ order, product, qty, onPay, showToast, go }) 
             className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl mb-6 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            {paying ? "Starting checkout…" : `Pay ${naira(total)}`}
+            {paying ? "Starting checkout…" : payable <= 0 ? "Pay with credit" : `Pay ${naira(payable)}`}
           </motion.button>
         </>
       )}

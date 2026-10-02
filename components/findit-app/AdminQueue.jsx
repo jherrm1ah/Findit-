@@ -823,12 +823,19 @@ function AdminReferrals({ showToast }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [savingAction, setSavingAction] = useState(false);
+  const [savingReward, setSavingReward] = useState(false);
+  const [milestoneInput, setMilestoneInput] = useState("");
+  const [amountInput, setAmountInput] = useState("");
 
   const load = () => {
     setLoading(true);
     api
       .getAdminReferrals()
-      .then(setData)
+      .then((d) => {
+        setData(d);
+        setMilestoneInput(String(d.rewardConfig.milestoneSize));
+        setAmountInput(String(d.rewardConfig.rewardAmount));
+      })
       .catch((err) => setError(err.message || "Couldn't load referral data."))
       .finally(() => setLoading(false));
   };
@@ -849,11 +856,36 @@ function AdminReferrals({ showToast }) {
     }
   };
 
+  const saveRewardConfig = async (e) => {
+    e.preventDefault();
+    const milestoneSize = Number(milestoneInput);
+    const rewardAmount = Number(amountInput);
+    if (!Number.isInteger(milestoneSize) || milestoneSize < 1) {
+      showToast?.("Milestone size must be a whole number of at least 1.", "error");
+      return;
+    }
+    if (!Number.isInteger(rewardAmount) || rewardAmount < 0) {
+      showToast?.("Reward amount must be a whole, non-negative number.", "error");
+      return;
+    }
+    setSavingReward(true);
+    try {
+      await api.setReferralRewardConfig(milestoneSize, rewardAmount);
+      showToast?.("Referral reward updated.", "success");
+      load();
+    } catch (err) {
+      showToast?.(err.message || "Couldn't update the referral reward.", "error");
+    } finally {
+      setSavingReward(false);
+    }
+  };
+
   if (loading && !data) return <p className="text-[12px] text-[#6B6483]">Loading referral data…</p>;
   if (error) return <p className="text-[12px] text-[#B91C1C]">{error}</p>;
   if (!data) return null;
 
-  const { overview, referrals, suspicious } = data;
+  const { overview, referrals, suspicious, rewardConfig } = data;
+  const rewardConfigDirty = milestoneInput !== String(rewardConfig.milestoneSize) || amountInput !== String(rewardConfig.rewardAmount);
 
   return (
     <div>
@@ -882,6 +914,49 @@ function AdminReferrals({ showToast }) {
           ))}
         </select>
       </div>
+
+      <form onSubmit={saveRewardConfig} className="bg-white border border-[#ECE9F7] rounded-2xl p-4 mb-5">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Referral reward</p>
+        <p className="text-[11px] text-[#6B6483] mb-3">
+          A referrer earns this much FindIt credit every time they rack up this many successful referrals — a batch,
+          not a per-referral payout. Changing it never rewrites a reward already issued under the old setting.
+        </p>
+        <div className="flex gap-2 mb-3">
+          <label className="flex-1">
+            <span className="text-[10.5px] uppercase tracking-wide text-[#8A8372] mb-1 block">Referrals per batch</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={milestoneInput}
+              onChange={(e) => setMilestoneInput(e.target.value)}
+              disabled={savingReward}
+              className="w-full text-[13px] border border-[#ECE9F7] rounded-xl px-3 py-2.5 text-[#1E1B4B] bg-white disabled:opacity-60"
+            />
+          </label>
+          <label className="flex-1">
+            <span className="text-[10.5px] uppercase tracking-wide text-[#8A8372] mb-1 block">Credit (₦)</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={amountInput}
+              onChange={(e) => setAmountInput(e.target.value)}
+              disabled={savingReward}
+              className="w-full text-[13px] border border-[#ECE9F7] rounded-xl px-3 py-2.5 text-[#1E1B4B] bg-white disabled:opacity-60"
+            />
+          </label>
+        </div>
+        <motion.button
+          type="submit"
+          disabled={savingReward || !rewardConfigDirty}
+          {...bouncyPress}
+          className="w-full text-white text-[13px] font-semibold py-2.5 rounded-xl disabled:opacity-40"
+          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+        >
+          {savingReward ? "Saving…" : "Save reward"}
+        </motion.button>
+      </form>
 
       {suspicious.length > 0 && (
         <div className="mb-5">

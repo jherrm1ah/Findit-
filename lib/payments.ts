@@ -90,7 +90,15 @@ export async function listFeeHistory(): Promise<FeeHistoryEntry[]> {
 // invoked twice. Snapshots the fee at THIS moment — never recomputed later,
 // so a subsequent fee change can't rewrite what an already-paid order's
 // numbers were.
-export async function confirmOrderPayment(orderId: string): Promise<void> {
+// creditApplied is a display/audit snapshot ONLY (see migration 036) — it
+// never changes the fee split or seller_payout_amount below, both still
+// computed from the order's full price. A referral credit is FindIt
+// subsidizing what the buyer paid via Paystack, never a discount taken out
+// of the seller's payout. The credit itself was already reserved (and its
+// ledger entries written) before this ever runs — see
+// lib/referrals.ts#reserveCredit, called from the pay route at checkout
+// start — so there is nothing left to deduct here, only to record.
+export async function confirmOrderPayment(orderId: string, creditApplied = 0): Promise<void> {
   const order = await getOrder(orderId);
   if (!order) throw new Error(`confirmOrderPayment: order ${orderId} not found`);
   if (order.paymentStatus === "paid") return; // already applied — nothing to do
@@ -108,6 +116,7 @@ export async function confirmOrderPayment(orderId: string): Promise<void> {
       platform_fee_bps: feeBps,
       platform_fee_amount: feeAmount,
       seller_payout_amount: payoutAmount,
+      credit_applied: creditApplied,
     })
     .eq("id", orderId)
     .eq("payment_status", "pending")

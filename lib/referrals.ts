@@ -253,15 +253,15 @@ export async function qualifyReferral(userId: string, action: QualifyingAction):
     // write, not just when it was read above — closes the race where two
     // qualifying events fire for the same user at once (e.g. a purchase
     // and an admin seller-verification approval landing together). Only
-    // the request whose update actually matches a row goes on to create a
-    // reward; the loser's select() comes back empty and it stops here.
+    // the request whose update actually matches a row goes on to check the
+    // milestone below; the loser's select() comes back empty and it stops
+    // here.
     const updateResult = await db
       .from("referrals")
       .update({
         status: "qualified",
         qualifying_action: action,
         qualified_at: new Date().toISOString(),
-        reward_status: "pending",
       })
       .eq("id", referral.id as string)
       .eq("status", "pending")
@@ -271,21 +271,265 @@ export async function qualifyReferral(userId: string, action: QualifyingAction):
     if (!updated) return;
 
     const referrerUserId = updated.referrer_user_id as string;
-    const rewardResult = await db.from("referral_rewards").insert({
-      id: "rrw_" + crypto.randomBytes(9).toString("hex"),
-      referral_id: updated.id as string,
-      user_id: referrerUserId,
-      status: "pending",
-    });
-    assertNoError(rewardResult, "creating referral reward");
-
     await notifyReferrer(
       referrerUserId,
       "A referral just qualified",
       "Someone you referred to FindIt just completed a qualifying action — check your referral dashboard."
     );
+
+    await maybeIssueMilestoneReward(referrerUserId, updated.id as string);
   } catch (err) {
     console.error("[referrals] failed to qualify referral:", err);
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Reward config — admin-editable, append-only (migration 036)               */
+/* -------------------------------------------------------------------------- */
+
+export type ReferralRewardConfig = { milestoneSize: number; rewardAmount: number };
+
+export async function getReferralRewardConfig(): Promise<ReferralRewardConfig> {
+  const db = getDb();
+  const result = await db
+    .from("referral_reward_config")
+    .select("milestone_size, reward_amount")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const row = assertNoError(result, "loading referral reward config") as Row | null;
+  if (!row) {
+    // Shouldn't happen — migration 036 seeds a default row — but fail
+    // loudly rather than silently issuing a reward with no amount.
+    throw new Error("No referral reward config is set.");
+  }
+  return { milestoneSize: row.milestone_size as number, rewardAmount: row.reward_amount as number };
+}
+
+export async function setReferralRewardConfig(milestoneSize: number, rewardAmount: number, adminId: string): Promise<void> {
+  if (!Number.isInteger(milestoneSize) || milestoneSize < 1) {
+    throw new ValidationError("Milestone size must be a whole number of at least 1 referral.");
+  }
+  if (!Number.isInteger(rewardAmount) || rewardAmount < 0) {
+    throw new ValidationError("Reward amount must be a whole, non-negative number of naira.");
+  }
+  const db = getDb();
+  const result = await db.from("referral_reward_config").insert({
+    id: "rrc_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    milestone_size: milestoneSize,
+    reward_amount: rewardAmount,
+    created_by: adminId,
+  });
+  assertNoError(result, "setting the referral reward config");
+}
+
+export type ReferralRewardConfigHistoryEntry = {
+  id: string;
+  milestoneSize: number;
+  rewardAmount: number;
+  createdBy: string | null;
+  createdAt: string;
+};
+
+export async function listReferralRewardConfigHistory(): Promise<ReferralRewardConfigHistoryEntry[]> {
+  const db = getDb();
+  const result = await db.from("referral_reward_config").select("*").order("created_at", { ascending: false }).limit(50);
+  const rows = assertNoError(result, "loading referral reward config history") as Row[];
+  return rows.map((r) => ({
+    id: r.id as string,
+    milestoneSize: r.milestone_size as number,
+    rewardAmount: r.reward_amount as number,
+    createdBy: (r.created_by as string | null) ?? null,
+    createdAt: r.created_at as string,
+  }));
+}
+
+// Checks whether the referrer's Nth qualified referral (N = the config's
+// milestone_size) was just reached, and if so, issues the real, spendable
+// credit reward — attached to the referral that completed the batch. Every
+// qualifying event in the batch calls this (via qualifyReferral above), but
+// it only actually issues a reward on the one call where the count divides
+// evenly, so this is as safe to call repeatedly as qualifyReferral itself.
+//
+// Deliberately recomputes the referrer's qualified count fresh each time
+// rather than keeping a running counter anywhere — a referral can be
+// disputed/refunded independently of this, and there is exactly one source
+// of truth for "how many qualified referrals does this person have":
+// counting the referrals table itself.
+async function maybeIssueMilestoneReward(referrerUserId: string, justQualifiedReferralId: string): Promise<void> {
+  const { milestoneSize, rewardAmount } = await getReferralRewardConfig();
+
+  const db = getDb();
+  const countResult = await db
+    .from("referrals")
+    .select("id")
+    .eq("referrer_user_id", referrerUserId)
+    .in("status", ["qualified", "rewarded"]);
+  const qualifiedReferrals = assertNoError(countResult, "counting qualified referrals") as Row[];
+  if (qualifiedReferrals.length === 0 || qualifiedReferrals.length % milestoneSize !== 0) return;
+
+  // Conditioned on the just-qualified referral's own reward_status still
+  // being 'none' — the same re-entrancy guard pattern as the qualify update
+  // above, so two qualifying events landing at once can't both see "count
+  // is a multiple of milestoneSize" and both issue a reward for one batch.
+  const claimResult = await db
+    .from("referrals")
+    .update({ reward_status: "issued" })
+    .eq("id", justQualifiedReferralId)
+    .eq("reward_status", "none")
+    .select("id")
+    .maybeSingle();
+  const claimed = assertNoError(claimResult, "claiming the milestone") as Row | null;
+  if (!claimed) return;
+
+  const rewardResult = await db.from("referral_rewards").insert({
+    id: "rrw_" + crypto.randomBytes(9).toString("hex"),
+    referral_id: justQualifiedReferralId,
+    user_id: referrerUserId,
+    reward_type: "credit",
+    status: "issued",
+    amount: rewardAmount,
+    remaining_amount: rewardAmount,
+    issued_at: new Date().toISOString(),
+  });
+  assertNoError(rewardResult, "issuing milestone reward");
+
+  await notifyReferrer(
+    referrerUserId,
+    "You earned FindIt credit",
+    `You've referred ${qualifiedReferrals.length} people who qualified — ₦${rewardAmount.toLocaleString("en-NG")} in FindIt credit has been added to your account.`
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Spending credit — reserved at checkout, released if the attempt fails      */
+/* -------------------------------------------------------------------------- */
+
+// The ONLY number a client's "apply my credit" request is ever trusted
+// for is whether to apply it at all — the amount always comes from this,
+// never from the request body. Sums what's actually left to spend, never
+// the original grant.
+export async function getAvailableCredit(userId: string): Promise<number> {
+  const db = getDb();
+  const result = await db
+    .from("referral_rewards")
+    .select("remaining_amount")
+    .eq("user_id", userId)
+    .eq("status", "issued");
+  const rows = assertNoError(result, "loading available credit") as Row[];
+  return rows.reduce((sum, r) => sum + ((r.remaining_amount as number | null) ?? 0), 0);
+}
+
+// Reserves up to `desiredAmount` of the user's available credit against one
+// checkout attempt (payment_id), decrementing reward rows oldest-first and
+// recording exactly how much of which reward went where. Reserved the
+// moment checkout starts — before any Paystack call — specifically so two
+// concurrent checkout attempts can never both spend the same naira: each
+// row's update is conditioned on remaining_amount still being what this
+// function just read, so a concurrent reservation against the same reward
+// row can claim at most what's actually left.
+//
+// Returns the amount actually reserved, which may be less than
+// `desiredAmount` if a concurrent checkout reserved some of this user's
+// credit first — callers must use the RETURNED amount as the real discount,
+// never assume the full desired amount was granted.
+export async function reserveCredit(
+  userId: string,
+  orderId: string,
+  paymentId: string,
+  desiredAmount: number
+): Promise<number> {
+  if (desiredAmount <= 0) return 0;
+  const db = getDb();
+  const rewardsResult = await db
+    .from("referral_rewards")
+    .select("id, remaining_amount")
+    .eq("user_id", userId)
+    .eq("status", "issued")
+    .order("issued_at", { ascending: true });
+  const rewards = assertNoError(rewardsResult, "loading rewards to reserve") as Row[];
+
+  let remainingToReserve = desiredAmount;
+  let totalReserved = 0;
+  for (const reward of rewards) {
+    if (remainingToReserve <= 0) break;
+    const rewardId = reward.id as string;
+    const available = (reward.remaining_amount as number | null) ?? 0;
+    if (available <= 0) continue;
+    const take = Math.min(available, remainingToReserve);
+
+    const updateResult = await db
+      .from("referral_rewards")
+      .update({
+        remaining_amount: available - take,
+        status: available - take === 0 ? "claimed" : "issued",
+        claimed_at: available - take === 0 ? new Date().toISOString() : null,
+      })
+      .eq("id", rewardId)
+      .eq("remaining_amount", available) // only succeeds if nothing else touched this row since the read above
+      .select("id")
+      .maybeSingle();
+    const applied = assertNoError(updateResult, "reserving credit") as Row | null;
+    if (!applied) continue; // lost the race on this row — move on, nothing reserved from it
+
+    const ledgerResult = await db.from("referral_credit_applications").insert({
+      id: "rca_" + crypto.randomBytes(9).toString("hex"),
+      reward_id: rewardId,
+      user_id: userId,
+      payment_id: paymentId,
+      order_id: orderId,
+      amount: take,
+    });
+    assertNoError(ledgerResult, "recording credit application");
+
+    totalReserved += take;
+    remainingToReserve -= take;
+  }
+  return totalReserved;
+}
+
+// Gives back every unreleased credit reservation tied to a checkout attempt
+// that didn't end in a real payment (Paystack init failed, or the charge
+// itself failed) — called from the pay route's own failure path and from
+// the webhook's charge.failed handler. Never called for a SUCCEEDED
+// payment: once an order is actually paid, the reservation is final.
+export async function releaseCredit(paymentId: string): Promise<void> {
+  try {
+    const db = getDb();
+    const applicationsResult = await db
+      .from("referral_credit_applications")
+      .select("id, reward_id, amount")
+      .eq("payment_id", paymentId)
+      .is("released_at", null);
+    const applications = assertNoError(applicationsResult, "loading credit applications to release") as Row[];
+    if (applications.length === 0) return;
+
+    for (const application of applications) {
+      const rewardResult = await db
+        .from("referral_rewards")
+        .select("remaining_amount, status")
+        .eq("id", application.reward_id as string)
+        .maybeSingle();
+      const reward = assertNoError(rewardResult, "loading reward to release") as Row | null;
+      if (!reward) continue;
+
+      const restored = ((reward.remaining_amount as number | null) ?? 0) + (application.amount as number);
+      await db
+        .from("referral_rewards")
+        .update({ remaining_amount: restored, status: "issued", claimed_at: null })
+        .eq("id", application.reward_id as string);
+
+      await db
+        .from("referral_credit_applications")
+        .update({ released_at: new Date().toISOString() })
+        .eq("id", application.id as string);
+    }
+  } catch (err) {
+    // Best-effort — a failure to release just means that credit stays
+    // reserved against a dead checkout attempt until an admin notices,
+    // same tolerance this app already has for a stale pending payment
+    // blocking a retry for a while (see PENDING_PAYMENT_STALE_MS).
+    console.error("[referrals] failed to release credit:", err);
   }
 }
 
@@ -303,6 +547,14 @@ export type ReferralDashboard = {
   rewardsClaimed: number;
   progressPercent: number;
   activeQualifyingAction: QualifyingAction;
+  // Real, spendable FindIt credit (lib/referrals.ts#getAvailableCredit) —
+  // naira left to apply at checkout, not the lifetime total ever earned.
+  availableCredit: number;
+  milestoneSize: number;
+  // How many MORE successful referrals until the next reward — 0 only
+  // right after a milestone lands and before the next referral starts a
+  // new batch; otherwise always between 1 and milestoneSize.
+  referralsUntilNextReward: number;
 };
 
 export async function getReferralDashboard(userId: string): Promise<ReferralDashboard> {
@@ -320,7 +572,13 @@ export async function getReferralDashboard(userId: string): Promise<ReferralDash
   const rewardsEarned = rewards.length;
   const rewardsClaimed = rewards.filter((r) => r.status === "claimed").length;
 
-  const activeQualifyingAction = await getActiveQualifyingAction();
+  const [activeQualifyingAction, availableCredit, { milestoneSize }] = await Promise.all([
+    getActiveQualifyingAction(),
+    getAvailableCredit(userId),
+    getReferralRewardConfig(),
+  ]);
+
+  const progressWithinBatch = successfulReferrals % milestoneSize;
 
   return {
     referralCode,
@@ -332,6 +590,9 @@ export async function getReferralDashboard(userId: string): Promise<ReferralDash
     rewardsClaimed,
     progressPercent: totalReferred > 0 ? Math.round((successfulReferrals / totalReferred) * 100) : 0,
     activeQualifyingAction,
+    availableCredit,
+    milestoneSize,
+    referralsUntilNextReward: progressWithinBatch === 0 ? milestoneSize : milestoneSize - progressWithinBatch,
   };
 }
 

@@ -4,12 +4,11 @@ import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Gift, Copy, Check, Share2, Users, Clock, Trophy, Loader2 } from "lucide-react";
 import { api } from "./api";
+import { naira } from "./data";
 import { STAGGER_CONTAINER, STAGGER_ITEM, press } from "./motion";
 
-// "What counts as successful" is admin-configurable (lib/referrals.ts) and
-// deliberately never a monetary amount yet — this copy describes the
-// mechanism honestly rather than promising a specific reward this screen
-// can't actually back up.
+// "What counts as successful" is admin-configurable (lib/referrals.ts) —
+// this copy describes the real mechanism rather than a fixed promise.
 const QUALIFYING_ACTION_COPY = {
   registration: "they create a FindIt account",
   first_purchase: "they complete their first purchase",
@@ -88,8 +87,18 @@ export default function Referrals({ showToast }) {
         <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Refer & earn</h1>
       </motion.div>
       <motion.p variants={STAGGER_ITEM} className="text-[12px] text-[#6B6483] mb-5">
-        Invite friends to FindIt. A referral counts once {QUALIFYING_ACTION_COPY[data.activeQualifyingAction] ?? "they complete a qualifying action"} — not just for signing up.
+        Invite friends to FindIt. A referral counts once {QUALIFYING_ACTION_COPY[data.activeQualifyingAction] ?? "they complete a qualifying action"} — not just for signing up. Every {data.milestoneSize} successful referrals earns you real FindIt credit, spendable on your own orders.
       </motion.p>
+
+      {data.availableCredit > 0 && (
+        <motion.div variants={STAGGER_ITEM} className="rounded-2xl px-4 py-3.5 mb-5 flex items-center gap-3" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+          <Gift size={20} className="text-white shrink-0" />
+          <div>
+            <p className="text-[16px] font-bold text-white" style={{ fontFamily: "Fraunces, serif" }}>{naira(data.availableCredit)}</p>
+            <p className="text-[11px] text-white/80">Available to spend at checkout</p>
+          </div>
+        </motion.div>
+      )}
 
       <motion.div variants={STAGGER_ITEM} className="flex gap-2.5 mb-5">
         <StatCard icon={Users} label="People referred" value={data.totalReferred} />
@@ -136,7 +145,7 @@ export default function Referrals({ showToast }) {
         <motion.div variants={STAGGER_ITEM} className="bg-[#FBF0E2] border border-[#EFD6AE] rounded-2xl px-4 py-3.5">
           <p className="text-[12.5px] font-semibold text-[#B45309]">{data.rewardsEarned} reward{data.rewardsEarned === 1 ? "" : "s"} earned</p>
           <p className="text-[11.5px] text-[#8A6A3A] mt-0.5">
-            {data.rewardsClaimed} claimed so far. FindIt hasn't activated a reward campaign yet — your earned slots are saved and will be honored once one launches.
+            {data.rewardsClaimed} fully spent so far. {data.availableCredit > 0 ? "The rest is sitting in your balance above — apply it at checkout on your next order." : "Every naira of it has already been applied."}
           </p>
         </motion.div>
       )}
