@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import { motion } from "motion/react";
-import { ClipboardList, Clock, CheckCircle2, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap, Gift } from "lucide-react";
+import { ClipboardList, Clock, CheckCircle2, Check, X, AlertTriangle, ShieldCheck, MessageSquareText, UserPlus, PackageX, Link2, RefreshCw, BadgeCheck, HelpCircle, ExternalLink, LayoutGrid, Users, Store, CreditCard, ChevronRight, Search, ChevronLeft, Ban, Settings2, Tag, Plus, ShieldAlert, MessageCircle, BarChart3, Bell, LogOut, Zap, Gift } from "lucide-react";
 import { Pill } from "./shared";
 import { api } from "./api";
 import { naira } from "./data";
@@ -460,6 +460,20 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
   const [reviewingId, setReviewingId] = useState(null);
   const [reasonPromptFor, setReasonPromptFor] = useState(null); // { sellerId, action } | null
   const [reason, setReason] = useState("");
+  // sellerId -> Set of evidence indices actually opened. Approve stays
+  // disabled until every evidence item for that submission has been
+  // opened at least once — otherwise "the evidence is on the page" and
+  // "an admin looked at it" are two different things, and only the first
+  // one was previously enforced.
+  const [viewedEvidence, setViewedEvidence] = useState({});
+
+  const markEvidenceViewed = (sellerId, index) => {
+    setViewedEvidence((prev) => {
+      const next = new Set(prev[sellerId]);
+      next.add(index);
+      return { ...prev, [sellerId]: next };
+    });
+  };
 
   const act = async (sellerId, action, actionReason) => {
     setReviewingId(sellerId);
@@ -501,7 +515,10 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
 
   return (
     <motion.div className="space-y-3 mb-7" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>
-      {submissions.map(({ sellerId, sellerName, phone, overview }) => (
+      {submissions.map(({ sellerId, sellerName, phone, overview }) => {
+        const viewedCount = viewedEvidence[sellerId]?.size || 0;
+        const allEvidenceViewed = overview.evidence.length === 0 || viewedCount >= overview.evidence.length;
+        return (
         <motion.div key={sellerId} variants={BOUNCE_ITEM} className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 shadow-sm shadow-[#4C1D95]/5">
           <div className="flex items-center justify-between mb-1">
             <p className="text-[13px] font-semibold text-[#1E1B4B]">{sellerName}</p>
@@ -526,12 +543,32 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
 
           {overview.evidence.length > 0 && (
             <div className="mb-3">
-              <p className="text-[10.5px] font-semibold text-[#8A8372] uppercase tracking-wide mb-1.5">Evidence</p>
+              <p className="text-[10.5px] font-semibold text-[#8A8372] uppercase tracking-wide mb-1.5">
+                Evidence{" "}
+                {!allEvidenceViewed && (
+                  <span className="text-[#B45309] font-semibold">
+                    — open all {overview.evidence.length} to enable Approve ({viewedCount}/{overview.evidence.length} viewed)
+                  </span>
+                )}
+              </p>
               <div className="flex flex-wrap gap-2">
-                {overview.evidence.map((ev, i) =>
-                  ev.url ? (
-                    <a key={i} href={ev.url} target="_blank" rel="noopener noreferrer" className="relative w-16 h-16 rounded-lg overflow-hidden border border-[#ECE9F7]">
+                {overview.evidence.map((ev, i) => {
+                  const viewed = viewedEvidence[sellerId]?.has(i);
+                  return ev.url ? (
+                    <a
+                      key={i}
+                      href={ev.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      onClick={() => markEvidenceViewed(sellerId, i)}
+                      className={`relative w-16 h-16 rounded-lg overflow-hidden border ${viewed ? "border-[#7C3AED]" : "border-[#ECE9F7]"}`}
+                    >
                       <Image src={ev.url} alt={ev.kind} fill sizes="64px" className="object-cover" />
+                      {viewed && (
+                        <div className="absolute bottom-0.5 right-0.5 bg-[#7C3AED] rounded-full p-0.5">
+                          <Check size={9} className="text-white" />
+                        </div>
+                      )}
                     </a>
                   ) : (
                     <a
@@ -539,12 +576,14 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
                       href={ev.textValue}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] bg-white border border-[#ECE9F7] rounded-lg px-2 py-1.5"
+                      onClick={() => markEvidenceViewed(sellerId, i)}
+                      className={`flex items-center gap-1 text-[11px] font-medium text-[#7C3AED] bg-white border rounded-lg px-2 py-1.5 ${viewed ? "border-[#7C3AED]" : "border-[#ECE9F7]"}`}
                     >
+                      {viewed && <Check size={10} />}
                       {ev.note || ev.kind} <ExternalLink size={10} />
                     </a>
-                  )
-                )}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -576,7 +615,8 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
             <div className="flex gap-2">
               <button
                 onClick={() => act(sellerId, "approved", null)}
-                disabled={reviewingId !== null}
+                disabled={reviewingId !== null || !allEvidenceViewed}
+                title={!allEvidenceViewed ? "Open every piece of evidence before approving" : undefined}
                 className="flex-1 flex items-center justify-center gap-1.5 text-white text-[12px] font-semibold py-2 rounded-xl disabled:opacity-60"
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
@@ -599,7 +639,8 @@ function VerificationSubmissions({ submissions, failed, onRetry, onReview, showT
             </div>
           )}
         </motion.div>
-      ))}
+        );
+      })}
     </motion.div>
   );
 }
