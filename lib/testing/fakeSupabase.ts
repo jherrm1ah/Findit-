@@ -111,6 +111,14 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
     this.filters.push((r) => values.includes(r[col]));
     return this;
   }
+  // Only a plain, wildcard-free pattern is supported — the one real call
+  // site (lib/auth.ts#isBusinessNameTaken) only ever needs an exact,
+  // case-insensitive match, same as real Postgres ILIKE with no % in it.
+  // Extend for actual % wildcard matching only when a test needs that too.
+  ilike(col: string, pattern: string) {
+    this.filters.push((r) => typeof r[col] === "string" && (r[col] as string).toLowerCase() === pattern.toLowerCase());
+    return this;
+  }
   is(col: string, val: null | boolean) {
     this.filters.push((r) => (r[col] ?? null) === val);
     return this;

@@ -371,6 +371,29 @@ export async function updateSellerBusinessName(userId: string, newName: string):
   return rowToUser(row);
 }
 
+// A soft, advisory check only — business_name has no uniqueness constraint
+// (see lib/sellerIdentityMatch.ts's module comment for why: two real
+// sellers legitimately sharing a name is an accepted, already-handled
+// case, not a bug) and this never blocks signup, becoming a seller, or a
+// rename. It exists purely so those three flows can show a "this name's
+// already in use" nudge before submitting, not to enforce anything.
+//
+// excludeUserId lets a seller renaming to the name they already have (or
+// re-submitting their own current name) not get warned about themselves.
+export async function isBusinessNameTaken(name: string, excludeUserId?: string | null): Promise<boolean> {
+  const trimmed = name.trim();
+  if (!trimmed) return false;
+
+  const db = getDb();
+  // No wildcards — ILIKE with a plain string is an exact, case-insensitive
+  // match, not a substring search. Scoped to sellers.name, the same column
+  // claimStoreSlug derives a store link from and lib/sellerIdentityMatch.ts
+  // treats as the name of record.
+  const result = await db.from("sellers").select("user_id").ilike("name", trimmed);
+  const rows = assertNoError(result, "checking business name") as Row[];
+  return rows.some((r) => (r.user_id as string) !== excludeUserId);
+}
+
 export async function updateUserPhone(
   userId: string,
   newPhone: string,

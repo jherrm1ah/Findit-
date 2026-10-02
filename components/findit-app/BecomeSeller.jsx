@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Store, ShieldCheck, ClipboardList, Package } from "lucide-react";
+import { Store, ShieldCheck, ClipboardList, Package, AlertTriangle } from "lucide-react";
 import { Field } from "./shared";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
+import { useBusinessNameTakenWarning } from "./useBusinessNameCheck";
 
 // BecomeSeller is a browsing/marketing screen (Group A) — a local bouncy
 // stagger for the "what happens next" list, same spirit as Home's
@@ -24,6 +25,7 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
   const [businessName, setBusinessName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
+  const nameTaken = useBusinessNameTakenWarning(businessName);
 
   const submit = async () => {
     const trimmed = businessName.trim();
@@ -65,6 +67,13 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
         <p className="text-[11px] text-[#6B6483] mt-2">
           This is the name buyers see on your listings and offers. You can change it later in Personal details.
         </p>
+        {nameTaken && (
+          <p className="flex items-start gap-1.5 text-[11px] text-[#B45309] mt-2">
+            <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+            This name&apos;s already in use by another seller — you can still use it, but a more distinct name
+            helps buyers tell you apart.
+          </p>
+        )}
       </div>
 
       <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide mb-3">What happens next</p>

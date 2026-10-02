@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowRight, User, Store, X } from "lucide-react";
+import { ArrowRight, User, Store, X, AlertTriangle } from "lucide-react";
 import { Logo, Field } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api } from "./api";
 import { getPendingReferralCode, clearPendingReferralCode } from "./referral";
+import { useBusinessNameTakenWarning } from "./useBusinessNameCheck";
 import OtpInput from "./OtpInput";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
 
@@ -33,6 +34,9 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
   const [name, setName] = useState("");
   const [role, setRole] = useState("buyer");
   const [businessName, setBusinessName] = useState("");
+  const businessNameTaken = useBusinessNameTakenWarning(businessName, {
+    skip: !(mode === "signup" && role === "seller"),
+  });
   const [email, setEmail] = useState("");
   const [otpCode, setOtpCode] = useState("");
   const [resending, setResending] = useState(false);
@@ -484,6 +488,13 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
         {mode === "signup" && role === "seller" && (
           <Field label="Business name">
             <input value={businessName} onChange={(e) => setBusinessName(e.target.value)} placeholder="e.g. Terra Gadgets" className="input" />
+            {businessNameTaken && (
+              <p className="flex items-start gap-1.5 text-[11px] text-[#B45309] mt-1.5">
+                <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                This name&apos;s already in use by another seller — you can still use it, but a more distinct name
+                helps buyers tell you apart.
+              </p>
+            )}
           </Field>
         )}
         {mode === "signup" && role === "seller" && (

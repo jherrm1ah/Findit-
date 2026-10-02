@@ -18,7 +18,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { suspendUser } = await import("./auth");
+const { suspendUser, isBusinessNameTaken } = await import("./auth");
 const { ValidationError } = await import("./errors");
 
 function user(overrides: Record<string, unknown> = {}) {
@@ -76,5 +76,34 @@ describe("suspendUser", () => {
   it("still requires a non-empty reason", async () => {
     fakeDb.reset({ users: [user()] });
     await expect(suspendUser("u_target", "   ", "acting_admin", "support_admin")).rejects.toThrow(ValidationError);
+  });
+});
+
+describe("isBusinessNameTaken — a soft, advisory check only", () => {
+  beforeEach(() => {
+    fakeDb.reset({
+      sellers: [{ id: "seller_1", user_id: "u_1", name: "Terra Gadgets", status: "approved" }],
+    });
+  });
+
+  it("is case-insensitive and ignores surrounding whitespace", async () => {
+    expect(await isBusinessNameTaken("terra gadgets")).toBe(true);
+    expect(await isBusinessNameTaken("  TERRA GADGETS  ")).toBe(true);
+  });
+
+  it("is false for a name nobody has", async () => {
+    expect(await isBusinessNameTaken("Nobody's Shop")).toBe(false);
+  });
+
+  it("never flags a seller's own current name against themselves", async () => {
+    expect(await isBusinessNameTaken("Terra Gadgets", "u_1")).toBe(false);
+  });
+
+  it("still flags it for a DIFFERENT account, even with an exclude id set", async () => {
+    expect(await isBusinessNameTaken("Terra Gadgets", "u_someone_else")).toBe(true);
+  });
+
+  it("is false for an empty or whitespace-only name", async () => {
+    expect(await isBusinessNameTaken("   ")).toBe(false);
   });
 });

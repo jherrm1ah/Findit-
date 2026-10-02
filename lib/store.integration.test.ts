@@ -16,7 +16,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { claimStoreSlug, getPublicStoreBySlug, getStoreEligibility, getOwnStoreState, storeUrl } =
+const { claimStoreSlug, getPublicStoreBySlug, getStoreEligibility, getOwnStoreState, storeUrl, listActiveStoreSlugs } =
   await import("./store");
 
 const PLANS = [
@@ -268,6 +268,29 @@ describe("the seller's own view", () => {
     expect(state.claimedButUnavailable).toBe(true);
     // The seller still sees their link, so they know what they get back.
     expect(state.url).toBe("https://findit.example/store/abc-electronics");
+  });
+});
+
+describe("listActiveStoreSlugs — app/sitemap.ts's feed", () => {
+  // Regression test: this used to select a column (sellers.updated_at)
+  // that doesn't exist in the real schema, which threw on every single
+  // /sitemap.xml request in production — see supabase/schema.sql's
+  // `sellers` table (only created_at exists, no updated_at).
+  it("lists only approved sellers with a claimed slug, without touching a nonexistent column", async () => {
+    seed([
+      seller({ id: "seller_1", user_id: "u_1", store_slug: "abc-electronics" }),
+      seller({ id: "seller_2", user_id: "u_2", store_slug: null }), // never claimed one
+      seller({ id: "seller_3", user_id: "u_3", store_slug: "unapproved-shop", status: "pending" }),
+    ], []);
+
+    const slugs = await listActiveStoreSlugs();
+
+    expect(slugs).toEqual([{ slug: "abc-electronics", updatedAt: null }]);
+  });
+
+  it("returns an empty list rather than throwing when nothing qualifies", async () => {
+    seed([], []);
+    expect(await listActiveStoreSlugs()).toEqual([]);
   });
 });
 
