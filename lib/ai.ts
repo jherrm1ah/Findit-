@@ -127,7 +127,10 @@ export async function classifyRequest(description: string): Promise<RequestClass
 // (same trust boundary as classifyRequest above: AI drafts, the seller
 // decides). Given only what the seller has already entered, not invented
 // details — the prompt is explicit about not claiming a condition, color
-// or feature that wasn't supplied.
+// or feature that wasn't supplied. Also asks for a sentence or two of
+// generic how-to-use/care guidance (how this kind of product is normally
+// used or maintained) — there's no separate "usage instructions" field
+// anywhere in the schema, so this is the one place that guidance lives.
 export async function generateProductDescription(input: {
   name: string;
   categoryLabel: string;
@@ -171,10 +174,13 @@ export async function generateProductDescription(input: {
     response = await ai.models.generateContent({
       model: "gemini-2.5-flash",
       contents:
-        "Write a short, honest product description (2-4 sentences) for a listing on a Nigerian " +
+        "Write a short, honest product description (3-5 sentences) for a listing on a Nigerian " +
         "marketplace app, in a plain, trustworthy tone — no hype, no emoji, no claims the seller " +
         "didn't provide (never invent a brand, feature, condition, or specification not given " +
-        "below).\n\n" +
+        "below). After describing the item itself, add one or two sentences of general how-to-use " +
+        "or care guidance that's genuinely true for this kind of product (e.g. how it's typically " +
+        "worn/applied/operated, or how to clean/store/maintain it) — keep this generic to the " +
+        "product category, never inventing a model-specific instruction you weren't given.\n\n" +
         `Product name: "${input.name.trim()}"\n${knownFacts}`,
       config: { responseMimeType: "text/plain" },
     });

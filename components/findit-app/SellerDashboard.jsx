@@ -238,7 +238,7 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           value={form.description}
           onChange={(e) => setForm({ ...form, description: e.target.value })}
           rows={3}
-          placeholder="What is it, what condition, anything a buyer should know?"
+          placeholder="What is it, what condition, how to use/care for it — anything a buyer should know?"
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none"
         />
       </div>
