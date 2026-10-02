@@ -39,6 +39,7 @@ const UNIQUE_COLUMNS: Record<string, string[]> = {
   reviews: ["id", "order_id"],
   product_images: ["id"],
   boosts: ["id", "payment_id"],
+  ad_campaigns: ["id", "payment_id"],
 };
 
 // Multi-column UNIQUE constraints — a conflict needs every listed column to
@@ -117,6 +118,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
   }
   gte(col: string, val: unknown) {
     this.filters.push((r) => (r[col] as any) >= (val as any));
+    return this;
+  }
+  gt(col: string, val: unknown) {
+    this.filters.push((r) => (r[col] as any) > (val as any));
     return this;
   }
   lte(col: string, val: unknown) {

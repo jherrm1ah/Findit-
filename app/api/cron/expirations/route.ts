@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { notifyExpiredBoosts } from "@/lib/boosts";
+import { notifyExpiredAdCampaigns } from "@/lib/adCampaigns";
 import { sweepLapsedSubscriptions } from "@/lib/subscriptions";
 import { autoReleaseStaleDeliveries } from "@/lib/repo";
 import { initiateSellerPayout } from "@/lib/payments";
@@ -19,8 +20,9 @@ export const dynamic = "force-dynamic";
 // the notifications it sends) on demand. Left unset in local/dev, where
 // there's nothing to protect and no Vercel Cron to receive it from anyway.
 //
-// All three sweeps are the "nothing else would ever trigger this" half of
-// their own feature — see lib/boosts.ts#notifyExpiredBoosts,
+// Every sweep here is the "nothing else would ever trigger this" half of
+// its own feature — see lib/boosts.ts#notifyExpiredBoosts,
+// lib/adCampaigns.ts#notifyExpiredAdCampaigns,
 // lib/subscriptions.ts#sweepLapsedSubscriptions, and
 // lib/repo.ts#autoReleaseStaleDeliveries for why neither a normal page
 // load nor the logic those features otherwise ride on needed this before.
@@ -33,8 +35,9 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [boostsNotified, subscriptionsResolved, releasedOrders] = await Promise.all([
+  const [boostsNotified, adCampaignsNotified, subscriptionsResolved, releasedOrders] = await Promise.all([
     notifyExpiredBoosts(),
+    notifyExpiredAdCampaigns(),
     sweepLapsedSubscriptions(),
     autoReleaseStaleDeliveries(),
   ]);
@@ -56,6 +59,7 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     boostsNotified,
+    adCampaignsNotified,
     subscriptionsResolved,
     autoReleasedOrders: releasedOrders.map((o) => o.id),
   });

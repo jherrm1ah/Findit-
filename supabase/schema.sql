@@ -932,7 +932,7 @@ create table if not exists payments (
   -- Real marketplace order payments (migration 016) alongside subscription
   -- payments — set only for kind = 'order'.
   order_id text references orders(id),
-  kind text not null default 'subscription' check (kind in ('subscription', 'order', 'boost', 'fee', 'other')),
+  kind text not null default 'subscription' check (kind in ('subscription', 'order', 'boost', 'fee', 'other', 'ad_campaign')),
   amount integer not null check (amount >= 0),
   currency text not null default 'NGN',
   status text not null default 'pending' check (status in ('pending', 'success', 'failed', 'refunded')),
@@ -1119,6 +1119,61 @@ create index if not exists boosts_boost_plan_id_idx on boosts(boost_plan_id);
 create unique index if not exists boosts_payment_id_key on boosts(payment_id) where payment_id is not null;
 
 -- ---------------------------------------------------------------------------
+-- ad_campaign_plans / ad_campaigns (migration 040)
+--
+-- A paid Sponsored slide in Home's promo carousel, sitting alongside the
+-- app's own Request-first slide. Mirrors boost_plans/boosts above almost
+-- exactly — ad_campaign_plans holds pricing as DATA; ad_campaigns is the
+-- append-only purchase record, activated only from the Paystack webhook.
+-- Unlike boosts, each campaign is its own independent row (nothing shared
+-- to race over), so there's no CAS dance — just a plain insert, idempotent
+-- on payment_id exactly like boosts.payment_id. "Currently active" is
+-- always ends_at > now(), never a stored status column — an admin taking a
+-- campaign down just sets ends_at to the moment of takedown (see
+-- lib/adCampaigns.ts#takeDownCampaign); taken_down_at/taken_down_reason are
+-- an audit trail of why, not what decides whether it's still live.
+-- ---------------------------------------------------------------------------
+
+create table if not exists ad_campaign_plans (
+  id text primary key,
+  name text not null,
+  duration_days integer not null check (duration_days > 0),
+  price integer not null check (price >= 0),
+  sort_order integer not null default 0,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists ad_campaigns (
+  id text primary key,
+  seller_id text not null references sellers(id) on delete cascade,
+  plan_id text not null references ad_campaign_plans(id),
+  headline text not null,
+  body text not null,
+  cta_label text not null default 'Shop now',
+  image_url text not null,
+  -- Where tapping the slide goes. Null = the seller's own public store
+  -- page — the same destination a buyer already lands on from the seller
+  -- directory, so a campaign never needs its own separate landing page.
+  target_product_id text references products(id) on delete set null,
+  amount integer not null check (amount >= 0),
+  payment_id text references payments(id),
+  starts_at timestamptz not null default now(),
+  ends_at timestamptz not null,
+  taken_down_at timestamptz,
+  taken_down_reason text,
+  -- Mirrors boosts.boost_expiry_notified_at — lets the cron sweep
+  -- (lib/adCampaigns.ts#notifyExpiredAdCampaigns) tell "already told this
+  -- seller their campaign ended" apart from "just ended, notify once".
+  ended_notified_at timestamptz,
+  created_at timestamptz not null default now()
+);
+create unique index if not exists ad_campaigns_payment_id_key on ad_campaigns(payment_id) where payment_id is not null;
+create index if not exists ad_campaigns_seller_id_idx on ad_campaigns(seller_id);
+create index if not exists ad_campaigns_ends_at_idx on ad_campaigns(ends_at);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
 -- the note at the top of this file). All real access control lives in the
 -- Next.js API layer.
@@ -1153,6 +1208,8 @@ alter table referral_settings enable row level security;
 alter table categories enable row level security;
 alter table boost_plans enable row level security;
 alter table boosts enable row level security;
+alter table ad_campaign_plans enable row level security;
+alter table ad_campaigns enable row level security;
 alter table support_tickets enable row level security;
 alter table support_ticket_messages enable row level security;
 
@@ -1213,6 +1270,16 @@ insert into boost_plans (id, name, duration_days, price, sort_order) values
   ('boost_3d', '3-day Boost', 3, 1000, 0),
   ('boost_7d', '7-day Boost', 7, 2000, 1),
   ('boost_14d', '14-day Boost', 14, 3500, 2)
+on conflict (id) do nothing;
+
+-- Starting prices, same spirit as boost_plans' own seed above — an admin
+-- should review and adjust these before launch. Priced above boost (a
+-- homepage carousel slide every buyer sees is a bigger placement than one
+-- reordered product card in Near you/Browse).
+insert into ad_campaign_plans (id, name, duration_days, price, sort_order) values
+  ('adcamp_3d', '3-day Sponsored slide', 3, 5000, 0),
+  ('adcamp_7d', '7-day Sponsored slide', 7, 9000, 1),
+  ('adcamp_14d', '14-day Sponsored slide', 14, 15000, 2)
 on conflict (id) do nothing;
 
 insert into categories (id, label, icon_key, sort_order) values
