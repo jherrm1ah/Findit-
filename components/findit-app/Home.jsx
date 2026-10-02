@@ -7,7 +7,7 @@ import {
   Search, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight,
   ListOrdered, Bell, Menu, ShoppingCart, SlidersHorizontal,
-  MapPin, Store, Tag, UserRound,
+  MapPin, Store, Tag, UserRound, Star,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { Logo, ArtBlock } from "./shared";
@@ -148,6 +148,15 @@ export default function Home({
     if (banner >= slides.length) setBanner(0);
   }, [slides.length, banner]);
   const activeSlide = slides[banner] ?? slides[0];
+  // The advertiser's own store rating — pulled from the already-loaded
+  // product list (every product already carries its seller's rating, see
+  // lib/repo.ts#computeSellerStatsMap), not a separate fetch. A buyer
+  // deciding whether to tap a paid placement deserves the same trust
+  // signal they'd see anywhere else that seller shows up.
+  const activeCampaignRating =
+    activeSlide.kind === "campaign"
+      ? products.find((p) => p.id === activeSlide.campaign.targetProductId)?.rating ?? null
+      : null;
 
   // Static slides (BANNERS) navigate to another screen; a campaign slide
   // goes to the specific listing it's promoting when it has one, or
@@ -426,13 +435,20 @@ export default function Home({
             {/* A campaign is always explicitly labeled "Sponsored" — never
                 the app's own purple pill BANNERS uses, so a buyer can tell
                 paid placement apart from FindIt's own features at a glance. */}
-            <span
-              className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4 relative ${
-                activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
-              }`}
-            >
-              {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
-            </span>
+            <div className="flex items-center gap-2 mb-4">
+              <span
+                className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full relative ${
+                  activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
+                }`}
+              >
+                {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
+              </span>
+              {activeSlide.kind === "campaign" && activeCampaignRating != null && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative">
+                  <Star size={11} className="fill-[#F59E0B] text-[#F59E0B]" /> {activeCampaignRating}
+                </span>
+              )}
+            </div>
             <h2 className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
               {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
             </h2>
