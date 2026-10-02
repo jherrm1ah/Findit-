@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
-  Home as HomeIcon, Search, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
+  Home as HomeIcon, Store, PackageSearch, LayoutDashboard, ShieldCheck, User, ChevronLeft,
 } from "lucide-react";
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
@@ -45,7 +45,7 @@ function tabsFor(role) {
       : { key: "seller", label: role === "seller" ? "Dashboard" : "Sell", icon: LayoutDashboard };
   return [
     { key: "home", label: "Home", icon: HomeIcon },
-    { key: "browse", label: "Search", icon: Search },
+    { key: "sellers", label: "Stores", icon: Store },
     { key: "request", label: "Request", icon: PackageSearch },
     middle,
     { key: "profile", label: "Profile", icon: User },
