@@ -77,10 +77,17 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
     ? new Date(profile.memberSince).toLocaleDateString("en-NG", { month: "short", year: "numeric" })
     : null;
   // Distance is still derived from a listing, because that is where real
-  // coordinates live; the seller's own coarse area is shown separately.
-  const nearest = listings.find((p) => p.lat != null && p.lng != null);
-  const km = myLocation && nearest
-    ? haversineKm(myLocation.lat, myLocation.lng, nearest.lat, nearest.lng)
+  // coordinates live; the seller's own coarse area is shown separately. The
+  // actual minimum across every listing with coordinates, not just the
+  // first one found — this used to be whichever listing happened to come
+  // first in the array, which could overstate the distance to a seller
+  // whose closest listing wasn't their first one.
+  const km = myLocation
+    ? listings.reduce((min, p) => {
+        if (p.lat == null || p.lng == null) return min;
+        const d = haversineKm(myLocation.lat, myLocation.lng, p.lat, p.lng);
+        return min == null || d < min ? d : min;
+      }, null)
     : null;
 
   if (loading || error || !profile) {
