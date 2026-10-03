@@ -401,28 +401,18 @@ export default function Home({
           // this way, through next/image's own optimizer; a raw CSS
           // background-image on an inline style is the one place that
           // wasn't, and is also the one place a Sponsored slide's banner
-          // silently failed to show in production. Layered below the
-          // gradient overlay and the text content, both still painted
-          // after it in DOM order.
+          // silently failed to show in production. Two rounds of a
+          // full-card gradient scrim (first 88–92%, then still visibly
+          // dark even cleared to 0 by the card's halfway point) kept
+          // reading as "the photo isn't visible" per live screenshots, so
+          // there's no scrim over the photo at all anymore — only the text
+          // block below sits on its own solid panel.
           <NextImage
             src={activeSlide.campaign.imageUrl}
             alt=""
             fill
             sizes="(max-width: 640px) 100vw, 400px"
             className="object-cover"
-          />
-        )}
-        {activeSlide.kind === "campaign" && (
-          // Dark only right behind the text block, fully clear past the
-          // halfway point — a user screenshot of the live carousel showed
-          // even the first (85%→60%→15%) fade still reading as "basically
-          // just a dark gradient" over the photo, so this goes lower and
-          // clears sooner. Legibility over the photo comes from the text's
-          // own shadow below, not from the scrim — the CTA pill and the
-          // "Sponsored" badge already carry their own solid backgrounds.
-          <div
-            className="absolute inset-0"
-            style={{ background: "linear-gradient(90deg, rgba(30,27,75,0.72) 0%, rgba(30,27,75,0.32) 30%, rgba(30,27,75,0) 55%)" }}
           />
         )}
         {activeSlide.kind === "static" && (
@@ -438,6 +428,12 @@ export default function Home({
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -24 }}
             transition={SPRING_BOUNCY}
+            // A campaign's text sits on its own solid panel, not a scrim
+            // over the whole card — that's what guarantees the photo
+            // itself stays fully visible everywhere outside this box,
+            // instead of depending on tuning a gradient against a photo
+            // whose brightness this code can't know ahead of time.
+            className={activeSlide.kind === "campaign" ? "bg-[#1E1B4B]/85 backdrop-blur-sm rounded-2xl px-4 py-3.5 inline-block max-w-[78%] relative" : undefined}
           >
             {/* A campaign is always explicitly labeled "Sponsored" — never
                 the app's own purple pill BANNERS uses, so a buyer can tell
