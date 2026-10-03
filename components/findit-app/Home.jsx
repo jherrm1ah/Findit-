@@ -137,7 +137,7 @@ export default function Home({
   // carousel is expected to. A manual tap (the dot buttons below) still
   // works and just resets this same timer via the effect's own dependency.
   useEffect(() => {
-    const id = setInterval(() => setBanner((b) => (b + 1) % slides.length), 4500);
+    const id = setInterval(() => setBanner((b) => (b + 1) % slides.length), 2000);
     return () => clearInterval(id);
   }, [banner, slides.length]);
   // A campaign ending (or a fresh one landing) between renders can shrink
@@ -466,7 +466,11 @@ export default function Home({
             </h2>
             {activeSlide.kind === "campaign" && (
               <p
-                className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]"
+                // No max-w here anymore — the panel wrapping this text
+                // (max-w-[78%] of the card) already constrains it; this
+                // used to ALSO cap it at 85%, compounding into body text
+                // wrapping to roughly two-thirds of the card for no reason.
+                className="text-[12.5px] text-white/85 leading-snug mb-4 relative"
                 style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
               >
                 {activeSlide.campaign.body}

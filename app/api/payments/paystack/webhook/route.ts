@@ -177,6 +177,15 @@ export async function POST(req: NextRequest) {
     const verified = await verifyTransaction(reference);
     if (verified.status !== "success" || verified.amountNaira !== (payment.amount as number)) {
       await db.from("payments").update({ status: "failed" }).eq("id", payment.id as string);
+      // Same cleanup as the charge.failed branch below — this is also a
+      // charge that never actually succeeded, just reported as a success
+      // event that didn't verify. Without this, an order sits forever at
+      // whatever payment_status it already had, and any referral credit
+      // this attempt reserved never comes back to the buyer.
+      if (payment.order_id) {
+        await db.from("orders").update({ payment_status: "failed" }).eq("id", payment.order_id as string);
+        await releaseCredit(payment.id as string);
+      }
       return NextResponse.json({ received: true });
     }
 
