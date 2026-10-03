@@ -413,9 +413,16 @@ export default function Home({
           />
         )}
         {activeSlide.kind === "campaign" && (
+          // Strong on the left where the text sits, fading to nearly clear
+          // on the right so the photo is actually visible — the first
+          // version of this was dark enough (88–92% opacity, flat across
+          // the whole card) that the photo was effectively invisible
+          // behind it, confirmed by a user screenshot of the live
+          // carousel. Text keeps its own shadow below as a second,
+          // photo-independent layer of contrast.
           <div
             className="absolute inset-0"
-            style={{ background: "linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%)" }}
+            style={{ background: "linear-gradient(90deg, rgba(30,27,75,0.85) 0%, rgba(30,27,75,0.6) 45%, rgba(30,27,75,0.15) 100%)" }}
           />
         )}
         {activeSlide.kind === "static" && (
@@ -449,11 +456,22 @@ export default function Home({
                 </span>
               )}
             </div>
-            <h2 className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
+            <h2
+              className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
+              style={{
+                fontFamily: "Fraunces, serif",
+                textShadow: activeSlide.kind === "campaign" ? "0 1px 4px rgba(0,0,0,0.5)" : undefined,
+              }}
+            >
               {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
             </h2>
             {activeSlide.kind === "campaign" && (
-              <p className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]">{activeSlide.campaign.body}</p>
+              <p
+                className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]"
+                style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+              >
+                {activeSlide.campaign.body}
+              </p>
             )}
           </motion.div>
         </AnimatePresence>
