@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { ShieldCheck, ArrowLeft, Lock } from "lucide-react";
+import { ShieldCheck, Lock } from "lucide-react";
 import { Field } from "./shared";
 import { api } from "./api";
 import { DURATION, EASE, SPRING_BOUNCY, press, wiggleIn } from "./motion";
@@ -22,7 +22,7 @@ const bouncyPress = { whileTap: { scale: 0.94 }, transition: SPRING_BOUNCY };
 // server grants or refuses the unlock, and every admin route checks it
 // independently. A person who never opens this screen still cannot reach a
 // single admin endpoint.
-export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
+export default function AdminLogin({ user, onUnlocked, showToast }) {
   const [phone, setPhone] = useState(user?.phone || "");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -52,16 +52,10 @@ export default function AdminLogin({ user, onUnlocked, onBack, showToast }) {
   };
 
   return (
+    // No back button here — MainApp's own global header (sticky, shown for
+    // every screen but "home") already supplies one for this screen. This
+    // used to render a second one directly underneath it.
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-5 pb-10">
-      <motion.button
-        onClick={onBack}
-        {...bouncyPress}
-        className="w-9 h-9 rounded-full bg-white border border-[#ECE9F7] flex items-center justify-center mb-6"
-        aria-label="Go back"
-      >
-        <ArrowLeft size={16} className="text-[#1E1B4B]" />
-      </motion.button>
-
       <motion.div
         initial={wiggleIn.initial}
         animate={wiggleIn.animate}

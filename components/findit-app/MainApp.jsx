@@ -1863,7 +1863,6 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             <AdminLogin
               user={user}
               showToast={showToast}
-              onBack={() => navigateTo("profile")}
               onUnlocked={() => {
                 setAdminUnlocked(true);
                 setScreen("admin");
