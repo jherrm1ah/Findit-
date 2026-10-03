@@ -20,6 +20,21 @@ const BANNERS = [
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
+// Deliberately excludes Home/Browse catalogue/Request/Seller dashboard/
+// Admin queue — every one of those is already exactly one tap away on the
+// bottom tab bar (see MainApp.jsx#tabsFor), so repeating them here was real
+// redundancy, not redundancy-as-safety-net: the same destination reachable
+// 3 different ways (bottom tab + this menu + Home's own top-right icon row)
+// on a 5-inch screen, not extra convenience. This menu only holds what the
+// bottom tab bar genuinely has no room for. Module-level, not rebuilt every
+// render, since it depends on nothing from props or state.
+const MENU_LINKS = [
+  { label: "Browse sellers", screen: "sellers", icon: Store },
+  { label: "Cart", screen: "cart", icon: ShoppingCart },
+  { label: "My orders & saved items", screen: "account", icon: ListOrdered },
+  { label: "Notifications", screen: "notifications", icon: Bell },
+];
+
 // A passive nudge, not a wall — browsing never requires an account (see
 // App.jsx's requireAuth), so this is the one place that gently suggests
 // signing in rather than forcing it. Dismissed once, it stays dismissed on
@@ -148,15 +163,23 @@ export default function Home({
     if (banner >= slides.length) setBanner(0);
   }, [slides.length, banner]);
   const activeSlide = slides[banner] ?? slides[0];
-  // The advertiser's own store rating — pulled from the already-loaded
-  // product list (every product already carries its seller's rating, see
-  // lib/repo.ts#computeSellerStatsMap), not a separate fetch. A buyer
+  // The live, currently-loaded version of whatever listing this campaign
+  // targets — not a separate fetch, the same already-loaded product list
+  // every other lookup here uses. Backs both the rating below AND the
+  // card's photo (see the <NextImage> src below): activeSlide.campaign.imageUrl
+  // is a snapshot taken at the moment the seller paid, so if they've since
+  // changed that listing's photo, showing the snapshot would mean a buyer
+  // taps an ad for one photo and lands on a product page showing a
+  // different one. Preferring the live photo keeps the ad honest; the
+  // snapshot is still the fallback for a listing that's since been
+  // deactivated or deleted, where there's no live photo to show instead.
+  const activeCampaignProduct =
+    activeSlide.kind === "campaign" ? products.find((p) => p.id === activeSlide.campaign.targetProductId) ?? null : null;
+  // The advertiser's own store rating — every product already carries its
+  // seller's rating (see lib/repo.ts#computeSellerStatsMap). A buyer
   // deciding whether to tap a paid placement deserves the same trust
   // signal they'd see anywhere else that seller shows up.
-  const activeCampaignRating =
-    activeSlide.kind === "campaign"
-      ? products.find((p) => p.id === activeSlide.campaign.targetProductId)?.rating ?? null
-      : null;
+  const activeCampaignRating = activeCampaignProduct?.rating ?? null;
 
   // Static slides (BANNERS) navigate to another screen; a campaign slide
   // goes to the specific listing it's promoting when it has one, or
@@ -213,20 +236,6 @@ export default function Home({
   // already uses — a buyer who hearts something otherwise has no reminder of
   // it anywhere until they happen to go looking in Account.
   const saved = products.filter((p) => savedIds.includes(p.id));
-
-  // Deliberately excludes Home/Browse catalogue/Request/Seller dashboard/
-  // Admin queue — every one of those is already exactly one tap away on the
-  // bottom tab bar (see MainApp.jsx#tabsFor), so repeating them here was
-  // real redundancy, not redundancy-as-safety-net: the same destination
-  // reachable 3 different ways (bottom tab + this menu + Home's own top-
-  // right icon row) on a 5-inch screen, not extra convenience. This menu
-  // now only holds what the bottom tab bar genuinely has no room for.
-  const MENU_LINKS = [
-    { label: "Browse sellers", screen: "sellers", icon: Store },
-    { label: "Cart", screen: "cart", icon: ShoppingCart },
-    { label: "My orders & saved items", screen: "account", icon: ListOrdered },
-    { label: "Notifications", screen: "notifications", icon: Bell },
-  ];
 
   return (
     <div className="px-5 pt-4 pb-10">
@@ -388,9 +397,38 @@ export default function Home({
       {/* promo carousel — FindIt's own slides (BANNERS) always first, any
           paid campaigns appended after; see the `slides` note above. */}
       <div
+        // A real <button> isn't possible here — the pagination dots below
+        // are themselves real <button> elements, and a button can't nest
+        // inside another button (invalid HTML, breaks their own click
+        // handling). role="button" + tabIndex + onKeyDown gets this the
+        // same keyboard/screen-reader reachability as every other tappable
+        // card in this app (the product grid below is real <motion.button>
+        // elements) without that conflict.
+        role="button"
+        tabIndex={0}
+        aria-label={activeSlide.kind === "campaign" ? `${activeSlide.campaign.ctaLabel}: ${activeSlide.campaign.headline}` : activeSlide.cta}
+        onKeyDown={(e) => {
+          // Only when the card itself is focused — the pagination dots
+          // below are real buttons too, and their own Enter/Space press
+          // dispatches a "keydown" that bubbles up here regardless of the
+          // stopPropagation their click handler already does (that stops
+          // the separate click event, not this one). Without this guard,
+          // activating a dot by keyboard would ALSO fire this card's own
+          // tap action.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleSlideTap(activeSlide);
+          }
+        }}
         className="rounded-[20px] relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
-          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : undefined,
+          // A campaign slide gets a solid fallback too (the same navy as
+          // its text panel, so it blends in) — not left undefined like
+          // before, which meant a photo that fails to load (a deleted
+          // storage file, a network hiccup) left this card blank behind
+          // the text instead of just quietly showing no photo.
+          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : "#1E1B4B",
           // A FIXED height, not minHeight — the card used to grow taller
           // for a campaign slide (longer seller-written headline/body)
           // than for FindIt's own short static banners, so the whole
@@ -414,7 +452,7 @@ export default function Home({
           // panel, layered on top of the photo as an overlay rather than
           // pushing the card's size around.
           <NextImage
-            src={activeSlide.campaign.imageUrl}
+            src={activeCampaignProduct?.imageUrl || activeSlide.campaign.imageUrl}
             alt=""
             fill
             sizes="(max-width: 640px) 100vw, 400px"
@@ -472,7 +510,12 @@ export default function Home({
                   )}
                 </div>
                 <h2
-                  className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
+                  // break-words — a seller's headline is free-typed, up to
+                  // 60 characters (see validateAdCampaignInput); one long
+                  // unbroken word (no spaces) would otherwise overflow this
+                  // panel sideways and get clipped mid-word instead of
+                  // wrapping, since nothing forces a break by default.
+                  className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line break-words relative"
                   style={{
                     fontFamily: "Fraunces, serif",
                     textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
@@ -484,7 +527,9 @@ export default function Home({
                   <p
                     // No max-w here — the panel wrapping this text
                     // (max-w-[78%] of the card) already constrains it.
-                    className="text-[12.5px] text-white/85 leading-snug mb-4 relative"
+                    // break-words for the same reason as the headline above
+                    // — up to 140 free-typed characters (validateAdCampaignInput).
+                    className="text-[12.5px] text-white/85 leading-snug mb-4 relative break-words"
                     style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
                   >
                     {activeSlide.campaign.body}
@@ -495,9 +540,13 @@ export default function Home({
           </div>
 
           <div className="shrink-0 flex items-end justify-between mt-2">
-            <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
-              {activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}
-              <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+            {/* max-w + min-w-0 + the inner truncate — a seller's own CTA
+                label is free-typed up to 24 characters (validateAdCampaignInput);
+                without a cap here, an unusually wide one could push the
+                pagination dots off this row instead of just ellipsizing. */}
+            <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative max-w-[70%] min-w-0">
+              <span className="truncate">{activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}</span>
+              <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0">
                 <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
               </span>
             </motion.span>
