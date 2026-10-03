@@ -163,15 +163,23 @@ export default function Home({
     if (banner >= slides.length) setBanner(0);
   }, [slides.length, banner]);
   const activeSlide = slides[banner] ?? slides[0];
-  // The advertiser's own store rating — pulled from the already-loaded
-  // product list (every product already carries its seller's rating, see
-  // lib/repo.ts#computeSellerStatsMap), not a separate fetch. A buyer
+  // The live, currently-loaded version of whatever listing this campaign
+  // targets — not a separate fetch, the same already-loaded product list
+  // every other lookup here uses. Backs both the rating below AND the
+  // card's photo (see the <NextImage> src below): activeSlide.campaign.imageUrl
+  // is a snapshot taken at the moment the seller paid, so if they've since
+  // changed that listing's photo, showing the snapshot would mean a buyer
+  // taps an ad for one photo and lands on a product page showing a
+  // different one. Preferring the live photo keeps the ad honest; the
+  // snapshot is still the fallback for a listing that's since been
+  // deactivated or deleted, where there's no live photo to show instead.
+  const activeCampaignProduct =
+    activeSlide.kind === "campaign" ? products.find((p) => p.id === activeSlide.campaign.targetProductId) ?? null : null;
+  // The advertiser's own store rating — every product already carries its
+  // seller's rating (see lib/repo.ts#computeSellerStatsMap). A buyer
   // deciding whether to tap a paid placement deserves the same trust
   // signal they'd see anywhere else that seller shows up.
-  const activeCampaignRating =
-    activeSlide.kind === "campaign"
-      ? products.find((p) => p.id === activeSlide.campaign.targetProductId)?.rating ?? null
-      : null;
+  const activeCampaignRating = activeCampaignProduct?.rating ?? null;
 
   // Static slides (BANNERS) navigate to another screen; a campaign slide
   // goes to the specific listing it's promoting when it has one, or
@@ -444,7 +452,7 @@ export default function Home({
           // panel, layered on top of the photo as an overlay rather than
           // pushing the card's size around.
           <NextImage
-            src={activeSlide.campaign.imageUrl}
+            src={activeCampaignProduct?.imageUrl || activeSlide.campaign.imageUrl}
             alt=""
             fill
             sizes="(max-width: 640px) 100vw, 400px"
