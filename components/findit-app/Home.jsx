@@ -20,6 +20,21 @@ const BANNERS = [
   { tag: "Verified sellers", title: "Shop the\nfull catalogue.", cta: "Browse all", action: "browse" },
 ];
 
+// Deliberately excludes Home/Browse catalogue/Request/Seller dashboard/
+// Admin queue — every one of those is already exactly one tap away on the
+// bottom tab bar (see MainApp.jsx#tabsFor), so repeating them here was real
+// redundancy, not redundancy-as-safety-net: the same destination reachable
+// 3 different ways (bottom tab + this menu + Home's own top-right icon row)
+// on a 5-inch screen, not extra convenience. This menu only holds what the
+// bottom tab bar genuinely has no room for. Module-level, not rebuilt every
+// render, since it depends on nothing from props or state.
+const MENU_LINKS = [
+  { label: "Browse sellers", screen: "sellers", icon: Store },
+  { label: "Cart", screen: "cart", icon: ShoppingCart },
+  { label: "My orders & saved items", screen: "account", icon: ListOrdered },
+  { label: "Notifications", screen: "notifications", icon: Bell },
+];
+
 // A passive nudge, not a wall — browsing never requires an account (see
 // App.jsx's requireAuth), so this is the one place that gently suggests
 // signing in rather than forcing it. Dismissed once, it stays dismissed on
@@ -213,20 +228,6 @@ export default function Home({
   // already uses — a buyer who hearts something otherwise has no reminder of
   // it anywhere until they happen to go looking in Account.
   const saved = products.filter((p) => savedIds.includes(p.id));
-
-  // Deliberately excludes Home/Browse catalogue/Request/Seller dashboard/
-  // Admin queue — every one of those is already exactly one tap away on the
-  // bottom tab bar (see MainApp.jsx#tabsFor), so repeating them here was
-  // real redundancy, not redundancy-as-safety-net: the same destination
-  // reachable 3 different ways (bottom tab + this menu + Home's own top-
-  // right icon row) on a 5-inch screen, not extra convenience. This menu
-  // now only holds what the bottom tab bar genuinely has no room for.
-  const MENU_LINKS = [
-    { label: "Browse sellers", screen: "sellers", icon: Store },
-    { label: "Cart", screen: "cart", icon: ShoppingCart },
-    { label: "My orders & saved items", screen: "account", icon: ListOrdered },
-    { label: "Notifications", screen: "notifications", icon: Bell },
-  ];
 
   return (
     <div className="px-5 pt-4 pb-10">
