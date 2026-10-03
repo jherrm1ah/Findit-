@@ -18,7 +18,7 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { findUserForSellerId, findUserByBusinessName, getOrCreateConversation } = await import("./repo");
+const { findUserForSellerId, findUserByBusinessName, getOrCreateConversation, listConversations } = await import("./repo");
 
 function seller(overrides: Record<string, unknown> = {}) {
   return { id: "seller_1", user_id: "user_seller_1", name: "Terra Gadgets", ...overrides };
@@ -69,6 +69,39 @@ describe("findUserByBusinessName — the bug this closes", () => {
       ],
     });
     await expect(findUserByBusinessName("Terra Gadgets")).rejects.toThrow();
+  });
+});
+
+describe("listConversations — ordered by most recent activity, not thread age", () => {
+  it("puts an old thread with a brand-new reply above a newer, idle one", async () => {
+    fakeDb.reset({
+      sellers: [seller({ id: "seller_1", user_id: "user_seller_1" })],
+      users: [
+        user({ id: "buyer_1", role: "buyer", business_name: null }),
+        user({ id: "user_seller_1" }),
+      ],
+      conversations: [
+        // The OLDER thread, but it just got a reply more recently than
+        // conv_new was even created — the bug this test guards against is
+        // sorting by this created_at instead of each thread's own latest
+        // message.
+        { id: "conv_old", buyer_id: "buyer_1", seller_id: "user_seller_1", created_at: "2024-01-01T00:00:00.000Z" },
+        { id: "conv_new", buyer_id: "buyer_1", seller_id: "user_seller_1", created_at: "2024-03-01T00:00:00.000Z" },
+      ],
+      messages: [
+        {
+          id: "msg_1",
+          conversation_id: "conv_old",
+          sender_id: "user_seller_1",
+          body: "Still interested?",
+          created_at: "2024-06-01T00:00:00.000Z",
+          read: false,
+        },
+      ],
+    });
+
+    const result = await listConversations("buyer_1");
+    expect(result.map((c) => c.id)).toEqual(["conv_old", "conv_new"]);
   });
 });
 

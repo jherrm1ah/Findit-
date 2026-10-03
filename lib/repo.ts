@@ -2725,7 +2725,12 @@ export async function listConversations(userId: string): Promise<Conversation[]>
   const result = await db
     .from("conversations")
     .select("*")
-    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    // Just an initial fetch order, not the list's final order — see the
+    // real sort by lastMessageAt below. Ordering by the THREAD's own
+    // created_at here would otherwise mean an old conversation that just
+    // got a brand-new reply never moves, while an idle one created more
+    // recently sits above it — the classic "messages list looks frozen"
+    // bug.
     .order("created_at", { ascending: false });
   const rows = assertNoError(result, "listing conversations") as Row[];
 
@@ -2761,7 +2766,11 @@ export async function listConversations(userId: string): Promise<Conversation[]>
       };
     })
   );
-  return conversations;
+  // The real order: most recent activity first, same as every other
+  // messaging UI. Sorted here (not via the DB query above) because
+  // lastMessageAt itself is only known after each conversation's own
+  // latest-message lookup above resolves.
+  return conversations.sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
 }
 
 export async function listMessages(conversationId: string, viewerId: string): Promise<Message[]> {
