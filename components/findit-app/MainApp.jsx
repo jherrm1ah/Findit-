@@ -2001,6 +2001,15 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onBack={() => {
               threadRequestRef.current++;
               setActiveThread(null);
+              // Nothing else refreshes the Messages LIST while a thread is
+              // open — a sent or newly-polled-in message only ever updates
+              // threadMessages above, so without this the list kept
+              // showing whatever lastMessage/lastMessageAt/unreadCount
+              // snapshot it had from before this thread was opened, stale
+              // until the user happened to leave Messages and come back
+              // (see navigateTo's "messages" case, the only other place
+              // this list refetches).
+              api.getConversations().then(setConversations).catch(() => {});
             }}
             onSend={handleSendMessage}
           />
