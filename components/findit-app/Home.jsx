@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import NextImage from "next/image";
 import { motion, AnimatePresence, useAnimate } from "motion/react";
 import {
   Search, ShieldCheck, Truck, MessageCircle,
   ArrowRight, X, ChevronRight,
   ListOrdered, Bell, Menu, ShoppingCart, SlidersHorizontal,
-  MapPin, Store, Tag, UserRound,
+  MapPin, Store, Tag, UserRound, Star,
 } from "lucide-react";
 import { GROUPS, categoryGroup, naira } from "./data";
 import { Logo, ArtBlock } from "./shared";
@@ -99,7 +100,7 @@ export default function Home({
   go, openProduct, products, unreadCount = 0, savedIds, onToggleSaved,
   myLocation, locationStatus, onEnableLocation, role,
   orders = [], myRequests = [], cartCount = 0, onRequireAuth,
-  adCampaigns = [], onViewSeller,
+  adCampaign = null, onViewSeller, onAdCampaignClick,
 }) {
   const [banner, setBanner] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -116,14 +117,19 @@ export default function Home({
   };
 
   // The carousel's real slide list: FindIt's own BANNERS, unchanged and
-  // always first, with any currently-active paid campaigns appended after
-  // them — never the other way around, so advertising can never push the
-  // app's own Request-first feature out of the default/first position. A
+  // always first, with AT MOST ONE paid campaign appended after them — the
+  // rotation engine (lib/adCampaigns.ts#pickAdCampaignForImpression)
+  // already picked this one load's slide server-side and counted it as an
+  // impression, so there is never a list to choose from here. Showing
+  // every active campaign at once was the exact "10 advertisers fighting
+  // over one homepage card" problem the rotation exists to avoid — never
+  // the other way around either, so advertising can never push the app's
+  // own Request-first feature out of the default/first position. A
   // campaign slide is marked "Sponsored" in the render below; BANNERS never
   // are, because neither is an advertisement.
   const slides = [
     ...BANNERS.map((b) => ({ kind: "static", ...b })),
-    ...adCampaigns.map((c) => ({ kind: "campaign", campaign: c })),
+    ...(adCampaign ? [{ kind: "campaign", campaign: adCampaign }] : []),
   ];
 
   // The promo banner used to only change on a manual dot tap — auto-advance
@@ -142,15 +148,28 @@ export default function Home({
     if (banner >= slides.length) setBanner(0);
   }, [slides.length, banner]);
   const activeSlide = slides[banner] ?? slides[0];
+  // The advertiser's own store rating — pulled from the already-loaded
+  // product list (every product already carries its seller's rating, see
+  // lib/repo.ts#computeSellerStatsMap), not a separate fetch. A buyer
+  // deciding whether to tap a paid placement deserves the same trust
+  // signal they'd see anywhere else that seller shows up.
+  const activeCampaignRating =
+    activeSlide.kind === "campaign"
+      ? products.find((p) => p.id === activeSlide.campaign.targetProductId)?.rating ?? null
+      : null;
 
   // Static slides (BANNERS) navigate to another screen; a campaign slide
   // goes to the specific listing it's promoting when it has one, or
-  // otherwise to the advertiser's own store page — never a dead tap.
+  // otherwise to the advertiser's own store page — never a dead tap. Also
+  // records a real click (fire-and-forget — never awaited, so it can't
+  // delay the navigation itself) for the seller's own impressions/clicks/
+  // CTR numbers on their Advertise card.
   const handleSlideTap = (slide) => {
     if (slide.kind === "static") {
       go(slide.action);
       return;
     }
+    onAdCampaignClick?.(slide.campaign.id);
     const product = slide.campaign.targetProductId
       ? products.find((p) => p.id === slide.campaign.targetProductId)
       : null;
@@ -371,14 +390,34 @@ export default function Home({
       <div
         className="rounded-[20px] p-6 relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
-          background:
-            activeSlide.kind === "campaign"
-              ? `linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%), url(${activeSlide.campaign.imageUrl}) center/cover`
-              : "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)",
+          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : undefined,
           minHeight: 190,
         }}
         onClick={() => handleSlideTap(activeSlide)}
       >
+        {activeSlide.kind === "campaign" && (
+          // A real <Image>, not a CSS background: url() — every other photo
+          // in this app (ArtBlock, product/seller images) already renders
+          // this way, through next/image's own optimizer; a raw CSS
+          // background-image on an inline style is the one place that
+          // wasn't, and is also the one place a Sponsored slide's banner
+          // silently failed to show in production. Layered below the
+          // gradient overlay and the text content, both still painted
+          // after it in DOM order.
+          <NextImage
+            src={activeSlide.campaign.imageUrl}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 100vw, 400px"
+            className="object-cover"
+          />
+        )}
+        {activeSlide.kind === "campaign" && (
+          <div
+            className="absolute inset-0"
+            style={{ background: "linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%)" }}
+          />
+        )}
         {activeSlide.kind === "static" && (
           <>
             <motion.div {...floatLoop(14, 4)} className="absolute -right-8 -bottom-10 w-40 h-40 rounded-full bg-white/10" />
@@ -396,13 +435,20 @@ export default function Home({
             {/* A campaign is always explicitly labeled "Sponsored" — never
                 the app's own purple pill BANNERS uses, so a buyer can tell
                 paid placement apart from FindIt's own features at a glance. */}
-            <span
-              className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full mb-4 relative ${
-                activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
-              }`}
-            >
-              {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
-            </span>
+            <div className="flex items-center gap-2 mb-4">
+              <span
+                className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full relative ${
+                  activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
+                }`}
+              >
+                {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
+              </span>
+              {activeSlide.kind === "campaign" && activeCampaignRating != null && (
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative">
+                  <Star size={11} className="fill-[#F59E0B] text-[#F59E0B]" /> {activeCampaignRating}
+                </span>
+              )}
+            </div>
             <h2 className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
               {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
             </h2>

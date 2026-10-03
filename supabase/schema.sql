@@ -1167,6 +1167,11 @@ create table if not exists ad_campaigns (
   -- (lib/adCampaigns.ts#notifyExpiredAdCampaigns) tell "already told this
   -- seller their campaign ended" apart from "just ended, notify once".
   ended_notified_at timestamptz,
+  -- Migration 041 — real counters behind the rotation system (see
+  -- lib/adCampaigns.ts#pickAdCampaignForImpression). Plain read-then-write
+  -- increments, not a CAS retry loop; see that migration's note.
+  impressions integer not null default 0,
+  clicks integer not null default 0,
   created_at timestamptz not null default now()
 );
 create unique index if not exists ad_campaigns_payment_id_key on ad_campaigns(payment_id) where payment_id is not null;

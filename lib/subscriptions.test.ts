@@ -10,6 +10,7 @@ import {
   storeTemplatesForLevel,
   effectiveStoreAccent,
   storeAccentsForLevel,
+  applyProPurchaseDiscount,
 } from "./subscriptions";
 
 // NOTE ON SCOPE: same as lib/repo.test.ts — the DB-touching functions in
@@ -276,5 +277,24 @@ describe("storeAccentsForLevel", () => {
     const accents = storeAccentsForLevel("none");
     expect(accents.find((a) => a.id === "violet")?.locked).toBe(false);
     expect(accents.filter((a) => a.id !== "violet").every((a) => a.locked)).toBe(true);
+  });
+});
+
+describe("applyProPurchaseDiscount", () => {
+  it("charges the full price for a non-Pro buyer", () => {
+    expect(applyProPurchaseDiscount(2000, false)).toBe(2000);
+  });
+
+  it("takes 20% off for a FindIt Pro member", () => {
+    expect(applyProPurchaseDiscount(2000, true)).toBe(1600);
+  });
+
+  it("rounds to the nearest naira rather than leaving a fraction", () => {
+    expect(applyProPurchaseDiscount(9000, true)).toBe(7200);
+    expect(applyProPurchaseDiscount(1, true)).toBe(1); // 0.8 rounds up to 1, never free
+  });
+
+  it("never discounts a free (₦0) plan into a negative price", () => {
+    expect(applyProPurchaseDiscount(0, true)).toBe(0);
   });
 });

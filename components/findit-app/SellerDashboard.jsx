@@ -19,6 +19,15 @@ const ORDER_ITEM = { hidden: { opacity: 0, y: 14, scale: 0.97 }, visible: { opac
 // keep the plain `press` feedback so destructive actions never feel playful.
 const bouncyPress = { whileTap: { scale: 0.93 }, transition: SPRING_BOUNCY };
 
+// Display-only mirror of lib/subscriptions.ts#applyProPurchaseDiscount —
+// used by the boost picker and AdvertiseCard's plan picker so a FindIt Pro
+// seller sees the price they'll actually be charged, not the undiscounted
+// list price. The real discount is always recomputed server-side at
+// checkout; this never decides what anyone pays.
+function proDisplayPrice(price) {
+  return Math.round((price * 8000) / 10000);
+}
+
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open";
   if (r.budgetMin && r.budgetMax && r.budgetMin !== r.budgetMax) {
@@ -628,13 +637,32 @@ function BrandingCard({ plan, branding, storeTemplates = [], storeAccents = [], 
 
 const REVENUE_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Real, tiered analytics computed from this seller's own real order data —
-// nothing fabricated, nothing shown that a higher plan doesn't actually
-// unlock. Free sees the upsell; Basic gets this-month totals; Business/Pro
-// add a top product and a real week-by-week trend.
-function StoreAnalytics({ plan, orders, go }) {
-  const level = plan?.analyticsLevel ?? "none";
+// Downloads a CSV of this seller's own paid orders — client-side only, no
+// route needed since `orders` is already loaded in the browser. One row
+// per real sale (date, item, amount), newest first.
+function downloadOrdersCsv(paidOrders) {
+  const rows = [["Date", "Item", "Amount (NGN)"]];
+  for (const o of [...paidOrders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
+    rows.push([new Date(o.createdAt).toISOString().slice(0, 10), o.item.replace(/"/g, '""'), String(o.price)]);
+  }
+  const csv = rows.map((r) => r.map((cell) => `"${cell}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `findit-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
+// Business analytics — FindIt Pro's own value, not a Store plan's (see
+// lib/subscriptions.ts#applyProPurchaseDiscount's comment for the matching
+// "what belongs to Pro vs. a Store tier" split). Gated on isFindItPro, not
+// plan.analyticsLevel — a Free Seller + FindIt Pro combo gets the full
+// picture below even at a 10-product cap; Pro Store without FindIt Pro
+// gets none of it. Every number here is computed from this seller's own
+// real order data, nothing fabricated.
+function StoreAnalytics({ isFindItPro, orders, go }) {
   const data = useMemo(() => {
     // Only orders that actually collected money and kept it count as
     // revenue — an "Awaiting payment" order was never charged, and one an
@@ -644,10 +672,32 @@ function StoreAnalytics({ plan, orders, go }) {
     const paidOrders = orders.filter((o) => o.paymentStatus === "paid" && o.escrowStatus !== "refunded");
     const now = Date.now();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
     const thisMonth = paidOrders.filter((o) => new Date(o.createdAt).getTime() >= monthStart);
+    const lastMonth = paidOrders.filter((o) => {
+      const t = new Date(o.createdAt).getTime();
+      return t >= lastMonthStart && t < monthStart;
+    });
+    const monthRevenue = thisMonth.reduce((sum, o) => sum + o.price, 0);
+    const lastMonthRevenue = lastMonth.reduce((sum, o) => sum + o.price, 0);
+    // null (not 0%) when there's no prior month to compare against — a
+    // first month of sales isn't a "+∞%" or "0%" change from nothing.
+    const revenueChangePct = lastMonthRevenue > 0 ? Math.round(((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
+
     const revenueByProduct = new Map();
     for (const o of paidOrders) revenueByProduct.set(o.item, (revenueByProduct.get(o.item) || 0) + o.price);
-    const topProduct = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+    const ranked = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1]);
+    const topProducts = ranked.slice(0, 3);
+    // Only a real "needs attention" list when there's enough of a catalogue
+    // for "bottom" to mean something other than restating the top list.
+    const bottomProducts = ranked.length > 3 ? ranked.slice(-3).reverse() : [];
+
+    // Repeat vs. new buyers — grouped by buyer id across this seller's own
+    // paid orders, not a platform-wide stat.
+    const ordersByBuyer = new Map();
+    for (const o of paidOrders) ordersByBuyer.set(o.userId, (ordersByBuyer.get(o.userId) || 0) + 1);
+    const repeatCustomers = [...ordersByBuyer.values()].filter((c) => c > 1).length;
+    const newCustomers = ordersByBuyer.size - repeatCustomers;
 
     const weeks = [0, 1, 2, 3].map((i) => {
       const end = now - i * REVENUE_MS;
@@ -663,22 +713,29 @@ function StoreAnalytics({ plan, orders, go }) {
 
     return {
       monthOrders: thisMonth.length,
-      monthRevenue: thisMonth.reduce((sum, o) => sum + o.price, 0),
+      monthRevenue,
+      revenueChangePct,
       avgOrderValue: paidOrders.length ? Math.round(paidOrders.reduce((sum, o) => sum + o.price, 0) / paidOrders.length) : 0,
-      topProduct,
+      topProducts,
+      bottomProducts,
+      repeatCustomers,
+      newCustomers,
       weeks,
+      paidOrders,
     };
   }, [orders]);
 
-  if (level === "none") {
+  if (!isFindItPro) {
     return (
       <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-7 flex items-start gap-3">
         <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Store analytics</p>
-          <p className="text-[11.5px] text-[#6B6483] mb-2">Unlock real sales analytics on Basic Store and above.</p>
-          <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
-            See upgrade options
+          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Business analytics</p>
+          <p className="text-[11.5px] text-[#6B6483] mb-2">
+            Real revenue trends, top/bottom products, and customer insights — unlock with FindIt Pro, on any Store plan.
+          </p>
+          <button onClick={() => go?.("findItPro")} className="text-[11.5px] font-semibold text-[#7C3AED]">
+            See FindIt Pro
           </button>
         </div>
       </div>
@@ -689,14 +746,29 @@ function StoreAnalytics({ plan, orders, go }) {
 
   return (
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
-      <div className="flex items-center gap-2 mb-3">
-        <BarChart3 size={14} className="text-[#7C3AED]" />
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Store analytics</p>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 size={14} className="text-[#7C3AED]" />
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Business analytics</p>
+        </div>
+        <button
+          onClick={() => downloadOrdersCsv(data.paidOrders)}
+          disabled={data.paidOrders.length === 0}
+          className="text-[10.5px] font-semibold text-[#7C3AED] disabled:opacity-40"
+        >
+          Export CSV
+        </button>
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="bg-[#F5F2FC] rounded-xl p-3">
           <p className="text-[14px] font-bold text-[#1E1B4B]">{naira(data.monthRevenue)}</p>
-          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">This month's revenue</p>
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">
+            This month{data.revenueChangePct != null && (
+              <span className={data.revenueChangePct >= 0 ? "text-[#10B981]" : "text-[#E64980]"}>
+                {" "}{data.revenueChangePct >= 0 ? "+" : ""}{data.revenueChangePct}%
+              </span>
+            )}
+          </p>
         </div>
         <div className="bg-[#F5F2FC] rounded-xl p-3">
           <p className="text-[14px] font-bold text-[#1E1B4B]">{data.monthOrders}</p>
@@ -704,36 +776,65 @@ function StoreAnalytics({ plan, orders, go }) {
         </div>
       </div>
 
-      {(level === "advanced" || level === "full") && (
-        <div className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3 mb-3">
-          <div className="min-w-0">
-            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide mb-0.5">Top product by revenue</p>
-            <p className="text-[12.5px] font-semibold text-[#1E1B4B] truncate">{data.topProduct ? data.topProduct[0] : "No sales yet"}</p>
-          </div>
-          {data.topProduct && <p className="text-[12.5px] font-bold text-[#1E1B4B] shrink-0">{naira(data.topProduct[1])}</p>}
-        </div>
-      )}
-
-      {level === "full" && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-2">
-            <TrendingUp size={11} className="text-[#7C3AED]" />
-            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Revenue, last 4 weeks</p>
-          </div>
-          <div className="flex items-end gap-2 h-16">
-            {data.weeks.map((rev, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full rounded-t-md"
-                  style={{ height: `${Math.max(4, (rev / maxWeek) * 56)}px`, background: "linear-gradient(180deg,#A855F7,#7C3AED)" }}
-                  title={naira(rev)}
-                />
-                <p className="text-[8.5px] text-[#8A8372]">W{i + 1}</p>
+      {data.topProducts.length > 0 && (
+        <div className="bg-[#F5F2FC] rounded-xl p-3 mb-3">
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide mb-1.5">Top products by revenue</p>
+          <div className="space-y-1">
+            {data.topProducts.map(([name, revenue]) => (
+              <div key={name} className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{name}</p>
+                <p className="text-[12px] font-bold text-[#1E1B4B] shrink-0">{naira(revenue)}</p>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {data.bottomProducts.length > 0 && (
+        <div className="bg-[#FDF6EC] rounded-xl p-3 mb-3">
+          <p className="text-[9.5px] text-[#B45309] uppercase tracking-wide mb-1.5">Needs attention — lowest revenue</p>
+          <div className="space-y-1">
+            {data.bottomProducts.map(([name, revenue]) => (
+              <div key={name} className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{name}</p>
+                <p className="text-[12px] font-bold text-[#1E1B4B] shrink-0">{naira(revenue)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(data.repeatCustomers > 0 || data.newCustomers > 0) && (
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="bg-[#F5F2FC] rounded-xl p-3">
+            <p className="text-[14px] font-bold text-[#1E1B4B]">{data.newCustomers}</p>
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">New customers</p>
+          </div>
+          <div className="bg-[#F5F2FC] rounded-xl p-3">
+            <p className="text-[14px] font-bold text-[#1E1B4B]">{data.repeatCustomers}</p>
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Repeat customers</p>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <TrendingUp size={11} className="text-[#7C3AED]" />
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Revenue, last 4 weeks</p>
+        </div>
+        <div className="flex items-end gap-2 h-16">
+          {data.weeks.map((rev, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div
+                className="w-full rounded-t-md"
+                style={{ height: `${Math.max(4, (rev / maxWeek) * 56)}px`, background: "linear-gradient(180deg,#A855F7,#7C3AED)" }}
+                title={naira(rev)}
+              />
+              <p className="text-[8.5px] text-[#8A8372]">W{i + 1}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <p className="text-[9.5px] text-[#8A8372] mt-2">Average order value: {naira(data.avgOrderValue)}</p>
     </div>
@@ -744,52 +845,83 @@ const CAMPAIGN_HEADLINE_MAX = 60;
 const CAMPAIGN_BODY_MAX = 140;
 const CAMPAIGN_CTA_MAX = 24;
 
+// One campaign's real performance — impressions and clicks are counted
+// server-side (lib/adCampaigns.ts#pickAdCampaignForImpression /
+// #recordAdCampaignClick), never estimated. This is what makes "entered
+// the rotation" a legitimate product instead of a vague promise: a seller
+// can see exactly how many times their slide was actually shown.
+function CampaignStatRow({ campaign: c, live }) {
+  const ctr = c.impressions > 0 ? ((c.clicks / c.impressions) * 100).toFixed(1) : "0.0";
+  return (
+    <div className="bg-[#F5F2FC] rounded-xl p-3">
+      <div className="flex items-start justify-between gap-2 mb-1.5">
+        <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{c.headline}</p>
+        <span
+          className={`text-[9.5px] font-semibold px-2 py-0.5 rounded-full shrink-0 ${
+            live ? "text-[#10B981] bg-[#10B981]/12" : "text-[#8A8372] bg-[#8A8372]/12"
+          }`}
+        >
+          {live ? "Live" : "Ended"}
+        </span>
+      </div>
+      <p className="text-[9.5px] text-[#8A8372] mb-2">
+        {live ? "Until" : "Ended"} {new Date(c.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
+      </p>
+      <div className="flex gap-4">
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{c.impressions.toLocaleString("en-NG")}</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">Impressions</p>
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{c.clicks.toLocaleString("en-NG")}</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">Clicks</p>
+        </div>
+        <div>
+          <p className="text-[13px] font-bold text-[#1E1B4B]">{ctr}%</p>
+          <p className="text-[8.5px] text-[#8A8372] uppercase tracking-wide">CTR</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Paid Sponsored slides in Home's promo carousel (see lib/adCampaigns.ts).
 // Self-contained the same way StoreAnalytics above is: this card owns its
-// own form/upload/submit state rather than threading a dozen fields
-// through the parent, which only ever needs the one onCreateAdCampaign
-// callback plus the plan catalogue and this seller's own campaign history.
-function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUploadImage, showToast }) {
+// own form/submit state rather than threading a dozen fields through the
+// parent, which only ever needs the one onCreateAdCampaign callback plus
+// the plan catalogue, this seller's own listings, and campaign history.
+function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showToast, isFindItPro = false }) {
+  // A campaign always promotes one of the seller's own listings — see
+  // app/api/sellers/me/ad-campaigns, which now rejects anything else. Its
+  // image IS that listing's own photo (no separate upload step), so only
+  // listings that actually have one are eligible to pick from.
+  const eligibleListings = listings.filter((p) => p.imageUrl);
+
   const [open, setOpen] = useState(false);
   const [planId, setPlanId] = useState(plans[0]?.id ?? null);
   const [headline, setHeadline] = useState("");
   const [body, setBody] = useState("");
   const [ctaLabel, setCtaLabel] = useState("Shop now");
-  const [imageUrl, setImageUrl] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const [targetProductId, setTargetProductId] = useState("");
+  const [targetProductId, setTargetProductId] = useState(eligibleListings[0]?.id ?? "");
 
   const now = Date.now();
   const live = myCampaigns.filter((c) => new Date(c.endsAt).getTime() > now);
   const past = myCampaigns.filter((c) => new Date(c.endsAt).getTime() <= now);
+  const selectedListing = eligibleListings.find((p) => p.id === targetProductId) ?? null;
 
   const resetForm = () => {
     setHeadline("");
     setBody("");
     setCtaLabel("Shop now");
-    setImageUrl(null);
-    setTargetProductId("");
-  };
-
-  const handlePickImage = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = ""; // same reset-after-read as the product-photo picker, so re-picking the same file still fires onChange
-    if (!file) return;
-    setUploading(true);
-    try {
-      setImageUrl(await onUploadImage(file));
-    } catch (err) {
-      showToast?.(err.message || "Couldn't upload that image — try again.", "error");
-    } finally {
-      setUploading(false);
-    }
+    setTargetProductId(eligibleListings[0]?.id ?? "");
   };
 
   const canSubmit =
-    planId && headline.trim() && headline.trim().length <= CAMPAIGN_HEADLINE_MAX &&
+    planId && targetProductId &&
+    headline.trim() && headline.trim().length <= CAMPAIGN_HEADLINE_MAX &&
     body.trim() && body.trim().length <= CAMPAIGN_BODY_MAX &&
     ctaLabel.trim() && ctaLabel.trim().length <= CAMPAIGN_CTA_MAX &&
-    imageUrl && !uploading && !creating;
+    !creating;
 
   const submit = async () => {
     if (!canSubmit) return;
@@ -798,8 +930,7 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
       headline: headline.trim(),
       body: body.trim(),
       ctaLabel: ctaLabel.trim(),
-      imageUrl,
-      targetProductId: targetProductId || null,
+      targetProductId,
     });
     resetForm();
     setOpen(false);
@@ -814,38 +945,39 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
           <Megaphone size={14} className="text-[#7C3AED]" />
           <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Advertise on FindIt</p>
         </div>
-        {!open && plans.length > 0 && (
+        {!open && plans.length > 0 && eligibleListings.length > 0 && (
           <button onClick={() => setOpen(true)} className="text-[11.5px] font-semibold text-[#7C3AED]">
             New campaign
           </button>
         )}
       </div>
 
-      {live.length === 0 && past.length === 0 && !open && (
+      {live.length === 0 && past.length === 0 && !open && eligibleListings.length > 0 && (
         <p className="text-[11.5px] text-[#6B6483]">
-          Pay to show a Sponsored slide in every buyer&apos;s home screen carousel, alongside FindIt&apos;s own features.
+          Pay to enter FindIt&apos;s homepage promotional rotation — your campaign promotes one of your own
+          listings, using its own photo, with real impressions and clicks tracked below.
+        </p>
+      )}
+      {myCampaigns.length === 0 && eligibleListings.length === 0 && !open && (
+        <p className="text-[11.5px] text-[#6B6483]">
+          Add a photo to one of your listings first — a campaign always promotes a real listing, using its
+          own photo.
         </p>
       )}
 
       {live.length > 0 && (
         <div className="space-y-2 mb-2">
           {live.map((c) => (
-            <div key={c.id} className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3">
-              <div className="min-w-0">
-                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{c.headline}</p>
-                <p className="text-[9.5px] text-[#8A8372]">
-                  Live until {new Date(c.endsAt).toLocaleDateString("en-NG", { day: "numeric", month: "short" })}
-                </p>
-              </div>
-              <span className="text-[9.5px] font-semibold text-[#10B981] bg-[#10B981]/12 px-2 py-0.5 rounded-full shrink-0">Live</span>
-            </div>
+            <CampaignStatRow key={c.id} campaign={c} live />
           ))}
         </div>
       )}
       {past.length > 0 && !open && (
-        <p className="text-[10px] text-[#8A8372]">
-          {past.length} past campaign{past.length === 1 ? "" : "s"}.
-        </p>
+        <div className="space-y-2">
+          {past.map((c) => (
+            <CampaignStatRow key={c.id} campaign={c} live={false} />
+          ))}
+        </div>
       )}
 
       <AnimatePresence>
@@ -868,25 +1000,35 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
                         planId === p.id ? "bg-[#7C3AED] text-white border-[#7C3AED]" : "text-[#514B67] border-[#ECE9F7]"
                       }`}
                     >
-                      {p.durationDays}d — {naira(p.price)}
+                      {isFindItPro ? (
+                        <>{p.durationDays}d — <span className="line-through opacity-60">{naira(p.price)}</span> {naira(proDisplayPrice(p.price))}</>
+                      ) : (
+                        `${p.durationDays}d — ${naira(p.price)}`
+                      )}
                     </button>
                   ))}
                 </div>
               )}
 
-              <button
-                onClick={() => document.getElementById("ad-campaign-image-input")?.click()}
-                className="w-full h-28 rounded-xl border-2 border-dashed border-[#ECE9F7] flex items-center justify-center overflow-hidden relative"
-              >
-                {imageUrl ? (
-                  <NextImage src={imageUrl} alt="" fill sizes="400px" className="object-cover" />
-                ) : (
-                  <span className="text-[11px] text-[#8A8372] flex items-center gap-1.5">
-                    {uploading ? "Uploading…" : (<><ImageIcon size={14} /> Upload a banner image</>)}
+              <Field label="Promote which listing?">
+                <select
+                  value={targetProductId}
+                  onChange={(e) => setTargetProductId(e.target.value)}
+                  className="w-full text-[13px] text-[#1E1B4B] outline-none bg-transparent"
+                >
+                  {eligibleListings.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </Field>
+              {selectedListing && (
+                <div className="relative w-full h-28 rounded-xl overflow-hidden">
+                  <NextImage src={selectedListing.imageUrl} alt="" fill sizes="400px" className="object-cover" />
+                  <span className="absolute bottom-1.5 right-1.5 text-[9px] font-semibold text-white bg-black/50 px-2 py-0.5 rounded-full">
+                    Campaign image — from this listing
                   </span>
-                )}
-              </button>
-              <input id="ad-campaign-image-input" type="file" accept="image/*" className="hidden" onChange={handlePickImage} />
+                </div>
+              )}
 
               <Field label={`Headline (${headline.length}/${CAMPAIGN_HEADLINE_MAX})`}>
                 <input
@@ -912,21 +1054,6 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, onUpl
                   className="w-full text-[13px] text-[#1E1B4B] outline-none"
                 />
               </Field>
-              {listings.length > 0 && (
-                <Field label="Links to (optional — defaults to your store)">
-                  <select
-                    value={targetProductId}
-                    onChange={(e) => setTargetProductId(e.target.value)}
-                    className="w-full text-[13px] text-[#1E1B4B] outline-none bg-transparent"
-                  >
-                    <option value="">Your store page</option>
-                    {listings.map((p) => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                </Field>
-              )}
-
               <div className="flex gap-2">
                 <button
                   onClick={() => { setOpen(false); resetForm(); }}
@@ -1235,6 +1362,10 @@ export default function SellerDashboard({
   verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
+  // Display-only — the real discount is always recomputed server-side at
+  // checkout (lib/subscriptions.ts#applyProPurchaseDiscount); this just
+  // keeps the picker from showing a price the seller won't actually pay.
+  isFindItPro = false,
   adCampaignPlans = [], myAdCampaigns = [], creatingAdCampaign, onCreateAdCampaign,
   myStore, onClaimStore, claimingStore,
   transactionRecords = [],
@@ -1570,15 +1701,15 @@ export default function SellerDashboard({
         ))}
       </div>
 
-      <StoreAnalytics plan={plan} orders={myOrders} go={go} />
+      <StoreAnalytics isFindItPro={isFindItPro} orders={myOrders} go={go} />
       <AdvertiseCard
         plans={adCampaignPlans}
         myCampaigns={myAdCampaigns}
         listings={myListings}
         creating={creatingAdCampaign}
         onCreate={onCreateAdCampaign}
-        onUploadImage={onUploadImage}
         showToast={showToast}
+        isFindItPro={isFindItPro}
       />
       </>
       )}
@@ -1733,7 +1864,11 @@ export default function SellerDashboard({
                               className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
                               style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                             >
-                              {boostingId === p.id ? "Working…" : `${bp.durationDays}d — ${naira(bp.price)}`}
+                              {boostingId === p.id ? "Working…" : isFindItPro ? (
+                                <>{bp.durationDays}d — <span className="line-through opacity-60">{naira(bp.price)}</span> {naira(proDisplayPrice(bp.price))}</>
+                              ) : (
+                                `${bp.durationDays}d — ${naira(bp.price)}`
+                              )}
                             </motion.button>
                           ))}
                         </div>

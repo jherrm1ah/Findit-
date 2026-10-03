@@ -15,10 +15,21 @@ const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 // Same honesty rule as StorePlans.jsx: a feature only appears here if it's
 // genuinely backed by something real elsewhere in the app. FindIt Pro's
-// analytics/customization/featured-listing columns on the plan row are
-// shared with Store plans but don't correspond to anything a BUYER can see
-// today, so they're deliberately left off this list rather than claimed.
+// customization/featured-listing columns on the plan row are shared with
+// Store plans but don't correspond to anything a BUYER can see today, so
+// they're deliberately left off this list rather than claimed.
+//
+// None of these rows are things a Store plan can also give a seller — Pro
+// Store used to bundle the same badge and priority support Pro sold, so a
+// seller on Pro Store got Pro's old value for free. Business analytics
+// moved OUT of Store plans entirely (see SellerDashboard.jsx#StoreAnalytics)
+// to become Pro's own value instead — a Free Seller + FindIt Pro combo now
+// gets real analytics a Pro Store seller without FindIt Pro doesn't.
 const FEATURE_ROWS = [
+  { text: "Business analytics: revenue trends, top/bottom products, customer insights", live: true },
+  { text: "Downloadable sales reports", live: true },
+  { text: "No Sponsored ads in your home screen", live: true },
+  { text: "20% off Boost & Ad Campaign pricing", live: true },
   { text: "FindIt Pro badge on your profile", live: true },
   { text: "Priority support", live: true },
 ];

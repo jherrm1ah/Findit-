@@ -17,9 +17,15 @@ vi.mock("@supabase/supabase-js", () => ({
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { activateAdCampaign, takeDownAdCampaign, listActiveAdCampaigns, isCampaignActive, validateAdCampaignInput } = await import(
-  "./adCampaigns"
-);
+const {
+  activateAdCampaign,
+  takeDownAdCampaign,
+  listActiveAdCampaigns,
+  pickAdCampaignForImpression,
+  recordAdCampaignClick,
+  isCampaignActive,
+  validateAdCampaignInput,
+} = await import("./adCampaigns");
 
 function seedPlan(overrides: Record<string, unknown> = {}) {
   fakeDb.reset({
@@ -147,5 +153,78 @@ describe("validateAdCampaignInput", () => {
   });
   it("rejects an empty cta label", () => {
     expect(() => validateAdCampaignInput({ headline: "Headline", body: "Body text", ctaLabel: " " })).toThrow();
+  });
+});
+
+function seedCampaign(id: string, overrides: Record<string, unknown> = {}) {
+  return {
+    id,
+    seller_id: "seller_1",
+    plan_id: "adplan_7d",
+    headline: `Campaign ${id}`,
+    body: "b",
+    cta_label: "Shop",
+    image_url: "u",
+    amount: 3000,
+    impressions: 0,
+    clicks: 0,
+    ends_at: new Date(Date.now() + 86400000).toISOString(),
+    created_at: new Date().toISOString(),
+    ...overrides,
+  };
+}
+
+describe("pickAdCampaignForImpression — the rotation engine", () => {
+  it("returns null when nothing is active", async () => {
+    fakeDb.reset({ ad_campaign_plans: [], ad_campaigns: [] });
+    expect(await pickAdCampaignForImpression()).toBeNull();
+  });
+
+  it("picks the only active campaign and counts a real impression for it", async () => {
+    fakeDb.reset({ ad_campaign_plans: [], ad_campaigns: [seedCampaign("camp_1")] });
+
+    const picked = await pickAdCampaignForImpression();
+    expect(picked?.id).toBe("camp_1");
+    expect(picked?.impressions).toBe(1);
+    expect(fakeDb.dump("ad_campaigns").find((c) => c.id === "camp_1")!.impressions).toBe(1);
+  });
+
+  it("never shows every active campaign at once — only ever picks one", async () => {
+    fakeDb.reset({
+      ad_campaign_plans: [],
+      ad_campaigns: [seedCampaign("camp_1"), seedCampaign("camp_2"), seedCampaign("camp_3")],
+    });
+
+    const picked = await pickAdCampaignForImpression();
+    expect(["camp_1", "camp_2", "camp_3"]).toContain(picked?.id);
+
+    // Exactly one campaign's impressions moved — the other two are
+    // untouched, proving this picked one, not all three.
+    const rows = fakeDb.dump("ad_campaigns");
+    const touched = rows.filter((c) => (c.impressions as number) > 0);
+    expect(touched).toHaveLength(1);
+  });
+
+  it("ignores a campaign that already ended", async () => {
+    fakeDb.reset({
+      ad_campaign_plans: [],
+      ad_campaigns: [seedCampaign("camp_ended", { ends_at: new Date(Date.now() - 1000).toISOString() })],
+    });
+    expect(await pickAdCampaignForImpression()).toBeNull();
+  });
+});
+
+describe("recordAdCampaignClick", () => {
+  it("increments clicks for an existing campaign", async () => {
+    fakeDb.reset({ ad_campaign_plans: [], ad_campaigns: [seedCampaign("camp_1", { clicks: 2 })] });
+
+    await recordAdCampaignClick("camp_1");
+
+    expect(fakeDb.dump("ad_campaigns").find((c) => c.id === "camp_1")!.clicks).toBe(3);
+  });
+
+  it("is a silent no-op for an id that doesn't exist", async () => {
+    fakeDb.reset({ ad_campaign_plans: [], ad_campaigns: [] });
+    await expect(recordAdCampaignClick("nope")).resolves.toBeUndefined();
   });
 });

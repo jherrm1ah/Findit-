@@ -1,13 +1,14 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, User } from "@/lib/auth";
-import { getSellerIdForUser, getProduct, isValidProductImageUrl } from "@/lib/repo";
+import { getSellerIdForUser, getProduct } from "@/lib/repo";
 import { sellerOwnsItem } from "@/lib/sellerIdentityMatch";
 import {
   getAdCampaignPlan,
   validateAdCampaignInput,
   listAdCampaignsForSeller,
 } from "@/lib/adCampaigns";
+import { getPlatformSubscription, applyProPurchaseDiscount } from "@/lib/subscriptions";
 import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -19,10 +20,6 @@ const CHECKOUT_WINDOW_MS = 60 * 60 * 1000;
 // this, a double-click creates two separate Paystack sessions for the same
 // campaign, and paying both would charge the seller twice.
 const PENDING_PAYMENT_STALE_MS = 15 * 60 * 1000;
-
-function storagePrefix(): string {
-  return `${process.env.SUPABASE_URL ?? ""}/storage/v1/object/public/product-images/`;
-}
 
 async function requireSellerId(req: NextRequest): Promise<{ user: User; sellerId: string } | NextResponse> {
   const user = await getSessionUser(req);
@@ -56,6 +53,12 @@ export async function GET(req: NextRequest) {
 // as strictly as it will be trusted later. The campaign only actually goes
 // live once app/api/payments/paystack/webhook confirms the charge — never
 // on this route's own response.
+//
+// A campaign always promotes one of the seller's own listings — never a
+// separately-uploaded banner, and never just the store page. targetProductId
+// is required, and its image IS the campaign's image: no imageUrl is ever
+// accepted from the client here, closing off the "whatever URL the client
+// feels like sending" surface entirely, not just validating it like before.
 export async function POST(req: NextRequest) {
   const ctx = await requireSellerId(req);
   if (ctx instanceof NextResponse) return ctx;
@@ -65,8 +68,7 @@ export async function POST(req: NextRequest) {
     headline?: string;
     body?: string;
     ctaLabel?: string;
-    imageUrl?: string;
-    targetProductId?: string | null;
+    targetProductId?: string;
   };
   try {
     body = await req.json();
@@ -76,10 +78,12 @@ export async function POST(req: NextRequest) {
   if (!body.planId) {
     return NextResponse.json({ error: "planId is required." }, { status: 400 });
   }
+  if (!body.targetProductId) {
+    return NextResponse.json({ error: "Pick a listing to promote." }, { status: 400 });
+  }
   const headline = (body.headline ?? "").trim();
   const text = (body.body ?? "").trim();
   const ctaLabel = (body.ctaLabel ?? "").trim() || "Shop now";
-  const imageUrl = (body.imageUrl ?? "").trim();
 
   const { allowed, retryAfterSeconds } = await checkRateLimit(`ad-campaign-checkout:${ctx.user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
   if (!allowed) {
@@ -91,30 +95,34 @@ export async function POST(req: NextRequest) {
 
   try {
     validateAdCampaignInput({ headline, body: text, ctaLabel });
-    if (!imageUrl || !isValidProductImageUrl(imageUrl, storagePrefix())) {
-      return NextResponse.json({ error: "Upload a banner image first." }, { status: 400 });
-    }
 
-    let targetProductId: string | null = null;
-    if (body.targetProductId) {
-      const product = await getProduct(body.targetProductId);
-      if (!product || !sellerOwnsItem(ctx.user.businessName, ctx.sellerId, product.seller, product.sellerId)) {
-        return NextResponse.json({ error: "You can only link a campaign to your own listing." }, { status: 403 });
-      }
-      targetProductId = product.id;
+    const product = await getProduct(body.targetProductId);
+    if (!product || !sellerOwnsItem(ctx.user.businessName, ctx.sellerId, product.seller, product.sellerId)) {
+      return NextResponse.json({ error: "You can only promote your own listing." }, { status: 403 });
     }
+    if (!product.imageUrl) {
+      return NextResponse.json({ error: "Add a photo to that listing before advertising it." }, { status: 400 });
+    }
+    const targetProductId = product.id;
+    const imageUrl = product.imageUrl;
 
     const plan = await getAdCampaignPlan(body.planId);
     if (!plan || !plan.active) {
       return NextResponse.json({ error: "That ad campaign plan isn't available." }, { status: 400 });
     }
 
+    // FindIt Pro's own value (see lib/subscriptions.ts#applyProPurchaseDiscount)
+    // — 20% off, decided by this seller's Pro status at the moment of
+    // purchase, never stored on the plan itself.
+    const isFindItPro = Boolean(await getPlatformSubscription(ctx.user.id));
+    const amount = applyProPurchaseDiscount(plan.price, isFindItPro);
+
     if (!isPaystackConfigured()) {
       return NextResponse.json({
         applied: false,
         paymentRequired: true,
         configured: false,
-        amount: plan.price,
+        amount,
         message: "Payments aren't set up in this environment yet — advertising isn't available.",
       });
     }
@@ -152,7 +160,7 @@ export async function POST(req: NextRequest) {
       id: reference,
       user_id: ctx.user.id,
       kind: "ad_campaign",
-      amount: plan.price,
+      amount,
       status: "pending",
       provider: "paystack",
       provider_reference: reference,
@@ -164,7 +172,7 @@ export async function POST(req: NextRequest) {
     try {
       ({ authorizationUrl } = await initializeTransaction({
         email: ctx.user.email || `${ctx.user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
-        amountNaira: plan.price,
+        amountNaira: amount,
         reference,
         metadata,
       }));
@@ -179,7 +187,7 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: plan.price });
+    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount });
   } catch (err) {
     return errorResponse(err, "Couldn't start payment for that ad campaign.");
   }
