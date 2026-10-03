@@ -897,8 +897,12 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showT
   // A campaign always promotes one of the seller's own listings — see
   // app/api/sellers/me/ad-campaigns, which now rejects anything else. Its
   // image IS that listing's own photo (no separate upload step), so only
-  // listings that actually have one are eligible to pick from.
-  const eligibleListings = listings.filter((p) => p.imageUrl);
+  // listings that actually have one are eligible to pick from. Memoized —
+  // this is a useEffect dependency below, and a plain .filter() would
+  // recompute a new array identity (and re-run that effect) on every
+  // keystroke in the form inputs further down, not just when `listings`
+  // itself actually changes.
+  const eligibleListings = useMemo(() => listings.filter((p) => p.imageUrl), [listings]);
 
   const [open, setOpen] = useState(false);
   const [planId, setPlanId] = useState(plans[0]?.id ?? null);
@@ -911,14 +915,19 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showT
   // api.getProducts), so this card can mount before either has arrived —
   // the useState initializers above would then see empty arrays and lock
   // in planId=null/targetProductId="" for good, since this card doesn't
-  // remount when its props later update with the real data. Resync once
-  // real options exist and nothing is selected yet; a user's own pick via
-  // the buttons below always wins over this.
+  // remount when its props later update with the real data. Resyncs
+  // whenever the current selection isn't (or is no longer) one of the
+  // real options — covers both that first-load case and a selected plan
+  // dropping out from under the seller (an admin deactivating it while
+  // this form is open). A user's own pick via the buttons below always
+  // wins over this, since picking one makes it valid again.
   useEffect(() => {
-    if (planId == null && plans.length > 0) setPlanId(plans[0].id);
+    if (plans.length > 0 && !plans.some((p) => p.id === planId)) setPlanId(plans[0].id);
   }, [plans, planId]);
   useEffect(() => {
-    if (!targetProductId && eligibleListings.length > 0) setTargetProductId(eligibleListings[0].id);
+    if (eligibleListings.length > 0 && !eligibleListings.some((p) => p.id === targetProductId)) {
+      setTargetProductId(eligibleListings[0].id);
+    }
   }, [eligibleListings, targetProductId]);
 
   const now = Date.now();
