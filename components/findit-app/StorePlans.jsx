@@ -21,26 +21,28 @@ const BOUNCE_ITEM = {
 const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 
 // Every row here is either live today (real, backend-enforced functionality
-// — see the dashboard's Store analytics/branding cards and the public
-// storefront) or explicitly marked "Coming soon." Nothing is listed as
-// included that a seller can't actually see or use once they upgrade —
-// storage limits aren't metered anywhere yet, so that claim isn't made at
-// all rather than shown as delivered.
+// — see the dashboard's branding cards and the public storefront) or
+// explicitly marked "Coming soon." Nothing is listed as included that a
+// seller can't actually see or use once they upgrade — storage limits
+// aren't metered anywhere yet, so that claim isn't made at all rather than
+// shown as delivered.
+//
+// Deliberately does NOT list analytics — that moved to being FindIt Pro's
+// own value, not a Store plan's (see SellerDashboard.jsx#StoreAnalytics and
+// lib/subscriptions.ts#applyProPurchaseDiscount's comment for the full
+// "what belongs to Pro vs. a Store tier" split). plan.analyticsLevel still
+// exists as a column — it's just no longer what gates anything a seller
+// sees; FindIt Pro status does.
 const FEATURE_ROWS = (plan) =>
   [
     plan.productLimit === null
       ? { text: "Unlimited active products", live: true }
       : { text: `Up to ${plan.productLimit} active products`, live: true },
-    plan.analyticsLevel !== "none" ? { text: `${cap(plan.analyticsLevel)} store analytics`, live: true } : null,
     plan.customizationLevel !== "none" ? { text: "Store logo, banner, layout templates & accent colors", live: true } : null,
     plan.featuredListingAccess ? { text: "Featured placement on Home & Browse", live: true } : null,
     plan.proBadge ? { text: "Pro Store badge", live: true } : null,
     plan.prioritySupport ? { text: "Priority support", live: true } : null,
   ].filter(Boolean);
-
-function cap(s) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 // The exact progression from the spec: what upgrading each tier is FOR, not
 // just what it unlocks.

@@ -637,13 +637,32 @@ function BrandingCard({ plan, branding, storeTemplates = [], storeAccents = [], 
 
 const REVENUE_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Real, tiered analytics computed from this seller's own real order data —
-// nothing fabricated, nothing shown that a higher plan doesn't actually
-// unlock. Free sees the upsell; Basic gets this-month totals; Business/Pro
-// add a top product and a real week-by-week trend.
-function StoreAnalytics({ plan, orders, go }) {
-  const level = plan?.analyticsLevel ?? "none";
+// Downloads a CSV of this seller's own paid orders — client-side only, no
+// route needed since `orders` is already loaded in the browser. One row
+// per real sale (date, item, amount), newest first.
+function downloadOrdersCsv(paidOrders) {
+  const rows = [["Date", "Item", "Amount (NGN)"]];
+  for (const o of [...paidOrders].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))) {
+    rows.push([new Date(o.createdAt).toISOString().slice(0, 10), o.item.replace(/"/g, '""'), String(o.price)]);
+  }
+  const csv = rows.map((r) => r.map((cell) => `"${cell}"`).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `findit-sales-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
+// Business analytics — FindIt Pro's own value, not a Store plan's (see
+// lib/subscriptions.ts#applyProPurchaseDiscount's comment for the matching
+// "what belongs to Pro vs. a Store tier" split). Gated on isFindItPro, not
+// plan.analyticsLevel — a Free Seller + FindIt Pro combo gets the full
+// picture below even at a 10-product cap; Pro Store without FindIt Pro
+// gets none of it. Every number here is computed from this seller's own
+// real order data, nothing fabricated.
+function StoreAnalytics({ isFindItPro, orders, go }) {
   const data = useMemo(() => {
     // Only orders that actually collected money and kept it count as
     // revenue — an "Awaiting payment" order was never charged, and one an
@@ -653,10 +672,32 @@ function StoreAnalytics({ plan, orders, go }) {
     const paidOrders = orders.filter((o) => o.paymentStatus === "paid" && o.escrowStatus !== "refunded");
     const now = Date.now();
     const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
+    const lastMonthStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
     const thisMonth = paidOrders.filter((o) => new Date(o.createdAt).getTime() >= monthStart);
+    const lastMonth = paidOrders.filter((o) => {
+      const t = new Date(o.createdAt).getTime();
+      return t >= lastMonthStart && t < monthStart;
+    });
+    const monthRevenue = thisMonth.reduce((sum, o) => sum + o.price, 0);
+    const lastMonthRevenue = lastMonth.reduce((sum, o) => sum + o.price, 0);
+    // null (not 0%) when there's no prior month to compare against — a
+    // first month of sales isn't a "+∞%" or "0%" change from nothing.
+    const revenueChangePct = lastMonthRevenue > 0 ? Math.round(((monthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
+
     const revenueByProduct = new Map();
     for (const o of paidOrders) revenueByProduct.set(o.item, (revenueByProduct.get(o.item) || 0) + o.price);
-    const topProduct = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1])[0] ?? null;
+    const ranked = [...revenueByProduct.entries()].sort((a, b) => b[1] - a[1]);
+    const topProducts = ranked.slice(0, 3);
+    // Only a real "needs attention" list when there's enough of a catalogue
+    // for "bottom" to mean something other than restating the top list.
+    const bottomProducts = ranked.length > 3 ? ranked.slice(-3).reverse() : [];
+
+    // Repeat vs. new buyers — grouped by buyer id across this seller's own
+    // paid orders, not a platform-wide stat.
+    const ordersByBuyer = new Map();
+    for (const o of paidOrders) ordersByBuyer.set(o.userId, (ordersByBuyer.get(o.userId) || 0) + 1);
+    const repeatCustomers = [...ordersByBuyer.values()].filter((c) => c > 1).length;
+    const newCustomers = ordersByBuyer.size - repeatCustomers;
 
     const weeks = [0, 1, 2, 3].map((i) => {
       const end = now - i * REVENUE_MS;
@@ -672,22 +713,29 @@ function StoreAnalytics({ plan, orders, go }) {
 
     return {
       monthOrders: thisMonth.length,
-      monthRevenue: thisMonth.reduce((sum, o) => sum + o.price, 0),
+      monthRevenue,
+      revenueChangePct,
       avgOrderValue: paidOrders.length ? Math.round(paidOrders.reduce((sum, o) => sum + o.price, 0) / paidOrders.length) : 0,
-      topProduct,
+      topProducts,
+      bottomProducts,
+      repeatCustomers,
+      newCustomers,
       weeks,
+      paidOrders,
     };
   }, [orders]);
 
-  if (level === "none") {
+  if (!isFindItPro) {
     return (
       <div className="bg-[#F5F2FC] rounded-[20px] p-4 mb-7 flex items-start gap-3">
         <Lock size={15} className="text-[#7C3AED] shrink-0 mt-0.5" />
         <div className="min-w-0">
-          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Store analytics</p>
-          <p className="text-[11.5px] text-[#6B6483] mb-2">Unlock real sales analytics on Basic Store and above.</p>
-          <button onClick={() => go?.("storePlans")} className="text-[11.5px] font-semibold text-[#7C3AED]">
-            See upgrade options
+          <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Business analytics</p>
+          <p className="text-[11.5px] text-[#6B6483] mb-2">
+            Real revenue trends, top/bottom products, and customer insights — unlock with FindIt Pro, on any Store plan.
+          </p>
+          <button onClick={() => go?.("findItPro")} className="text-[11.5px] font-semibold text-[#7C3AED]">
+            See FindIt Pro
           </button>
         </div>
       </div>
@@ -698,14 +746,29 @@ function StoreAnalytics({ plan, orders, go }) {
 
   return (
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7 shadow-sm shadow-[#4C1D95]/5">
-      <div className="flex items-center gap-2 mb-3">
-        <BarChart3 size={14} className="text-[#7C3AED]" />
-        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Store analytics</p>
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <BarChart3 size={14} className="text-[#7C3AED]" />
+          <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Business analytics</p>
+        </div>
+        <button
+          onClick={() => downloadOrdersCsv(data.paidOrders)}
+          disabled={data.paidOrders.length === 0}
+          className="text-[10.5px] font-semibold text-[#7C3AED] disabled:opacity-40"
+        >
+          Export CSV
+        </button>
       </div>
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div className="bg-[#F5F2FC] rounded-xl p-3">
           <p className="text-[14px] font-bold text-[#1E1B4B]">{naira(data.monthRevenue)}</p>
-          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">This month's revenue</p>
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">
+            This month{data.revenueChangePct != null && (
+              <span className={data.revenueChangePct >= 0 ? "text-[#10B981]" : "text-[#E64980]"}>
+                {" "}{data.revenueChangePct >= 0 ? "+" : ""}{data.revenueChangePct}%
+              </span>
+            )}
+          </p>
         </div>
         <div className="bg-[#F5F2FC] rounded-xl p-3">
           <p className="text-[14px] font-bold text-[#1E1B4B]">{data.monthOrders}</p>
@@ -713,36 +776,65 @@ function StoreAnalytics({ plan, orders, go }) {
         </div>
       </div>
 
-      {(level === "advanced" || level === "full") && (
-        <div className="flex items-center justify-between bg-[#F5F2FC] rounded-xl p-3 mb-3">
-          <div className="min-w-0">
-            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide mb-0.5">Top product by revenue</p>
-            <p className="text-[12.5px] font-semibold text-[#1E1B4B] truncate">{data.topProduct ? data.topProduct[0] : "No sales yet"}</p>
-          </div>
-          {data.topProduct && <p className="text-[12.5px] font-bold text-[#1E1B4B] shrink-0">{naira(data.topProduct[1])}</p>}
-        </div>
-      )}
-
-      {level === "full" && (
-        <div>
-          <div className="flex items-center gap-1.5 mb-2">
-            <TrendingUp size={11} className="text-[#7C3AED]" />
-            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Revenue, last 4 weeks</p>
-          </div>
-          <div className="flex items-end gap-2 h-16">
-            {data.weeks.map((rev, i) => (
-              <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <div
-                  className="w-full rounded-t-md"
-                  style={{ height: `${Math.max(4, (rev / maxWeek) * 56)}px`, background: "linear-gradient(180deg,#A855F7,#7C3AED)" }}
-                  title={naira(rev)}
-                />
-                <p className="text-[8.5px] text-[#8A8372]">W{i + 1}</p>
+      {data.topProducts.length > 0 && (
+        <div className="bg-[#F5F2FC] rounded-xl p-3 mb-3">
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide mb-1.5">Top products by revenue</p>
+          <div className="space-y-1">
+            {data.topProducts.map(([name, revenue]) => (
+              <div key={name} className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{name}</p>
+                <p className="text-[12px] font-bold text-[#1E1B4B] shrink-0">{naira(revenue)}</p>
               </div>
             ))}
           </div>
         </div>
       )}
+
+      {data.bottomProducts.length > 0 && (
+        <div className="bg-[#FDF6EC] rounded-xl p-3 mb-3">
+          <p className="text-[9.5px] text-[#B45309] uppercase tracking-wide mb-1.5">Needs attention — lowest revenue</p>
+          <div className="space-y-1">
+            {data.bottomProducts.map(([name, revenue]) => (
+              <div key={name} className="flex items-center justify-between gap-2">
+                <p className="text-[12px] font-semibold text-[#1E1B4B] truncate">{name}</p>
+                <p className="text-[12px] font-bold text-[#1E1B4B] shrink-0">{naira(revenue)}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(data.repeatCustomers > 0 || data.newCustomers > 0) && (
+        <div className="grid grid-cols-2 gap-2 mb-3">
+          <div className="bg-[#F5F2FC] rounded-xl p-3">
+            <p className="text-[14px] font-bold text-[#1E1B4B]">{data.newCustomers}</p>
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">New customers</p>
+          </div>
+          <div className="bg-[#F5F2FC] rounded-xl p-3">
+            <p className="text-[14px] font-bold text-[#1E1B4B]">{data.repeatCustomers}</p>
+            <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Repeat customers</p>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <div className="flex items-center gap-1.5 mb-2">
+          <TrendingUp size={11} className="text-[#7C3AED]" />
+          <p className="text-[9.5px] text-[#8A8372] uppercase tracking-wide">Revenue, last 4 weeks</p>
+        </div>
+        <div className="flex items-end gap-2 h-16">
+          {data.weeks.map((rev, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-1">
+              <div
+                className="w-full rounded-t-md"
+                style={{ height: `${Math.max(4, (rev / maxWeek) * 56)}px`, background: "linear-gradient(180deg,#A855F7,#7C3AED)" }}
+                title={naira(rev)}
+              />
+              <p className="text-[8.5px] text-[#8A8372]">W{i + 1}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <p className="text-[9.5px] text-[#8A8372] mt-2">Average order value: {naira(data.avgOrderValue)}</p>
     </div>
@@ -1609,7 +1701,7 @@ export default function SellerDashboard({
         ))}
       </div>
 
-      <StoreAnalytics plan={plan} orders={myOrders} go={go} />
+      <StoreAnalytics isFindItPro={isFindItPro} orders={myOrders} go={go} />
       <AdvertiseCard
         plans={adCampaignPlans}
         myCampaigns={myAdCampaigns}
