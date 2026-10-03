@@ -3,11 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown, ChevronLeft } from "lucide-react";
-import { IconButton } from "./sharedMotion";
+import { Search, X, Star, MapPin, BadgeCheck, ShieldCheck, Crown } from "lucide-react";
 import { api } from "./api";
 import { VERIFICATION_LEVEL_COPY } from "@/lib/sellerVerificationLevels";
-import { DURATION, EASE, SPRING_BOUNCY, wiggleIn } from "./motion";
+import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
 
 // A bouncier stagger for the seller list's entrance — screen-local, like
 // Home's BOUNCE_CONTAINER/ITEM, not a change to STAGGER_CONTAINER/ITEM
@@ -26,7 +25,7 @@ const LEVEL_ICON = { new: BadgeCheck, verified: ShieldCheck, trusted: ShieldChec
 // FROM a specific product or order) and /store/[slug] (opened from a shared
 // URL). Filtering here is a client-side pass over one already-loaded list,
 // the same pattern Browse.jsx uses for products.
-export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) {
+export default function SellerDirectory({ onViewSeller, initialQuery }) {
   const [sellers, setSellers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -72,19 +71,14 @@ export default function SellerDirectory({ onBack, onViewSeller, initialQuery }) 
 
   return (
     <div className="px-5 pt-6 pb-10">
-      <div className="flex items-center gap-3 mb-1">
-        {onBack && (
-          <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0 }}>
-            <IconButton onClick={onBack} aria-label="Back">
-              <ChevronLeft size={18} className="text-[#1E1B4B]" />
-            </IconButton>
-          </motion.div>
-        )}
-        <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
-          Sellers
-        </h1>
-      </div>
-      <p className="text-[12px] text-[#6B6483] mb-4 ml-11">
+      {/* No back button here — MainApp's own global header (sticky, shown
+          for every screen but "home") already supplies one for this screen,
+          the same as Browse/Account/MyRequests and every other inline
+          screen. This used to render a second one directly underneath it. */}
+      <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>
+        Sellers
+      </h1>
+      <p className="text-[12px] text-[#6B6483] mb-4">
         Every approved seller on FindIt — browse stores instead of products.
       </p>
 

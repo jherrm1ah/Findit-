@@ -1673,7 +1673,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
           />
         )}
         {screen === "sellers" && (
-          <SellerDirectory onBack={goBack} onViewSeller={handleViewSeller} initialQuery={sellerQuery} />
+          <SellerDirectory onViewSeller={handleViewSeller} initialQuery={sellerQuery} />
         )}
         {screen === "storePlans" && (
           isSeller ? (
