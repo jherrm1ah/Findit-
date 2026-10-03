@@ -413,9 +413,16 @@ export default function Home({
           />
         )}
         {activeSlide.kind === "campaign" && (
+          // Dark only right behind the text block, fully clear past the
+          // halfway point — a user screenshot of the live carousel showed
+          // even the first (85%→60%→15%) fade still reading as "basically
+          // just a dark gradient" over the photo, so this goes lower and
+          // clears sooner. Legibility over the photo comes from the text's
+          // own shadow below, not from the scrim — the CTA pill and the
+          // "Sponsored" badge already carry their own solid backgrounds.
           <div
             className="absolute inset-0"
-            style={{ background: "linear-gradient(135deg, rgba(76,29,149,0.88) 0%, rgba(30,27,75,0.92) 70%)" }}
+            style={{ background: "linear-gradient(90deg, rgba(30,27,75,0.72) 0%, rgba(30,27,75,0.32) 30%, rgba(30,27,75,0) 55%)" }}
           />
         )}
         {activeSlide.kind === "static" && (
@@ -444,16 +451,30 @@ export default function Home({
                 {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
               </span>
               {activeSlide.kind === "campaign" && activeCampaignRating != null && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative">
+                <span
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative"
+                  style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                >
                   <Star size={11} className="fill-[#F59E0B] text-[#F59E0B]" /> {activeCampaignRating}
                 </span>
               )}
             </div>
-            <h2 className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative" style={{ fontFamily: "Fraunces, serif" }}>
+            <h2
+              className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
+              style={{
+                fontFamily: "Fraunces, serif",
+                textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
+              }}
+            >
               {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
             </h2>
             {activeSlide.kind === "campaign" && (
-              <p className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]">{activeSlide.campaign.body}</p>
+              <p
+                className="text-[12.5px] text-white/85 leading-snug mb-4 relative max-w-[85%]"
+                style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
+              >
+                {activeSlide.campaign.body}
+              </p>
             )}
           </motion.div>
         </AnimatePresence>
