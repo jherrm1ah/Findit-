@@ -137,7 +137,7 @@ export default function Home({
   // carousel is expected to. A manual tap (the dot buttons below) still
   // works and just resets this same timer via the effect's own dependency.
   useEffect(() => {
-    const id = setInterval(() => setBanner((b) => (b + 1) % slides.length), 4500);
+    const id = setInterval(() => setBanner((b) => (b + 1) % slides.length), 2000);
     return () => clearInterval(id);
   }, [banner, slides.length]);
   // A campaign ending (or a fresh one landing) between renders can shrink
