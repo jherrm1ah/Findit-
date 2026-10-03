@@ -435,8 +435,12 @@ export default function Home({
           // carousel visibly resized every time it auto-advanced between
           // them. Every slide now renders at this exact size regardless of
           // its own content length; the content overlay below clips its
-          // own text rather than ever pushing this box taller.
-          height: 210,
+          // own text rather than ever pushing this box taller. 280, not
+          // 210 — 210 wasn't tall enough to actually fit a real campaign's
+          // badge row + a two-line headline + its body before the clamp
+          // below cut it off, confirmed by a live screenshot where the
+          // headline itself was already being clipped mid-word.
+          height: 280,
         }}
         onClick={() => handleSlideTap(activeSlide)}
       >
@@ -492,7 +496,7 @@ export default function Home({
                     never the app's own purple pill BANNERS uses, so a buyer
                     can tell paid placement apart from FindIt's own features
                     at a glance. */}
-                <div className="flex items-center gap-2 mb-4">
+                <div className="flex items-center gap-2 mb-3">
                   <span
                     className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full relative ${
                       activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
