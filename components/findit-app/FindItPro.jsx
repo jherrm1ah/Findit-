@@ -18,7 +18,15 @@ const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 // analytics/customization/featured-listing columns on the plan row are
 // shared with Store plans but don't correspond to anything a BUYER can see
 // today, so they're deliberately left off this list rather than claimed.
+//
+// The two newest rows are deliberately NOT things a Store plan can also
+// give a seller — Pro Store already bundles a badge and priority support,
+// so a seller on Pro Store got Pro's old value for free. An ad-free
+// carousel (buyer-side) and a purchase discount (stacks on every Store
+// tier) are FindIt Pro's own value instead of a smaller copy of Store's.
 const FEATURE_ROWS = [
+  { text: "No Sponsored ads in your home screen", live: true },
+  { text: "20% off Boost & Ad Campaign pricing", live: true },
   { text: "FindIt Pro badge on your profile", live: true },
   { text: "Priority support", live: true },
 ];

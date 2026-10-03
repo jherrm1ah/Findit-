@@ -19,6 +19,15 @@ const ORDER_ITEM = { hidden: { opacity: 0, y: 14, scale: 0.97 }, visible: { opac
 // keep the plain `press` feedback so destructive actions never feel playful.
 const bouncyPress = { whileTap: { scale: 0.93 }, transition: SPRING_BOUNCY };
 
+// Display-only mirror of lib/subscriptions.ts#applyProPurchaseDiscount —
+// used by the boost picker and AdvertiseCard's plan picker so a FindIt Pro
+// seller sees the price they'll actually be charged, not the undiscounted
+// list price. The real discount is always recomputed server-side at
+// checkout; this never decides what anyone pays.
+function proDisplayPrice(price) {
+  return Math.round((price * 8000) / 10000);
+}
+
 function budgetLabel(r) {
   if (!r.budgetMin && !r.budgetMax) return "Open";
   if (r.budgetMin && r.budgetMax && r.budgetMin !== r.budgetMax) {
@@ -789,7 +798,7 @@ function CampaignStatRow({ campaign: c, live }) {
 // own form/submit state rather than threading a dozen fields through the
 // parent, which only ever needs the one onCreateAdCampaign callback plus
 // the plan catalogue, this seller's own listings, and campaign history.
-function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showToast }) {
+function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showToast, isFindItPro = false }) {
   // A campaign always promotes one of the seller's own listings — see
   // app/api/sellers/me/ad-campaigns, which now rejects anything else. Its
   // image IS that listing's own photo (no separate upload step), so only
@@ -899,7 +908,11 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showT
                         planId === p.id ? "bg-[#7C3AED] text-white border-[#7C3AED]" : "text-[#514B67] border-[#ECE9F7]"
                       }`}
                     >
-                      {p.durationDays}d — {naira(p.price)}
+                      {isFindItPro ? (
+                        <>{p.durationDays}d — <span className="line-through opacity-60">{naira(p.price)}</span> {naira(proDisplayPrice(p.price))}</>
+                      ) : (
+                        `${p.durationDays}d — ${naira(p.price)}`
+                      )}
                     </button>
                   ))}
                 </div>
@@ -1257,6 +1270,10 @@ export default function SellerDashboard({
   verification,
   payoutAccount, banks = [], onSavePayoutAccount, savingPayoutAccount,
   boostPlans = [], onBoostProduct,
+  // Display-only — the real discount is always recomputed server-side at
+  // checkout (lib/subscriptions.ts#applyProPurchaseDiscount); this just
+  // keeps the picker from showing a price the seller won't actually pay.
+  isFindItPro = false,
   adCampaignPlans = [], myAdCampaigns = [], creatingAdCampaign, onCreateAdCampaign,
   myStore, onClaimStore, claimingStore,
   transactionRecords = [],
@@ -1600,6 +1617,7 @@ export default function SellerDashboard({
         creating={creatingAdCampaign}
         onCreate={onCreateAdCampaign}
         showToast={showToast}
+        isFindItPro={isFindItPro}
       />
       </>
       )}
@@ -1754,7 +1772,11 @@ export default function SellerDashboard({
                               className="text-[11.5px] font-semibold text-white px-3 py-1.5 rounded-lg disabled:opacity-60"
                               style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                             >
-                              {boostingId === p.id ? "Working…" : `${bp.durationDays}d — ${naira(bp.price)}`}
+                              {boostingId === p.id ? "Working…" : isFindItPro ? (
+                                <>{bp.durationDays}d — <span className="line-through opacity-60">{naira(bp.price)}</span> {naira(proDisplayPrice(bp.price))}</>
+                              ) : (
+                                `${bp.durationDays}d — ${naira(bp.price)}`
+                              )}
                             </motion.button>
                           ))}
                         </div>

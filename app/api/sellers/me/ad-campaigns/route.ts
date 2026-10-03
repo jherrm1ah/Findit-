@@ -8,6 +8,7 @@ import {
   validateAdCampaignInput,
   listAdCampaignsForSeller,
 } from "@/lib/adCampaigns";
+import { getPlatformSubscription, applyProPurchaseDiscount } from "@/lib/subscriptions";
 import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -110,12 +111,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "That ad campaign plan isn't available." }, { status: 400 });
     }
 
+    // FindIt Pro's own value (see lib/subscriptions.ts#applyProPurchaseDiscount)
+    // — 20% off, decided by this seller's Pro status at the moment of
+    // purchase, never stored on the plan itself.
+    const isFindItPro = Boolean(await getPlatformSubscription(ctx.user.id));
+    const amount = applyProPurchaseDiscount(plan.price, isFindItPro);
+
     if (!isPaystackConfigured()) {
       return NextResponse.json({
         applied: false,
         paymentRequired: true,
         configured: false,
-        amount: plan.price,
+        amount,
         message: "Payments aren't set up in this environment yet — advertising isn't available.",
       });
     }
@@ -153,7 +160,7 @@ export async function POST(req: NextRequest) {
       id: reference,
       user_id: ctx.user.id,
       kind: "ad_campaign",
-      amount: plan.price,
+      amount,
       status: "pending",
       provider: "paystack",
       provider_reference: reference,
@@ -165,7 +172,7 @@ export async function POST(req: NextRequest) {
     try {
       ({ authorizationUrl } = await initializeTransaction({
         email: ctx.user.email || `${ctx.user.phone.replace(/[^0-9]/g, "")}@shopwithfindit.com`,
-        amountNaira: plan.price,
+        amountNaira: amount,
         reference,
         metadata,
       }));
@@ -180,7 +187,7 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount: plan.price });
+    return NextResponse.json({ applied: false, paymentRequired: true, configured: true, checkoutUrl: authorizationUrl, amount });
   } catch (err) {
     return errorResponse(err, "Couldn't start payment for that ad campaign.");
   }

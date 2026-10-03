@@ -1741,6 +1741,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               requests={requests}
               onSendOffer={handleSendOffer}
               user={user}
+              isFindItPro={Boolean(findItPro?.subscription)}
               mySellerId={mySellerId}
               orders={orders}
               onAdvanceOrderStatus={handleAdvanceOrderStatus}
