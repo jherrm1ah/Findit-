@@ -391,7 +391,12 @@ export default function Home({
       <div
         className="rounded-[20px] relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
-          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : undefined,
+          // A campaign slide gets a solid fallback too (the same navy as
+          // its text panel, so it blends in) — not left undefined like
+          // before, which meant a photo that fails to load (a deleted
+          // storage file, a network hiccup) left this card blank behind
+          // the text instead of just quietly showing no photo.
+          background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : "#1E1B4B",
           // A FIXED height, not minHeight — the card used to grow taller
           // for a campaign slide (longer seller-written headline/body)
           // than for FindIt's own short static banners, so the whole
@@ -473,7 +478,12 @@ export default function Home({
                   )}
                 </div>
                 <h2
-                  className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
+                  // break-words — a seller's headline is free-typed, up to
+                  // 60 characters (see validateAdCampaignInput); one long
+                  // unbroken word (no spaces) would otherwise overflow this
+                  // panel sideways and get clipped mid-word instead of
+                  // wrapping, since nothing forces a break by default.
+                  className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line break-words relative"
                   style={{
                     fontFamily: "Fraunces, serif",
                     textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
@@ -485,7 +495,9 @@ export default function Home({
                   <p
                     // No max-w here — the panel wrapping this text
                     // (max-w-[78%] of the card) already constrains it.
-                    className="text-[12.5px] text-white/85 leading-snug mb-4 relative"
+                    // break-words for the same reason as the headline above
+                    // — up to 140 free-typed characters (validateAdCampaignInput).
+                    className="text-[12.5px] text-white/85 leading-snug mb-4 relative break-words"
                     style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
                   >
                     {activeSlide.campaign.body}
@@ -496,9 +508,13 @@ export default function Home({
           </div>
 
           <div className="shrink-0 flex items-end justify-between mt-2">
-            <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
-              {activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}
-              <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+            {/* max-w + min-w-0 + the inner truncate — a seller's own CTA
+                label is free-typed up to 24 characters (validateAdCampaignInput);
+                without a cap here, an unusually wide one could push the
+                pagination dots off this row instead of just ellipsizing. */}
+            <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative max-w-[70%] min-w-0">
+              <span className="truncate">{activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}</span>
+              <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center shrink-0">
                 <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
               </span>
             </motion.span>
