@@ -389,6 +389,30 @@ export default function Home({
       {/* promo carousel — FindIt's own slides (BANNERS) always first, any
           paid campaigns appended after; see the `slides` note above. */}
       <div
+        // A real <button> isn't possible here — the pagination dots below
+        // are themselves real <button> elements, and a button can't nest
+        // inside another button (invalid HTML, breaks their own click
+        // handling). role="button" + tabIndex + onKeyDown gets this the
+        // same keyboard/screen-reader reachability as every other tappable
+        // card in this app (the product grid below is real <motion.button>
+        // elements) without that conflict.
+        role="button"
+        tabIndex={0}
+        aria-label={activeSlide.kind === "campaign" ? `${activeSlide.campaign.ctaLabel}: ${activeSlide.campaign.headline}` : activeSlide.cta}
+        onKeyDown={(e) => {
+          // Only when the card itself is focused — the pagination dots
+          // below are real buttons too, and their own Enter/Space press
+          // dispatches a "keydown" that bubbles up here regardless of the
+          // stopPropagation their click handler already does (that stops
+          // the separate click event, not this one). Without this guard,
+          // activating a dot by keyboard would ALSO fire this card's own
+          // tap action.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleSlideTap(activeSlide);
+          }
+        }}
         className="rounded-[20px] relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
           // A campaign slide gets a solid fallback too (the same navy as
