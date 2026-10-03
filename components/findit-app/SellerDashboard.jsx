@@ -8,6 +8,7 @@ import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { applyProPurchaseDiscount } from "@/lib/proPricing";
 import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
 
 // A bouncier mount pop for this dashboard's listing/order cards — scale
@@ -19,13 +20,15 @@ const ORDER_ITEM = { hidden: { opacity: 0, y: 14, scale: 0.97 }, visible: { opac
 // keep the plain `press` feedback so destructive actions never feel playful.
 const bouncyPress = { whileTap: { scale: 0.93 }, transition: SPRING_BOUNCY };
 
-// Display-only mirror of lib/subscriptions.ts#applyProPurchaseDiscount —
-// used by the boost picker and AdvertiseCard's plan picker so a FindIt Pro
-// seller sees the price they'll actually be charged, not the undiscounted
-// list price. The real discount is always recomputed server-side at
-// checkout; this never decides what anyone pays.
+// Display-only call into the real lib/proPricing.ts#applyProPurchaseDiscount
+// — used by the boost picker and AdvertiseCard's plan picker so a FindIt
+// Pro seller sees the price they'll actually be charged, not the
+// undiscounted list price. Calling the real function (not a hardcoded
+// mirror of its 20%) means this can never drift from what checkout
+// actually charges; the real discount is still always recomputed
+// server-side at checkout — this never decides what anyone pays.
 function proDisplayPrice(price) {
-  return Math.round((price * 8000) / 10000);
+  return applyProPurchaseDiscount(price, true);
 }
 
 function budgetLabel(r) {
@@ -903,6 +906,20 @@ function AdvertiseCard({ plans, myCampaigns, listings, creating, onCreate, showT
   const [body, setBody] = useState("");
   const [ctaLabel, setCtaLabel] = useState("Shop now");
   const [targetProductId, setTargetProductId] = useState(eligibleListings[0]?.id ?? "");
+
+  // MainApp loads plans/products asynchronously (api.getAdCampaignPlans,
+  // api.getProducts), so this card can mount before either has arrived —
+  // the useState initializers above would then see empty arrays and lock
+  // in planId=null/targetProductId="" for good, since this card doesn't
+  // remount when its props later update with the real data. Resync once
+  // real options exist and nothing is selected yet; a user's own pick via
+  // the buttons below always wins over this.
+  useEffect(() => {
+    if (planId == null && plans.length > 0) setPlanId(plans[0].id);
+  }, [plans, planId]);
+  useEffect(() => {
+    if (!targetProductId && eligibleListings.length > 0) setTargetProductId(eligibleListings[0].id);
+  }, [eligibleListings, targetProductId]);
 
   const now = Date.now();
   const live = myCampaigns.filter((c) => new Date(c.endsAt).getTime() > now);

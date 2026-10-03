@@ -1046,6 +1046,8 @@ create table if not exists referral_settings (
   created_at timestamptz not null default now()
 );
 create index if not exists referral_settings_created_at_idx on referral_settings(created_at desc);
+-- Migration 042 — the advisor's own flagged-uncovered-FK pass.
+create index if not exists referral_settings_created_by_idx on referral_settings(created_by);
 
 -- referral_reward_config / referral_credit_applications (migration 036) —
 -- see that migration file for the full design note. In short:
@@ -1063,6 +1065,8 @@ create table if not exists referral_reward_config (
   created_at timestamptz not null default now()
 );
 create index if not exists referral_reward_config_created_at_idx on referral_reward_config(created_at desc);
+-- Migration 042 — the advisor's own flagged-uncovered-FK pass.
+create index if not exists referral_reward_config_created_by_idx on referral_reward_config(created_by);
 
 create table if not exists referral_credit_applications (
   id text primary key,
@@ -1077,6 +1081,8 @@ create table if not exists referral_credit_applications (
 create index if not exists referral_credit_applications_reward_idx on referral_credit_applications(reward_id);
 create index if not exists referral_credit_applications_user_idx on referral_credit_applications(user_id);
 create index if not exists referral_credit_applications_payment_idx on referral_credit_applications(payment_id);
+-- Migration 042 — the advisor's own flagged-uncovered-FK pass.
+create index if not exists referral_credit_applications_order_id_idx on referral_credit_applications(order_id);
 
 -- ---------------------------------------------------------------------------
 -- boost_plans / boosts (migration 018)
@@ -1177,6 +1183,9 @@ create table if not exists ad_campaigns (
 create unique index if not exists ad_campaigns_payment_id_key on ad_campaigns(payment_id) where payment_id is not null;
 create index if not exists ad_campaigns_seller_id_idx on ad_campaigns(seller_id);
 create index if not exists ad_campaigns_ends_at_idx on ad_campaigns(ends_at);
+-- Migration 042 — the advisor's own flagged-uncovered-FK pass.
+create index if not exists ad_campaigns_plan_id_idx on ad_campaigns(plan_id);
+create index if not exists ad_campaigns_target_product_id_idx on ad_campaigns(target_product_id);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security — enabled with no policies (defense-in-depth only; see
