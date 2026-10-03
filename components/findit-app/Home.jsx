@@ -474,7 +474,14 @@ export default function Home({
             height (flex column, top text block + bottom CTA row) — never
             part of the document flow that could grow the card itself. */}
         <div className="absolute inset-0 p-6 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-hidden">
+          {/* justify-center — this area got taller (280px card) to fit a
+              real campaign's badge/headline/body comfortably, but FindIt's
+              own static banners (a short two-line title, nothing else)
+              don't need that much room; without this their text sat
+              pinned to the top with a large, unbalanced gap before the CTA
+              row below. Centering keeps both short and long content
+              looking intentional at this card's fixed height. */}
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col justify-center">
             <AnimatePresence mode="wait">
               <motion.div
                 key={banner}
