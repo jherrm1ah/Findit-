@@ -388,10 +388,17 @@ export default function Home({
       {/* promo carousel — FindIt's own slides (BANNERS) always first, any
           paid campaigns appended after; see the `slides` note above. */}
       <div
-        className="rounded-[20px] p-6 relative overflow-hidden text-white mb-6 cursor-pointer"
+        className="rounded-[20px] relative overflow-hidden text-white mb-6 cursor-pointer"
         style={{
           background: activeSlide.kind === "static" ? "linear-gradient(135deg,#7C3AED 0%,#5B21B6 60%,#3B1874 100%)" : undefined,
-          minHeight: 190,
+          // A FIXED height, not minHeight — the card used to grow taller
+          // for a campaign slide (longer seller-written headline/body)
+          // than for FindIt's own short static banners, so the whole
+          // carousel visibly resized every time it auto-advanced between
+          // them. Every slide now renders at this exact size regardless of
+          // its own content length; the content overlay below clips its
+          // own text rather than ever pushing this box taller.
+          height: 210,
         }}
         onClick={() => handleSlideTap(activeSlide)}
       >
@@ -401,12 +408,11 @@ export default function Home({
           // this way, through next/image's own optimizer; a raw CSS
           // background-image on an inline style is the one place that
           // wasn't, and is also the one place a Sponsored slide's banner
-          // silently failed to show in production. Two rounds of a
-          // full-card gradient scrim (first 88–92%, then still visibly
-          // dark even cleared to 0 by the card's halfway point) kept
-          // reading as "the photo isn't visible" per live screenshots, so
-          // there's no scrim over the photo at all anymore — only the text
-          // block below sits on its own solid panel.
+          // silently failed to show in production. `fill` makes it cover
+          // this card's own fixed height completely on its own — no scrim
+          // sits over it; only the text block below sits on its own solid
+          // panel, layered on top of the photo as an overlay rather than
+          // pushing the card's size around.
           <NextImage
             src={activeSlide.campaign.imageUrl}
             alt=""
@@ -421,82 +427,95 @@ export default function Home({
             <motion.div {...floatLoop(10, 3)} className="absolute right-10 top-4 w-16 h-16 rounded-full bg-[#F59E0B]/25" />
           </>
         )}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={banner}
-            initial={{ opacity: 0, x: 24 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -24 }}
-            transition={SPRING_BOUNCY}
-            // A campaign's text sits on its own solid panel, not a scrim
-            // over the whole card — that's what guarantees the photo
-            // itself stays fully visible everywhere outside this box,
-            // instead of depending on tuning a gradient against a photo
-            // whose brightness this code can't know ahead of time.
-            className={activeSlide.kind === "campaign" ? "bg-[#1E1B4B]/85 backdrop-blur-sm rounded-2xl px-4 py-3.5 inline-block max-w-[78%] relative" : undefined}
-          >
-            {/* A campaign is always explicitly labeled "Sponsored" — never
-                the app's own purple pill BANNERS uses, so a buyer can tell
-                paid placement apart from FindIt's own features at a glance. */}
-            <div className="flex items-center gap-2 mb-4">
-              <span
-                className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full relative ${
-                  activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
-                }`}
+
+        {/* Everything below is an overlay pinned to this card's fixed
+            height (flex column, top text block + bottom CTA row) — never
+            part of the document flow that could grow the card itself. */}
+        <div className="absolute inset-0 p-6 flex flex-col">
+          <div className="flex-1 min-h-0 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={banner}
+                initial={{ opacity: 0, x: 24 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -24 }}
+                transition={SPRING_BOUNCY}
+                // A campaign's text sits on its own solid panel, not a scrim
+                // over the whole card — that's what guarantees the photo
+                // itself stays fully visible everywhere outside this box,
+                // instead of depending on tuning a gradient against a photo
+                // whose brightness this code can't know ahead of time.
+                // overflow-hidden here too: an unusually long seller-written
+                // headline/body clips inside this panel's own rounded
+                // corners rather than spilling past the fixed card height.
+                className={activeSlide.kind === "campaign" ? "bg-[#1E1B4B]/85 backdrop-blur-sm rounded-2xl px-4 py-3.5 inline-block max-w-[78%] max-h-full overflow-hidden relative" : undefined}
               >
-                {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
-              </span>
-              {activeSlide.kind === "campaign" && activeCampaignRating != null && (
-                <span
-                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative"
-                  style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                {/* A campaign is always explicitly labeled "Sponsored" —
+                    never the app's own purple pill BANNERS uses, so a buyer
+                    can tell paid placement apart from FindIt's own features
+                    at a glance. */}
+                <div className="flex items-center gap-2 mb-4">
+                  <span
+                    className={`inline-block text-[10px] font-semibold px-3 py-1.5 rounded-full relative ${
+                      activeSlide.kind === "campaign" ? "bg-[#F59E0B] text-[#1E1B4B]" : "bg-white/15 backdrop-blur"
+                    }`}
+                  >
+                    {activeSlide.kind === "campaign" ? "Sponsored" : activeSlide.tag}
+                  </span>
+                  {activeSlide.kind === "campaign" && activeCampaignRating != null && (
+                    <span
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-white/90 relative"
+                      style={{ textShadow: "0 1px 4px rgba(0,0,0,0.5)" }}
+                    >
+                      <Star size={11} className="fill-[#F59E0B] text-[#F59E0B]" /> {activeCampaignRating}
+                    </span>
+                  )}
+                </div>
+                <h2
+                  className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
+                  style={{
+                    fontFamily: "Fraunces, serif",
+                    textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
+                  }}
                 >
-                  <Star size={11} className="fill-[#F59E0B] text-[#F59E0B]" /> {activeCampaignRating}
-                </span>
-              )}
-            </div>
-            <h2
-              className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line relative"
-              style={{
-                fontFamily: "Fraunces, serif",
-                textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
-              }}
-            >
-              {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
-            </h2>
-            {activeSlide.kind === "campaign" && (
-              <p
-                // No max-w here anymore — the panel wrapping this text
-                // (max-w-[78%] of the card) already constrains it; this
-                // used to ALSO cap it at 85%, compounding into body text
-                // wrapping to roughly two-thirds of the card for no reason.
-                className="text-[12.5px] text-white/85 leading-snug mb-4 relative"
-                style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
-              >
-                {activeSlide.campaign.body}
-              </p>
-            )}
-          </motion.div>
-        </AnimatePresence>
-        <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
-          {activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}
-          <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
-            <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
-          </span>
-        </motion.span>
-        {slides.length > 1 && (
-          <div className="absolute bottom-4 right-6 flex gap-1.5">
-            {slides.map((_, i) => (
-              <button
-                key={i}
-                onClick={(e) => { e.stopPropagation(); setBanner(i); }}
-                aria-label={`Show promo ${i + 1} of ${slides.length}`}
-                aria-current={i === banner}
-                className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`}
-              />
-            ))}
+                  {activeSlide.kind === "campaign" ? activeSlide.campaign.headline : activeSlide.title}
+                </h2>
+                {activeSlide.kind === "campaign" && (
+                  <p
+                    // No max-w here — the panel wrapping this text
+                    // (max-w-[78%] of the card) already constrains it.
+                    className="text-[12.5px] text-white/85 leading-snug mb-4 relative"
+                    style={{ textShadow: "0 1px 6px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" }}
+                  >
+                    {activeSlide.campaign.body}
+                  </p>
+                )}
+              </motion.div>
+            </AnimatePresence>
           </div>
-        )}
+
+          <div className="shrink-0 flex items-end justify-between mt-2">
+            <motion.span whileTap={{ scale: 0.94 }} transition={SPRING_BOUNCY} className="inline-flex items-center gap-2 bg-[#1E1B4B] text-white text-[12px] font-semibold pl-4 pr-1.5 py-1.5 rounded-full relative">
+              {activeSlide.kind === "campaign" ? activeSlide.campaign.ctaLabel : activeSlide.cta}
+              <span className="w-6 h-6 rounded-full bg-white flex items-center justify-center">
+                <ArrowRight size={12} className="text-[#1E1B4B] -rotate-45" />
+              </span>
+            </motion.span>
+            {slides.length > 1 && (
+              <div className="flex gap-1.5">
+                {slides.map((_, i) => (
+                  <button
+                    key={i}
+                    onClick={(e) => { e.stopPropagation(); setBanner(i); }}
+                    aria-label={`Show promo ${i + 1} of ${slides.length}`}
+                    aria-current={i === banner}
+                    className={`h-1.5 rounded-full transition-all ${i === banner ? "w-5 bg-white" : "w-1.5 bg-white/40"}`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* categories */}
