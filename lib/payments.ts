@@ -157,10 +157,10 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
 // been released, never the seller whether the transfer on the other end
 // succeeded, needed an admin's manual help, or outright failed. Best-effort
 // and never allowed to interrupt the payout flow it's reporting on.
-async function notifyPayoutOutcome(sellerId: string, title: string, body: string): Promise<void> {
+async function notifyPayoutOutcome(sellerId: string, title: string, body: string, sms?: string): Promise<void> {
   const seller = await findUserForSellerId(sellerId);
   if (!seller) return;
-  await notifyBestEffort({ userId: seller.id, type: "payout", title, body });
+  await notifyBestEffort({ userId: seller.id, type: "payout", title, body, sms });
 }
 
 // Called once a buyer confirms delivery (escrow_status -> 'released').
@@ -270,7 +270,12 @@ async function attemptTransfer(input: {
       .eq("id", input.payoutId);
     const amountStr = `₦${input.amount.toLocaleString("en-NG")}`;
     if (finalStatus === "paid") {
-      await notifyPayoutOutcome(input.sellerId, "Payout sent", `${amountStr} for "${input.itemName}" is on its way to your bank account.`);
+      await notifyPayoutOutcome(
+        input.sellerId,
+        "Payout sent",
+        `${amountStr} for "${input.itemName}" is on its way to your bank account.`,
+        `FindIt: Your payout of ${amountStr} is on its way to your bank account.`
+      );
     } else if (finalStatus === "manual_required") {
       await notifyPayoutOutcome(input.sellerId, "Payout needs manual handling", `Your payout of ${amountStr} for "${input.itemName}" needs an admin to finish it — we'll update you once it's paid.`);
     }

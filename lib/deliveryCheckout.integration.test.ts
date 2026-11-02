@@ -191,3 +191,50 @@ describe("an accepted offer", () => {
     expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: ADDRESS }))!.price).toBe(15000);
   });
 });
+
+describe("delivery fees by state", () => {
+  const LAGOS = { ...ADDRESS, state: "Lagos" };
+  const OYO = { ...ADDRESS, state: "Oyo", area: "Bodija" };
+  async function lagosListing(fee = 2500, other: number | null = 6000) {
+    return createProduct({
+      category: "electronics", name: "Fan", price: 10000, seller: "Terra Gadgets", sellerId: null, condition: "New", qty: 10,
+      deliveryOption: "Both", deliveryFee: fee, deliveryState: "Lagos", deliveryFeeOther: other,
+    });
+  }
+
+  it("are stored on the listing and carried onto the order", async () => {
+    const p = await lagosListing();
+    expect(p).toMatchObject({ deliveryState: "Lagos", deliveryFee: 2500, deliveryFeeOther: 6000 });
+    const order = await newOrder(p.id);
+    expect(order).toMatchObject({ deliveryFromState: "Lagos", deliveryFeeQuote: 2500, deliveryFeeQuoteOther: 6000 });
+  });
+
+  it("charge by the address's state at checkout", async () => {
+    const order = await newOrder((await lagosListing()).id);
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: LAGOS }))!).toMatchObject({ deliveryFee: 2500, price: 12500 });
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: OYO }))!).toMatchObject({ deliveryFee: 6000, price: 16000 });
+  });
+
+  it("refuse a state that isn't Nigerian", async () => {
+    await expect(
+      createProduct({ category: "electronics", name: "Fan", price: 1000, seller: "Terra Gadgets", sellerId: null, condition: "New", deliveryOption: "Both", deliveryState: "Atlantis" })
+    ).rejects.toThrow(/state/);
+  });
+
+  it("are dropped when the listing is pickup only", async () => {
+    const p = await lagosListing();
+    expect((await updateProduct(p.id, { deliveryOption: "Pickup" }))!).toMatchObject({ deliveryState: null, deliveryFeeOther: null, deliveryFee: 0 });
+  });
+});
+
+describe("buyer names for the seller", () => {
+  it("appear on paid orders only", async () => {
+    const order = await newOrder((await listing("Delivery")).id);
+    await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: ADDRESS });
+    const sellerView = async () => (await listOrders("seller_user", { name: "Terra Gadgets", id: "seller_1" })).find((o) => o.id === order.id)!;
+    expect((await sellerView()).buyerName).toBeNull();
+    await confirmOrderPayment(order.id);
+    expect((await sellerView()).buyerName).toBe("Ada");
+    expect((await listOrders("buyer_1")).find((o) => o.id === order.id)!.buyerName).toBeNull();
+  });
+});

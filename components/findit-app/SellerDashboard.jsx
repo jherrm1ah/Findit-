@@ -8,10 +8,12 @@ import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import { NIGERIAN_STATES } from "@/lib/deliveryShared";
 import { applyProPurchaseDiscount } from "@/lib/proPricing";
 import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
 import DeliveryDetails from "./DeliveryDetails";
 import SetupGuide, { setupSteps } from "./SetupGuide";
+import PushPrompt from "./PushPrompt";
 import SellerMenu, { SellerMenuBar, currentLabel } from "./SellerMenu";
 import SellerCustomers from "./SellerCustomers";
 import { isLowStock, isBoosted, customersFromOrders } from "@/lib/sellerCustomers";
@@ -168,6 +170,8 @@ const EMPTY_FORM = {
   location: "",
   deliveryOption: "Delivery",
   deliveryFee: "",
+  deliveryState: "",
+  deliveryFeeOther: "",
   color: "",
   variation: "",
 };
@@ -346,7 +350,7 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
         {/* Added to the buyer's total only when they choose delivery at
             checkout. FindIt's fee is never taken from it. */}
         {form.deliveryOption !== "Pickup" && (
-          <Field label="Delivery fee (₦)">
+          <Field label={form.deliveryState ? `Fee within ${form.deliveryState} (₦)` : "Delivery fee (₦)"}>
             <input
               type="number"
               min={0}
@@ -359,6 +363,37 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           </Field>
         )}
       </div>
+      {/* Optional: a different fee for buyers in other states. Checkout picks
+          the right one from the buyer's address. */}
+      {form.deliveryOption !== "Pickup" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Ships from (optional)">
+            <select
+              value={form.deliveryState}
+              onChange={(e) => setForm({ ...form, deliveryState: e.target.value })}
+              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+            >
+              <option value="">Same fee everywhere</option>
+              {NIGERIAN_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </Field>
+          {form.deliveryState && (
+            <Field label="Fee to other states (₦)">
+              <input
+                type="number"
+                min={0}
+                inputMode="numeric"
+                value={form.deliveryFeeOther}
+                onChange={(e) => setForm({ ...form, deliveryFeeOther: e.target.value })}
+                placeholder="e.g. 6000"
+                className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+              />
+            </Field>
+          )}
+        </div>
+      )}
       <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Color">
@@ -1568,6 +1603,9 @@ export default function SellerDashboard({
     location: form.location.trim() || null,
     deliveryOption: form.deliveryOption,
     deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
+    deliveryState: form.deliveryOption === "Pickup" || !form.deliveryState ? null : form.deliveryState,
+    deliveryFeeOther:
+      form.deliveryOption === "Pickup" || !form.deliveryState || form.deliveryFeeOther === "" ? null : Number(form.deliveryFeeOther),
     color: form.color.trim() || null,
     variation: form.variation.trim() || null,
   });
@@ -1653,6 +1691,7 @@ export default function SellerDashboard({
 
       {activeTab === "overview" && (
       <>
+      <PushPrompt forSeller showToast={showToast} />
       <SetupGuide
         sellerKey={mySellerId ?? user.id}
         steps={setupSteps({ user, storeBranding, verification, myListings, payoutAccount, myOrders })}
@@ -1915,6 +1954,8 @@ export default function SellerDashboard({
                   location: p.location ?? "",
                   deliveryOption: p.deliveryOption ?? "Delivery",
                   deliveryFee: p.deliveryFee ? String(p.deliveryFee) : "",
+                  deliveryState: p.deliveryState ?? "",
+                  deliveryFeeOther: p.deliveryFeeOther != null ? String(p.deliveryFeeOther) : "",
                   color: p.color ?? "",
                   variation: p.variation ?? "",
                 }}
@@ -2078,6 +2119,7 @@ export default function SellerDashboard({
               <p className="text-[11px] text-[#6B6483] mb-3">
                 {o.id} · {naira(o.price)}
                 {o.deliveryFee > 0 ? ` (incl. ${naira(o.deliveryFee)} delivery)` : ""}
+                {o.buyerName ? ` · Buyer: ${o.buyerName}` : ""}
               </p>
               <DeliveryDetails order={o} forSeller showToast={showToast} />
               {/* The verified record for this sale, once it exists. Only

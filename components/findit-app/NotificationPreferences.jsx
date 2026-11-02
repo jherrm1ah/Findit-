@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
+import PushPrompt from "./PushPrompt";
 
 export default function NotificationPreferences({ user, onToggle, showToast }) {
   const [enabled, setEnabled] = useState(user.notificationsEnabled);
@@ -59,6 +60,8 @@ export default function NotificationPreferences({ user, onToggle, showToast }) {
           />
         </motion.button>
       </motion.div>
+
+      <PushPrompt variant="row" showToast={showToast} />
 
       <AnimatePresence>
         {!enabled && (

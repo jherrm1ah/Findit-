@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { turnOffPush, reattachPush } from "./push";
 import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
 import Welcome from "./Welcome";
@@ -81,6 +82,9 @@ export default function App() {
       // whoever's signed into this device next.
       mainDataRef.current = null;
       setUser(null);
+      // The session is gone, so just unsubscribe here: no more alerts for
+      // that account on this phone.
+      turnOffPush({ tellServer: false });
       // Whoever this was already has an account — never reopen Login on
       // whatever mode a much earlier "Get Started" tap left `loginMode` in.
       setLoginMode("login");
@@ -123,11 +127,15 @@ export default function App() {
     // guest already added to cart needs to already be sitting there, not
     // about to be overwritten by a fresh empty read. See cart.js.
     mergeGuestCartIntoUser(loggedInUser.id);
+    // If this browser already had alerts on, they now go to whoever signed in.
+    reattachPush();
     setUser(loggedInUser);
     setAuthPrompt(null);
   };
 
   const handleLogout = async () => {
+    // This phone stops getting the signed-out account's alerts.
+    await turnOffPush();
     try {
       await api.logout();
     } catch {

@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import { Truck, Store, Lock } from "lucide-react";
-import { NIGERIAN_STATES, deliveryChoices } from "@/lib/deliveryShared";
+import { NIGERIAN_STATES, deliveryChoices, feeForState, feeSummary, hasStateFees } from "@/lib/deliveryShared";
 import { naira } from "./data";
 import { SPRING_BOUNCY } from "./motion";
 
@@ -70,7 +70,8 @@ function Option({ selected, disabled, onClick, icon: Icon, title, detail }) {
 
 export default function DeliveryChoice({ order, method, setMethod, address, setAddress, pickupFrom }) {
   const choices = deliveryChoices(order.deliveryOptions);
-  const fee = order.deliveryFeeQuote || 0;
+  const byState = hasStateFees(order);
+  const fee = feeForState(order, address.state) || 0;
   const locked = order.deliveryLocked;
   const set = (key) => (e) => setAddress({ ...address, [key]: e.target.value });
 
@@ -85,7 +86,13 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
             onClick={() => setMethod("delivery")}
             icon={Truck}
             title="Deliver to me"
-            detail={fee > 0 ? `+ ${naira(fee)} delivery` : "Free delivery"}
+            detail={
+              byState && !address.state
+                ? `${feeSummary(order)}`
+                : fee > 0
+                  ? `+ ${naira(fee)} delivery${byState ? ` to ${address.state}` : ""}`
+                  : "Free delivery"
+            }
           />
         )}
         {choices.pickup && (

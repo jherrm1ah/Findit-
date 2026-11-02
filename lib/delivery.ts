@@ -1,6 +1,10 @@
 import { ValidationError } from "./errors";
 import { NIGERIAN_STATES, type DeliveryAddress, type DeliveryMethod } from "./deliveryShared";
 
+export function isNigerianState(s: unknown): boolean {
+  return typeof s === "string" && (NIGERIAN_STATES as readonly string[]).includes(s);
+}
+
 export * from "./deliveryShared";
 
 // Delivery at checkout: how an order reaches the buyer (delivered to an address, or picked up from

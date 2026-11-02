@@ -41,3 +41,27 @@ export function addressLines(a: DeliveryAddress | null | undefined): string[] {
   if (!a) return [];
   return [a.fullName, a.address, [a.area, a.state].filter(Boolean).join(", "), a.landmark ? `Landmark: ${a.landmark}` : "", a.phone].filter(Boolean);
 }
+
+// Delivery fees by state (migration 045): a fee within the state it ships
+// from, and another to every other state. fromState null or other null means
+// one flat fee everywhere.
+export type FeeQuote = { deliveryFeeQuote: number; deliveryFeeQuoteOther?: number | null; deliveryFromState?: string | null };
+
+export function hasStateFees(q: FeeQuote): boolean {
+  return Boolean(q.deliveryFromState) && q.deliveryFeeQuoteOther != null && q.deliveryFeeQuoteOther !== q.deliveryFeeQuote;
+}
+
+// The delivery fee to this state. With no state chosen yet, the fee within
+// the seller's own state (checkout shows both until an address is given).
+export function feeForState(q: FeeQuote, state?: string | null): number {
+  if (!hasStateFees(q) || !state) return q.deliveryFeeQuote;
+  return state === q.deliveryFromState ? q.deliveryFeeQuote : (q.deliveryFeeQuoteOther as number);
+}
+
+const nairaText = (n: number) => (n > 0 ? `₦${n.toLocaleString("en-NG")}` : "free");
+
+// "₦2,500 in Lagos, ₦6,000 to other states", or "₦2,500" / "free".
+export function feeSummary(q: FeeQuote): string {
+  if (!hasStateFees(q)) return nairaText(q.deliveryFeeQuote);
+  return `${nairaText(q.deliveryFeeQuote)} in ${q.deliveryFromState}, ${nairaText(q.deliveryFeeQuoteOther as number)} to other states`;
+}

@@ -93,3 +93,23 @@ describe("computeFeeSplit with a delivery fee", () => {
     expect(feeAmount + payoutAmount).toBe(10999);
   });
 });
+
+import { feeForState, feeSummary, hasStateFees } from "./deliveryShared";
+
+describe("delivery fees by state", () => {
+  const lagos = { deliveryFeeQuote: 2500, deliveryFeeQuoteOther: 6000, deliveryFromState: "Lagos" };
+  it("charge the in-state fee in the seller's state and the other fee elsewhere", () => {
+    expect(feeForState(lagos, "Lagos")).toBe(2500);
+    expect(feeForState(lagos, "Oyo")).toBe(6000);
+    expect(feeForState(lagos, null)).toBe(2500); // no address yet
+  });
+  it("are one flat fee when no state or other fee is set", () => {
+    expect(hasStateFees({ deliveryFeeQuote: 2000 })).toBe(false);
+    expect(feeForState({ deliveryFeeQuote: 2000, deliveryFromState: "Lagos", deliveryFeeQuoteOther: null }, "Kano")).toBe(2000);
+  });
+  it("read clearly", () => {
+    expect(feeSummary(lagos)).toBe("₦2,500 in Lagos, ₦6,000 to other states");
+    expect(feeSummary({ deliveryFeeQuote: 0 })).toBe("free");
+    expect(feeSummary({ deliveryFeeQuote: 0, deliveryFeeQuoteOther: 3000, deliveryFromState: "Abia" })).toBe("free in Abia, ₦3,000 to other states");
+  });
+});

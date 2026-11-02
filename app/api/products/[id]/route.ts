@@ -48,6 +48,8 @@ export async function PATCH(
     location?: string | null;
     deliveryOption?: "Delivery" | "Pickup" | "Both" | null;
     deliveryFee?: number | null;
+    deliveryState?: string | null;
+    deliveryFeeOther?: number | null;
     color?: string | null;
     variation?: string | null;
   };

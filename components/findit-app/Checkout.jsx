@@ -5,7 +5,7 @@ import { motion } from "motion/react";
 import { CreditCard, ShieldCheck, CheckCircle2, Gift } from "lucide-react";
 import { STEPS, naira } from "./data";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
-import { deliveryChoices } from "@/lib/deliveryShared";
+import { deliveryChoices, feeForState } from "@/lib/deliveryShared";
 import DeliveryChoice, { startingAddress, missingAddressField } from "./DeliveryChoice";
 import DeliveryDetails from "./DeliveryDetails";
 
@@ -40,7 +40,9 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
     order.deliveryMethod ?? (choices.delivery && !choices.pickup ? "delivery" : !choices.delivery ? "pickup" : null)
   );
   const [address, setAddress] = useState(() => startingAddress(order, user));
-  const deliveryFee = alreadyPaid ? order.deliveryFee || 0 : method === "delivery" ? order.deliveryFeeQuote || 0 : 0;
+  // The fee to the state in the address form (one flat fee unless the seller
+  // charges differently for other states).
+  const deliveryFee = alreadyPaid ? order.deliveryFee || 0 : method === "delivery" ? feeForState(order, address.state) || 0 : 0;
   const total = alreadyPaid ? order.price : itemTotal + deliveryFee;
 
   // Pre-selected whenever there's credit to spend — the server always caps

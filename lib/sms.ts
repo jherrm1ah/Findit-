@@ -36,7 +36,11 @@ function baseUrl(): string {
 // Never crashes the auth server on a Termii outage or slow response — a
 // network error, non-2xx response, or timeout all surface as a plain Error
 // for the caller (the OTP send route) to turn into a safe, generic message.
-export async function sendSms(phoneE164: string, message: string): Promise<void> {
+// "dnd" is Termii's transactional route (login codes, order alerts);
+// "whatsapp" sends through an approved Termii WhatsApp sender instead.
+export type SmsChannel = "dnd" | "generic" | "whatsapp";
+
+export async function sendSms(phoneE164: string, message: string, channel: SmsChannel = "dnd"): Promise<void> {
   const apiKey = requireApiKey();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
@@ -56,7 +60,7 @@ export async function sendSms(phoneE164: string, message: string): Promise<void>
         // "dnd" (Termii's transactional route) — required for OTP/account
         // messages; the "generic" route is for promotional SMS only and
         // Termii can reject or throttle transactional traffic sent there.
-        channel: "dnd",
+        channel,
       }),
     });
   } catch (err) {
