@@ -2722,17 +2722,27 @@ export async function getConversation(
 
 export async function listConversations(userId: string): Promise<Conversation[]> {
   const db = getDb();
-  const result = await db
-    .from("conversations")
-    .select("*")
-    // Just an initial fetch order, not the list's final order — see the
-    // real sort by lastMessageAt below. Ordering by the THREAD's own
-    // created_at here would otherwise mean an old conversation that just
-    // got a brand-new reply never moves, while an idle one created more
-    // recently sits above it — the classic "messages list looks frozen"
-    // bug.
-    .order("created_at", { ascending: false });
-  const rows = assertNoError(result, "listing conversations") as Row[];
+  // ONLY the conversations this user is part of, as buyer or as seller.
+  // This query used to have no filter at all, so every account's Messages
+  // list showed every conversation on FindIt (the other person's name and
+  // the last message), including a brand-new user's. The service-role key
+  // bypasses RLS, so this filter is the real privacy boundary. Two plain
+  // .eq() queries instead of one .or("buyer_id.eq.…,seller_id.eq.…") string,
+  // so a user id can never be read as part of a filter expression.
+  if (!userId) return [];
+  const [asBuyer, asSeller] = await Promise.all([
+    db.from("conversations").select("*").eq("buyer_id", userId),
+    db.from("conversations").select("*").eq("seller_id", userId),
+  ]);
+  const byId = new Map<string, Row>();
+  for (const row of [
+    ...(assertNoError(asBuyer, "listing conversations") as Row[]),
+    ...(assertNoError(asSeller, "listing conversations") as Row[]),
+  ]) {
+    byId.set(row.id as string, row);
+  }
+  // Belt and braces: never return a conversation this user isn't in.
+  const rows = [...byId.values()].filter((row) => row.buyer_id === userId || row.seller_id === userId);
 
   const conversations = await Promise.all(
     rows.map(async (row) => {
