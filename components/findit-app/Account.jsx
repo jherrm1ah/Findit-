@@ -202,7 +202,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
             {/* Where the money stands — the app promises this on every product
                 page and at checkout, so it has to be visible on the order too. */}
             <AnimatePresence mode="wait" initial={false}>
-              {(() => {
+              {o.status !== "Cancelled" && (() => {
                 const escrow = ESCROW_COPY[o.escrowStatus] ?? ESCROW_COPY.held;
                 const EscrowIcon = escrow.icon;
                 return (
