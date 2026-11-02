@@ -17,7 +17,7 @@
     ]
   },
   "android": {
-    "backgroundColor": "#FAFAFF",
+    "backgroundColor": "#FFFFFF",
     "allowMixedContent": false,
     "appendUserAgent": "FindItAndroid"
   }
