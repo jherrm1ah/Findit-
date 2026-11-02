@@ -1,0 +1,133 @@
+name: Android APK
+
+# Builds the FindIt Android app (Capacitor, see capacitor.config.json) on GitHub's Linux runner,
+# which ships with the Android SDK. The app opens https://www.shopwithfindit.com full-screen, so
+# FindIt's features come from the website; this only needs rebuilding when the Android side
+# changes (icon, permissions, settings).
+#
+# The APK is saved as a workflow artifact and to the `android-apk` branch; merged builds also
+# become a GitHub Release (newest: releases/latest/download/FindIt.apk). Test builds are signed
+# with the fixed debug key in android/app/findit-debug.keystore and must never go to the Play Store.
+on:
+  workflow_dispatch: {}
+  pull_request:
+    paths:
+      - "android/**"
+      - "android-shell/**"
+      - "capacitor.config.json"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/android.yml"
+  push:
+    branches: [main]
+    paths:
+      - "android/**"
+      - "android-shell/**"
+      - "capacitor.config.json"
+      - ".github/workflows/android.yml"
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write # to publish the APK to the android-apk branch and Releases
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Android SDK packages
+        run: |
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+          ls "$ANDROID_HOME/platforms" "$ANDROID_HOME/build-tools"
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Copy the app shell and settings into the Android project
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Verify the APK
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          mkdir -p out
+          cp "$APK" out/FindIt.apk
+          {
+            echo "FindIt Android APK (test build)"
+            echo "commit: ${GITHUB_SHA}"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "size_bytes: $(stat -c %s out/FindIt.apk)"
+            echo "sha256: $(sha256sum out/FindIt.apk | cut -d' ' -f1)"
+            echo
+            echo "== aapt2 dump badging =="
+            "$BT/aapt2" dump badging out/FindIt.apk | grep -E "^(package|sdkVersion|targetSdkVersion|application-label|uses-permission|launchable-activity)"
+            echo
+            echo "== apksigner verify =="
+            "$BT/apksigner" verify --verbose --print-certs out/FindIt.apk | grep -E "Verifies|Verified using|Signer #1 certificate (DN|SHA-256)"
+          } | tee out/BUILD-INFO.txt
+          grep -q "package: name='com.shopwithfindit.app'" out/BUILD-INFO.txt
+          grep -q "application-label:'FindIt'" out/BUILD-INFO.txt
+          NAME=$(sed -n 's/^VERSION_NAME=//p' android/version.properties)
+          IFS=. read -r MA MI PA <<< "$NAME"
+          CODE=$((MA * 10000 + MI * 100 + PA))
+          grep -q "versionCode='$CODE' versionName='$NAME'" out/BUILD-INFO.txt
+          grep -q "^Verifies" out/BUILD-INFO.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FindIt-apk
+          path: out/
+          retention-days: 30
+
+      - name: Publish to the android-apk branch
+        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          cd out
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -b android-apk
+          printf '# FindIt Android APK\n\n`FindIt.apk` is the latest test build of the FindIt Android app, built by\n`.github/workflows/android.yml`. Details (commit, SHA-256, permissions, signature) are in\n`BUILD-INFO.txt`. For installing on phones directly; not the Play Store version.\n' > README.md
+          git add -A
+          git commit -q -m "FindIt APK from ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" android-apk
+
+      - name: Publish the GitHub Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAME=$(sed -n 's/^VERSION_NAME=//p' android/version.properties)
+          TAG="android-v$NAME"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" out/FindIt.apk out/BUILD-INFO.txt --clobber
+          else
+            gh release create "$TAG" out/FindIt.apk out/BUILD-INFO.txt --target "$GITHUB_SHA" --latest \
+              --title "FindIt for Android $NAME" \
+              --notes "Install FindIt.apk on an Android phone. It updates an existing FindIt install. Build details are in BUILD-INFO.txt. Test build, not the Play Store version."
+          fi
