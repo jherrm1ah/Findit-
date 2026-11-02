@@ -1239,6 +1239,16 @@ export async function assertOrderInStock(order: Order): Promise<void> {
 // left and sorts it out, the same as a shop that oversold). A conditional
 // write on the qty just read, retried, so two payments can't lose an update.
 export async function decrementStockForOrder(order: Order): Promise<void> {
+  return adjustStockForOrder(order, -1);
+}
+
+// The other way: an order that's refunded before it ever left the seller
+// puts its items back on sale.
+export async function restockOrder(order: Order): Promise<void> {
+  return adjustStockForOrder(order, 1);
+}
+
+async function adjustStockForOrder(order: Order, direction: 1 | -1): Promise<void> {
   const db = getDb();
   for (const line of order.lines) {
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -1246,13 +1256,13 @@ export async function decrementStockForOrder(order: Order): Promise<void> {
       const row = assertNoError(read, "reading stock") as Row | null;
       if (!row) break; // listing deleted since: nothing to update
       const current = (row.qty as number | null) ?? 0;
-      const next = Math.max(0, current - line.qty);
+      const next = Math.max(0, current + direction * line.qty);
       if (next === current) break;
       const write = await db.from("products").update({ qty: next }).eq("id", line.productId).eq("qty", current).select("id").maybeSingle();
       if (assertNoError(write, "updating stock")) {
         // Most listings start at quantity 1, so the seller needs to know the
         // moment one sells out, or it silently stops being buyable.
-        if (next === 0) {
+        if (next === 0 && direction === -1) {
           try {
           const seller = row.seller_id
             ? await findUserForSellerId(row.seller_id as string)
@@ -1273,6 +1283,88 @@ export async function decrementStockForOrder(order: Order): Promise<void> {
       }
     }
   }
+}
+
+async function restockSafely(order: Order): Promise<void> {
+  try {
+    await restockOrder(order);
+  } catch (err) {
+    console.error("[stock] couldn't put stock back for", order.id, err);
+  }
+}
+
+// Tells every FindIt admin about something that needs a person, e.g. a
+// refund Paystack wouldn't take. Best-effort.
+export async function notifyAdminsBestEffort(title: string, body: string): Promise<void> {
+  try {
+    const db = getDb();
+    const admins = assertNoError(await db.from("users").select("id").eq("role", "admin"), "listing admins") as Row[];
+    for (const a of admins) await notifyBestEffort({ userId: a.id as string, type: "payment", title, body });
+  } catch (err) {
+    console.error("[admin] couldn't notify admins", err);
+  }
+}
+
+export const SELLER_CANCEL_REASONS = {
+  out_of_stock: "it's out of stock",
+  cant_deliver: "they can't deliver it",
+  price_error: "the price was listed wrongly",
+  other: "they can't fulfil it",
+} as const;
+export type SellerCancelReason = keyof typeof SELLER_CANCEL_REASONS;
+
+// "Can't fulfil this order": the seller cancels a PAID order they haven't
+// dispatched (sold out, can't deliver, wrong price). Only the seller whose
+// order it is; only before dispatch and with no problem reported, so a
+// seller can never take back an order that's on its way. Marks it cancelled
+// with the money refunded (escrow 'refunded'), puts the stock back and tells
+// the buyer why. The actual Paystack refund is the caller's next step
+// (lib/payments.ts#refundOrderPayment; see app/api/orders/[id]/seller-cancel).
+// Returns null if the order isn't this seller's, or can't be cancelled now.
+export async function sellerCancelPaidOrder(
+  orderId: string,
+  seller: { id: string | null; name: string },
+  reason: SellerCancelReason
+): Promise<Order | null> {
+  if (!(reason in SELLER_CANCEL_REASONS)) throw new ValidationError("Choose why you can't fulfil this order.");
+  const existing = await getOrder(orderId);
+  if (!existing) return null;
+  const mine =
+    (seller.id && existing.sellerId === seller.id) || (existing.sellerId == null && existing.seller === seller.name);
+  if (!mine) return null;
+  if (existing.paymentStatus !== "paid") {
+    throw new ValidationError("This order hasn't been paid, so there's nothing to cancel. It closes by itself if the buyer doesn't pay.");
+  }
+  if (existing.dispatchedAt || !["Awaiting payment", "Seller preparing"].includes(existing.status)) {
+    throw new ValidationError("This order is already on its way, so it can't be cancelled here. Message the buyer, or contact FindIt support.");
+  }
+  if (existing.escrowStatus !== "held") {
+    throw new ValidationError("This order can't be cancelled now. Contact FindIt support.");
+  }
+
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ status: "Cancelled", escrow_status: "refunded", cancelled_at: new Date().toISOString(), can_review: false })
+    .eq("id", orderId)
+    .eq("payment_status", "paid")
+    .eq("escrow_status", "held")
+    .is("dispatched_at", null)
+    .is("issue_reported_at", null)
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "cancelling a paid order") as Row | null;
+  if (!row) throw new ValidationError("This order just changed. Refresh and try again.");
+  const order = rowToOrder(row);
+
+  await restockSafely(order);
+  await notifyBestEffort({
+    userId: order.userId,
+    type: "payment",
+    title: "Order cancelled and refunded",
+    body: `${order.seller} cancelled your order for "${order.item}" because ${SELLER_CANCEL_REASONS[reason]}. FindIt is refunding your ₦${order.price.toLocaleString("en-NG")}.`,
+  });
+  return order;
 }
 
 export const UNPAID_ORDER_DAYS = 7;
@@ -1983,6 +2075,9 @@ export async function resolveOrderIssue(
     await markTransactionDisputeResolved(id, null, "Dispute resolved in the seller's favour.");
   } else {
     await markTransactionRefunded(id, null, "Refunded after a reported problem.");
+    // Never left the seller: back on sale. (Something that was delivered
+    // and refunded isn't automatically sellable again.)
+    if (!order.dispatchedAt) await restockSafely(order);
   }
 
   await notifyBestEffort({

@@ -25,7 +25,7 @@ export function setupSteps({
   verification?: { status?: string } | null;
   myListings?: unknown[];
   payoutAccount?: { hasAccount?: boolean } | null;
-  myOrders?: { paymentStatus?: string }[];
+  myOrders?: { paymentStatus?: string; status?: string }[];
 }): SetupStep[] {
   const verificationStatus = verification?.status ?? "approved";
   return [
@@ -67,7 +67,7 @@ export function setupSteps({
       key: "sale",
       title: "Make your first sale",
       detail: "Share your listings, and answer customer requests: sellers who reply fast win more orders.",
-      done: (myOrders ?? []).some((o) => o.paymentStatus === "paid"),
+      done: (myOrders ?? []).some((o) => o.paymentStatus === "paid" && o.status !== "Cancelled"),
       action: { label: "See customer requests", tab: "requests" },
     },
   ];

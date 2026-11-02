@@ -235,9 +235,11 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 chooses delivery or pickup before paying. */}
             {o.status === "Cancelled" && (
               <p className="text-[11.5px] text-[#6B6483] mb-2.5">
-                {o.cancelReason === "expired"
-                  ? "Closed because it wasn't paid within 7 days. You can order it again any time."
-                  : "You cancelled this order before paying. Nothing was charged."}
+                {o.paymentStatus === "paid"
+                  ? `The seller couldn't fulfil this order, so it was cancelled and your ${naira(o.price)} refunded. Refunds to a card or bank can take a few working days.`
+                  : o.cancelReason === "expired"
+                    ? "Closed because it wasn't paid within 7 days. You can order it again any time."
+                    : "You cancelled this order before paying. Nothing was charged."}
               </p>
             )}
             {o.paymentStatus !== "paid" && o.status !== "Cancelled" && (

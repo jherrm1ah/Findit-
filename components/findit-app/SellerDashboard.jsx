@@ -58,7 +58,7 @@ function statusTone(status) {
 // enabled "Mark as Awaiting payment" button on every completed order
 // instead of the "Delivered — payment released" pill.
 function nextSellerStep(status) {
-  if (status === "Delivered") return undefined;
+  if (status === "Delivered" || status === "Cancelled") return undefined;
   return SELLER_STEPS[SELLER_STEPS.indexOf(status) + 1];
 }
 
@@ -1384,7 +1384,7 @@ function PayoutAccountCard({ payoutAccount, banks, onSave, saving }) {
 // setup (Store — branding, payout account, reviews).
 
 export default function SellerDashboard({
-  requests, onSendOffer, user, mySellerId, orders, onAdvanceOrderStatus,
+  requests, onSendOffer, user, mySellerId, orders, onAdvanceOrderStatus, onSellerCancelOrder,
   products, onCreateProduct, onUpdateProduct, onDeleteProduct, onUploadImage,
   onMessageBuyer,
   myLocation,
@@ -1410,6 +1410,21 @@ export default function SellerDashboard({
   const [savingListing, setSavingListing] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [messagingId, setMessagingId] = useState(null);
+  // "Can't fulfil this order": which order is asking, why, and whether it's sending.
+  const [cancellingOrder, setCancellingOrder] = useState(null);
+  const [cancelReason, setCancelReason] = useState("out_of_stock");
+  const [cancelSending, setCancelSending] = useState(false);
+  const cancelPaidOrder = async (orderId) => {
+    setCancelSending(true);
+    try {
+      await onSellerCancelOrder?.(orderId, cancelReason);
+      setCancellingOrder(null);
+    } catch {
+      // MainApp showed the error; keep the panel open to retry
+    } finally {
+      setCancelSending(false);
+    }
+  };
   const [boostPickerId, setBoostPickerId] = useState(null);
   const [boostingId, setBoostingId] = useState(null);
   // Where the seller is: a section from the menu (SellerMenu.jsx), a listings
@@ -2102,14 +2117,14 @@ export default function SellerDashboard({
                   settled) instead of cutting instantly when an order moves. */}
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
-                  key={o.status === "Cancelled" && o.paymentStatus !== "paid" ? "cancelled" : o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
+                  key={o.status === "Cancelled" ? "cancelled" : o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: DURATION.fast, ease: EASE }}
                 >
-                  {o.status === "Cancelled" && o.paymentStatus !== "paid" ? (
-                    <Pill tone="stone">Cancelled before payment</Pill>
+                  {o.status === "Cancelled" ? (
+                    <Pill tone="stone">{o.paymentStatus === "paid" ? "Cancelled · buyer refunded" : "Cancelled before payment"}</Pill>
                   ) : o.paymentStatus !== "paid" ? (
                     <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
                   ) : nextStatus ? (
@@ -2140,6 +2155,52 @@ export default function SellerDashboard({
                   )}
                 </motion.div>
               </AnimatePresence>
+              {/* Sold out, can't deliver, wrong price: the seller can cancel a paid
+                  order before dispatching it, and the buyer is refunded. */}
+              {o.paymentStatus === "paid" && o.escrowStatus === "held" && !o.dispatchedAt &&
+                ["Awaiting payment", "Seller preparing"].includes(o.status) && (
+                cancellingOrder === o.id ? (
+                  <div className="mt-3 bg-[#FDF6F6] border border-[#F3D9D9] rounded-xl p-3">
+                    <p className="text-[12px] font-semibold text-[#1E1B4B] mb-2">Cancel this order and refund the buyer?</p>
+                    <select
+                      value={cancelReason}
+                      onChange={(e) => setCancelReason(e.target.value)}
+                      className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none mb-2"
+                    >
+                      <option value="out_of_stock">It's out of stock</option>
+                      <option value="cant_deliver">I can't deliver it</option>
+                      <option value="price_error">The price was wrong</option>
+                      <option value="other">Another reason</option>
+                    </select>
+                    <p className="text-[11px] text-[#6B6483] mb-2.5">
+                      The buyer gets all {naira(o.price)} back and is told why. The item goes back on sale.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => cancelPaidOrder(o.id)}
+                        disabled={cancelSending}
+                        className="flex-1 text-white text-[12px] font-semibold py-2 rounded-lg bg-[#B91C1C] disabled:opacity-60"
+                      >
+                        {cancelSending ? "Cancelling…" : "Cancel and refund"}
+                      </button>
+                      <button
+                        onClick={() => setCancellingOrder(null)}
+                        disabled={cancelSending}
+                        className="px-3 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-lg bg-white"
+                      >
+                        Keep order
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => { setCancellingOrder(o.id); setCancelReason("out_of_stock"); }}
+                    className="mt-3 text-[11px] font-semibold text-[#6B6483] underline"
+                  >
+                    Can't fulfil this order?
+                  </button>
+                )
+              )}
             </motion.div>
           );
         })}

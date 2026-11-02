@@ -201,3 +201,66 @@ describe(`closing orders left unpaid for ${UNPAID_ORDER_DAYS} days`, () => {
     expect(fakeDb.dump("notifications").some((n) => n.user_id === "buyer_1" && n.title === "Unpaid order closed")).toBe(true);
   });
 });
+
+describe("a seller who can't fulfil a paid order", () => {
+  const terra = { id: null, name: "Terra Gadgets" };
+
+  async function paidOrder(qtyInStock = 2, qty = 1) {
+    const p = await listing("Blender", { qty: qtyInStock });
+    const order = await createOrderFromProduct(p.id, qty, "buyer_1");
+    await asPending(order.id);
+    await confirmOrderPayment(order.id);
+    return { p, order: (await getOrder(order.id))! };
+  }
+
+  it("cancels it as refunded, puts the stock back and tells the buyer why", async () => {
+    const { p, order } = await paidOrder(2, 1);
+    expect((await getProduct(p.id))!.qty).toBe(1);
+    const cancelled = await repo.sellerCancelPaidOrder(order.id, terra, "out_of_stock");
+    expect(cancelled).toMatchObject({ status: "Cancelled", escrowStatus: "refunded", paymentStatus: "paid" });
+    expect((await getProduct(p.id))!.qty).toBe(2);
+    const note = fakeDb.dump("notifications").find((n) => n.user_id === "buyer_1" && n.title === "Order cancelled and refunded");
+    expect(note?.body).toMatch(/out of stock/);
+  });
+
+  it("only the seller whose order it is", async () => {
+    const { order } = await paidOrder();
+    expect(await repo.sellerCancelPaidOrder(order.id, { id: null, name: "Kemi's Kitchen" }, "other")).toBeNull();
+  });
+
+  it("never once it's on its way, or if it isn't paid", async () => {
+    const { order } = await paidOrder();
+    await repo.updateOrderStatus(order.id, "Dispatched");
+    await expect(repo.sellerCancelPaidOrder(order.id, terra, "other")).rejects.toThrow(/on its way/);
+
+    const unpaid = await createOrderFromProduct((await listing("Kettle")).id, 1, "buyer_1");
+    await asPending(unpaid.id);
+    await expect(repo.sellerCancelPaidOrder(unpaid.id, terra, "other")).rejects.toThrow(/hasn't been paid/);
+  });
+
+  it("won't cancel twice", async () => {
+    const { order } = await paidOrder();
+    await repo.sellerCancelPaidOrder(order.id, terra, "other");
+    await expect(repo.sellerCancelPaidOrder(order.id, terra, "other")).rejects.toThrow();
+  });
+});
+
+describe("a refund after a reported problem", () => {
+  async function disputed(dispatched: boolean) {
+    const p = await listing("Blender", { qty: 3 });
+    const order = await createOrderFromProduct(p.id, 1, "buyer_1");
+    await asPending(order.id);
+    await confirmOrderPayment(order.id);
+    await fakeDb.from("orders").update({ escrow_status: "disputed", issue_reported_at: now(), dispatched_at: dispatched ? now() : null }).eq("id", order.id);
+    await repo.resolveOrderIssue(order.id, "refunded");
+    return (await getProduct(p.id))!.qty;
+  }
+
+  it("puts the stock back if the item never left the seller", async () => {
+    expect(await disputed(false)).toBe(3);
+  });
+
+  it("doesn't if it was already sent out", async () => {
+    expect(await disputed(true)).toBe(2);
+  });
+});
