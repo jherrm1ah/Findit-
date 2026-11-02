@@ -16,6 +16,7 @@ import SetupGuide, { setupSteps } from "./SetupGuide";
 import PushPrompt from "./PushPrompt";
 import SellerMenu, { SellerMenuBar, currentLabel } from "./SellerMenu";
 import SellerCustomers from "./SellerCustomers";
+import SellerShipping from "./SellerShipping";
 import { isLowStock, isBoosted, customersFromOrders } from "@/lib/sellerCustomers";
 
 // A bouncier mount pop for this dashboard's listing/order cards — scale
@@ -170,13 +171,18 @@ const EMPTY_FORM = {
   location: "",
   deliveryOption: "Delivery",
   deliveryPricing: "",
+  shippingProfileId: "",
   deliveryFee: "",
   deliveryRates: [],
+  weightKg: "",
+  lengthCm: "",
+  widthCm: "",
+  heightCm: "",
   color: "",
   variation: "",
 };
 
-function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
+function ListingForm({ initial, onSave, onCancel, saving, onUploadImage, shippingProfiles = [] }) {
   const [form, setForm] = useState(initial);
   const [uploading, setUploading] = useState(false);
   const [generatingDescription, setGeneratingDescription] = useState(false);
@@ -348,7 +354,23 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
       </Field>
       {/* What delivery costs the buyer: added to their total only when they
           choose delivery at checkout, and FindIt's fee is never taken from it. */}
-      {form.deliveryOption !== "Pickup" && <DeliveryPricingField form={form} setForm={setForm} />}
+      {form.deliveryOption !== "Pickup" && <DeliveryPricingField form={form} setForm={setForm} profiles={shippingProfiles} />}
+      {/* The package, for weight-based rates (and carriers later). */}
+      <p className="text-[11.5px] font-medium text-[#514B67] pt-1">Package (optional)</p>
+      <div className="grid grid-cols-4 gap-2">
+        <Field label="Weight (kg)">
+          <input type="number" min={0} step="0.1" inputMode="decimal" value={form.weightKg} onChange={(e) => setForm({ ...form, weightKg: e.target.value })} className="w-full bg-white border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none" />
+        </Field>
+        <Field label="L (cm)">
+          <input type="number" min={0} inputMode="numeric" value={form.lengthCm} onChange={(e) => setForm({ ...form, lengthCm: e.target.value })} className="w-full bg-white border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none" />
+        </Field>
+        <Field label="W (cm)">
+          <input type="number" min={0} inputMode="numeric" value={form.widthCm} onChange={(e) => setForm({ ...form, widthCm: e.target.value })} className="w-full bg-white border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none" />
+        </Field>
+        <Field label="H (cm)">
+          <input type="number" min={0} inputMode="numeric" value={form.heightCm} onChange={(e) => setForm({ ...form, heightCm: e.target.value })} className="w-full bg-white border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[12.5px] outline-none" />
+        </Field>
+      </div>
       <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Color">
@@ -1423,6 +1445,12 @@ export default function SellerDashboard({
   const [listingFilter, setListingFilter] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  // Shipping profiles, for the listing form's "Shipping profile" choice.
+  const [shippingProfiles, setShippingProfiles] = useState([]);
+  useEffect(() => {
+    api.getShipping().then((c) => setShippingProfiles(c.profiles)).catch(() => {});
+  }, []);
+  const defaultShippingProfile = shippingProfiles.find((p) => p.isDefault) ?? null;
   const [storeLinkCopied, setStoreLinkCopied] = useState(false);
 
   const boostListing = async (productId, boostPlanId) => {
@@ -1536,12 +1564,22 @@ export default function SellerDashboard({
     }
   };
 
-  const advance = async (order) => {
+  // Sending a delivery order out asks (optionally) for the carrier and
+  // tracking reference first; everything else moves on straight away.
+  const [dispatching, setDispatching] = useState(null); // order id with the tracking form open
+  const [tracking, setTracking] = useState({ carrier: "", trackingNumber: "", trackingUrl: "" });
+  const advance = async (order, withTracking = null) => {
     const nextStatus = nextSellerStep(order.status);
     if (!nextStatus) return;
+    if (nextStatus === "Dispatched" && order.deliveryMethod === "delivery" && !withTracking) {
+      setDispatching(order.id);
+      setTracking({ carrier: "", trackingNumber: "", trackingUrl: "" });
+      return;
+    }
     setAdvancingId(order.id);
     try {
-      await onAdvanceOrderStatus(order.id, nextStatus);
+      await onAdvanceOrderStatus(order.id, nextStatus, withTracking);
+      setDispatching(null);
     } finally {
       setAdvancingId(null);
     }
@@ -1558,6 +1596,10 @@ export default function SellerDashboard({
     location: form.location.trim() || null,
     deliveryOption: form.deliveryOption,
     ...pricingPayload(form),
+    weightG: form.weightKg === "" || form.weightKg == null ? null : Math.max(1, Math.round(Number(form.weightKg) * 1000)),
+    lengthCm: form.lengthCm === "" || form.lengthCm == null ? null : Math.round(Number(form.lengthCm)),
+    widthCm: form.widthCm === "" || form.widthCm == null ? null : Math.round(Number(form.widthCm)),
+    heightCm: form.heightCm === "" || form.heightCm == null ? null : Math.round(Number(form.heightCm)),
     color: form.color.trim() || null,
     variation: form.variation.trim() || null,
   });
@@ -1646,7 +1688,7 @@ export default function SellerDashboard({
       <PushPrompt forSeller showToast={showToast} />
       <SetupGuide
         sellerKey={mySellerId ?? user.id}
-        steps={setupSteps({ user, storeBranding, verification, myListings, payoutAccount, myOrders })}
+        steps={setupSteps({ user, storeBranding, verification, myListings, payoutAccount, myOrders, hasDefaultShippingProfile: Boolean(defaultShippingProfile) })}
         onAction={(action) => {
           if (action.to) {
             go?.(action.to);
@@ -1815,6 +1857,8 @@ export default function SellerDashboard({
         />
       )}
 
+      {activeTab === "shipping" && <SellerShipping showToast={showToast} onProfilesChange={setShippingProfiles} orders={myOrders} />}
+
       {activeTab === "customers" && (
         <SellerCustomers orders={myOrders} onMessage={messageBuyer} messagingId={messagingId} />
       )}
@@ -1863,7 +1907,18 @@ export default function SellerDashboard({
               transition={{ duration: DURATION.fast, ease: EASE }}
               className="bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5"
             >
-              <ListingForm initial={EMPTY_FORM} onSave={saveNew} onCancel={() => setAdding(false)} saving={savingListing} onUploadImage={onUploadImage} />
+              <ListingForm
+                initial={{
+                  ...EMPTY_FORM,
+                  // With a default shipping profile, new listings start on it.
+                  ...(defaultShippingProfile ? { deliveryPricing: "profile", shippingProfileId: defaultShippingProfile.id } : {}),
+                }}
+                onSave={saveNew}
+                onCancel={() => setAdding(false)}
+                saving={savingListing}
+                onUploadImage={onUploadImage}
+                shippingProfiles={shippingProfiles}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -1906,10 +1961,15 @@ export default function SellerDashboard({
                   location: p.location ?? "",
                   deliveryOption: p.deliveryOption ?? "Delivery",
                   ...pricingFormFrom(p),
+                  weightKg: p.weightG ? String(p.weightG / 1000) : "",
+                  lengthCm: p.lengthCm ? String(p.lengthCm) : "",
+                  widthCm: p.widthCm ? String(p.widthCm) : "",
+                  heightCm: p.heightCm ? String(p.heightCm) : "",
                   color: p.color ?? "",
                   variation: p.variation ?? "",
                 }}
                 onSave={(form) => saveEdit(p.id, form)}
+                shippingProfiles={shippingProfiles}
                 onCancel={() => setEditingId(null)}
                 saving={savingListing}
                 onUploadImage={onUploadImage}
@@ -1935,7 +1995,7 @@ export default function SellerDashboard({
                           <X size={9} /> Rejected{p.moderationReason ? `: ${p.moderationReason}` : ""}
                         </span>
                       )}
-                      {p.deliveryOption !== "Pickup" && !p.deliveryPricing && (
+                      {p.deliveryOption !== "Pickup" && !p.deliveryPricing && !p.shippingProfileId && !defaultShippingProfile && (
                         <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
                           <Truck size={9} /> Set delivery pricing
                         </span>
@@ -2124,6 +2184,35 @@ export default function SellerDashboard({
                     <Pill tone="stone">{o.paymentStatus === "paid" ? "Cancelled · buyer refunded" : "Cancelled before payment"}</Pill>
                   ) : o.paymentStatus !== "paid" ? (
                     <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
+                  ) : nextStatus && dispatching === o.id ? (
+                    <div className="bg-[#F5F2FC] rounded-xl p-3 space-y-2">
+                      <p className="text-[12px] font-semibold text-[#1E1B4B]">Sending it out</p>
+                      <input
+                        list="findit-carriers"
+                        value={tracking.carrier}
+                        onChange={(e) => setTracking({ ...tracking, carrier: e.target.value })}
+                        placeholder="Carrier (e.g. GIG Logistics, my own rider)"
+                        className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+                      />
+                      <datalist id="findit-carriers">
+                        {["My own rider", "GIG Logistics", "Sendbox", "Shipbubble", "DHL", "Kwik", "Gokada"].map((c) => <option key={c} value={c} />)}
+                      </datalist>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input value={tracking.trackingNumber} onChange={(e) => setTracking({ ...tracking, trackingNumber: e.target.value })} placeholder="Tracking number (optional)" className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+                        <input value={tracking.trackingUrl} onChange={(e) => setTracking({ ...tracking, trackingUrl: e.target.value })} placeholder="Tracking link (optional)" className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none" />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => advance(o, tracking)}
+                          disabled={advancingId !== null}
+                          className="flex-1 text-white text-[12px] font-semibold py-2 rounded-lg disabled:opacity-60"
+                          style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
+                        >
+                          {advancingId === o.id ? "Updating…" : "Mark as sent"}
+                        </button>
+                        <button onClick={() => setDispatching(null)} className="px-3 text-[12px] font-semibold text-[#6B6483] border border-[#ECE9F7] rounded-lg bg-white">Cancel</button>
+                      </div>
+                    </div>
                   ) : nextStatus ? (
                     <motion.button
                       onClick={() => advance(o)}
@@ -2132,7 +2221,13 @@ export default function SellerDashboard({
                       className={`flex items-center gap-1.5 text-white text-[12px] font-semibold px-3.5 py-2 rounded-xl ${advancingId !== null ? "opacity-60" : ""}`}
                       style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
                     >
-                      {advancingId === o.id ? "Updating…" : <>Mark as {nextStatus} <ArrowRight size={12} /></>}
+                      {advancingId === o.id ? (
+                        "Updating…"
+                      ) : o.deliveryMethod === "pickup" && nextStatus === "Dispatched" ? (
+                        <>Mark ready for collection <ArrowRight size={12} /></>
+                      ) : (
+                        <>Mark as {nextStatus} <ArrowRight size={12} /></>
+                      )}
                     </motion.button>
                   ) : awaitingBuyer ? (
                     <div>

@@ -50,6 +50,11 @@ export async function POST(req: NextRequest) {
     deliveryFee?: number | null;
     deliveryPricing?: "free" | "fixed" | "location" | null;
     deliveryRates?: Record<string, number> | null;
+    weightG?: number | null;
+    lengthCm?: number | null;
+    widthCm?: number | null;
+    heightCm?: number | null;
+    shippingProfileId?: string | null;
     color?: string | null;
     variation?: string | null;
   };
@@ -120,6 +125,11 @@ export async function POST(req: NextRequest) {
       deliveryFee: body.deliveryFee ?? 0,
       deliveryPricing: body.deliveryPricing ?? null,
       deliveryRates: body.deliveryRates ?? null,
+      weightG: body.weightG ?? null,
+      lengthCm: body.lengthCm ?? null,
+      widthCm: body.widthCm ?? null,
+      heightCm: body.heightCm ?? null,
+      shippingProfileId: body.shippingProfileId ?? null,
       color: body.color ?? null,
       variation: body.variation ?? null,
     });

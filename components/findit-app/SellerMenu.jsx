@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
   Menu as MenuIcon, X, Search, LayoutDashboard, Package, ClipboardList, Users, Send, Megaphone, Gift, BarChart3,
-  Store, Crown, ChevronRight,
+  Store, Crown, ChevronRight, Truck,
 } from "lucide-react";
 import { naira } from "./data";
 import { DURATION, EASE } from "./motion";
@@ -34,6 +34,12 @@ const GROUPS = [
       { key: "orders", label: "Orders", icon: ClipboardList, target: { tab: "orders" }, count: "toFulfil", keywords: "sales deliver dispatch" },
       { key: "customers", label: "Customers", icon: Users, target: { tab: "customers" }, count: "customers", keywords: "buyers people" },
       { key: "requests", label: "Customer requests", icon: Send, target: { tab: "requests" }, count: "requests", keywords: "offers asks" },
+    ],
+  },
+  {
+    title: "Ship",
+    items: [
+      { key: "shipping", label: "Shipping & delivery", icon: Truck, target: { tab: "shipping" }, keywords: "delivery rates zones profiles pickup locations carriers free weight price local" },
     ],
   },
   {

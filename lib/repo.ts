@@ -21,7 +21,10 @@ import { listActiveModerationRules, findMatchingModerationRule } from "./moderat
 import { qualifyReferral } from "./referrals";
 import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
 import { sendPushToUser, sendTextAlert } from "./outsideAlerts";
-import { deliveryChoices, feeForState, normalizeAddress, normalizeDeliveryPricing, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryPricing, type DeliveryRates, type DeliveryMethod, type DeliveryOptions } from "./delivery";
+import { quoteOrderShipping, pickupLocationsForSeller, shippingSummaries, assertProfileBelongsTo, type SellerLocation } from "./shipping/store";
+import type { ShippingOption } from "./shipping/engine";
+import { recordShipmentEvent, shipmentsForOrders, type ShipmentView, type TrackingInput } from "./shipping/shipments";
+import { deliveryChoices, normalizeAddress, normalizeDeliveryPricing, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryPricing, type DeliveryRates, type DeliveryMethod, type DeliveryOptions } from "./delivery";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -102,6 +105,16 @@ export type Product = {
   // older listing whose seller hasn't chosen yet.
   deliveryPricing: DeliveryPricing | null;
   deliveryRates: DeliveryRates | null;
+  // Migration 047: the package (for weight-based rates and carriers) and the
+  // shipping profile that prices delivery (null = its own pricing above, or
+  // the seller's default profile). shippingSummary is how delivery reads on
+  // the product page ("Free delivery over ₦50,000"); only set on lists.
+  weightG: number | null;
+  lengthCm: number | null;
+  widthCm: number | null;
+  heightCm: number | null;
+  shippingProfileId: string | null;
+  shippingSummary?: string;
   color: string | null;
   variation: string | null;
   // Every photo, cover first — imageUrl above always equals images[0] and
@@ -186,6 +199,15 @@ export type Order = {
   // True when the order came from a listing whose seller never chose how to
   // price delivery: no fee is charged, and checkout says so.
   deliveryFeeUnset: boolean;
+  // Migration 047: the delivery option chosen at checkout (method, name,
+  // estimate, zone), or the pickup location; frozen with the price.
+  shippingOption: (ShippingOption & { address?: { state?: string; area?: string } }) | null;
+  pickupLocation: PickupSnapshot | null;
+  pickupStatus: "awaiting" | "ready" | "collected" | null;
+  packageWeightG: number | null;
+  // The parcel and its tracking history, on lists (listOrders). Null when
+  // nothing has been sent yet, or not loaded.
+  shipment?: ShipmentView | null;
   // The buyer's name, on a PAID order the seller is looking at (listOrders).
   // Null everywhere else.
   buyerName: string | null;
@@ -201,6 +223,7 @@ export type Order = {
 };
 
 export type OrderLine = { productId: string; name: string; qty: number; unitPrice: number };
+export type PickupSnapshot = { id: string; name: string; address: string; area: string; state: string; phone: string | null; hours: string | null; instructions: string | null };
 
 export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
 export type PaymentStatus = "pending" | "paid" | "failed";
@@ -492,6 +515,11 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     deliveryPricing: (row.delivery_pricing as DeliveryPricing | null | undefined) ?? null,
     deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
+    weightG: (row.weight_g as number | null | undefined) ?? null,
+    lengthCm: (row.length_cm as number | null | undefined) ?? null,
+    widthCm: (row.width_cm as number | null | undefined) ?? null,
+    heightCm: (row.height_cm as number | null | undefined) ?? null,
+    shippingProfileId: (row.shipping_profile_id as string | null | undefined) ?? null,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
     moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
@@ -575,12 +603,16 @@ export async function listProducts(): Promise<Product[]> {
     .order("created_at", { ascending: false })
     .limit(LIST_PRODUCTS_SAFETY_LIMIT);
   const rows = assertNoError(result, "listing products") as Row[];
-  const [stats, imagesById] = await Promise.all([
+  const [stats, imagesById, summaries] = await Promise.all([
     getSellerStatsMap(),
     productImagesForIds(rows.map((row) => row.id as string)),
+    shippingSummariesSafely(rows.map((row) => row.id as string)),
   ]);
   return sortForDisplay(
-    rows.map((row) => rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(row.id as string)))
+    rows.map((row) => ({
+      ...rowToProduct(row, statsFor(stats, row.seller as string), imagesById.get(row.id as string)),
+      ...(summaries.has(row.id as string) ? { shippingSummary: summaries.get(row.id as string) } : {}),
+    }))
   );
 }
 
@@ -628,6 +660,16 @@ export async function listPublicProductsForSeller(seller: { id: string | null; n
   );
 }
 
+// Product-page delivery wording; never allowed to break the listing itself.
+async function shippingSummariesSafely(ids: string[]): Promise<Map<string, string>> {
+  try {
+    return await shippingSummaries(ids);
+  } catch (err) {
+    console.error("[shipping] couldn't summarise delivery for listings", err);
+    return new Map();
+  }
+}
+
 export async function getProduct(id: string): Promise<Product | null> {
   const db = getDb();
   const result = await db.from("products").select("*").eq("id", id).maybeSingle();
@@ -669,6 +711,10 @@ export function validateProductInput(input: {
   color?: string | null;
   variation?: string | null;
   images?: string[];
+  weightG?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
 }): void {
   if (input.name !== undefined && !input.name.trim()) {
     throw new ValidationError("Name is required.");
@@ -697,6 +743,12 @@ export function validateProductInput(input: {
   }
   if (input.variation != null && input.variation.length > MAX_VARIATION_LENGTH) {
     throw new ValidationError(`Size/variation must be under ${MAX_VARIATION_LENGTH} characters.`);
+  }
+  if (input.weightG != null && (!Number.isInteger(input.weightG) || input.weightG < 1 || input.weightG > 1_000_000)) {
+    throw new ValidationError("Weight must be between 1 g and 1,000 kg.");
+  }
+  for (const [label, v] of [["Length", input.lengthCm], ["Width", input.widthCm], ["Height", input.heightCm]] as const) {
+    if (v != null && (!Number.isInteger(v) || v < 1 || v > 1000)) throw new ValidationError(`${label} must be a whole number of cm, 1–1000.`);
   }
   if (input.images !== undefined && input.images.length > MAX_PRODUCT_IMAGES) {
     throw new ValidationError(`You can add up to ${MAX_PRODUCT_IMAGES} photos.`);
@@ -756,6 +808,11 @@ export async function createProduct(input: {
   deliveryFee?: number | null;
   deliveryPricing?: DeliveryPricing | null;
   deliveryRates?: DeliveryRates | null;
+  weightG?: number | null;
+  lengthCm?: number | null;
+  widthCm?: number | null;
+  heightCm?: number | null;
+  shippingProfileId?: string | null;
   color?: string | null;
   variation?: string | null;
 }): Promise<Product> {
@@ -770,6 +827,7 @@ export async function createProduct(input: {
   if (!(await isValidCategoryKey(input.category))) {
     throw new ValidationError("Unknown category.");
   }
+  if (input.shippingProfileId) await assertProfileBelongsTo(input.shippingProfileId, input.sellerId ?? null);
 
   // Backend-enforced, not a frontend nicety: a Free seller at their listing
   // cap can't bypass the "Add listing" button by hitting this API directly.
@@ -815,6 +873,11 @@ export async function createProduct(input: {
       location: input.location?.trim() || null,
       delivery_option: input.deliveryOption,
       ...pricingColumns(input.deliveryOption, input.deliveryPricing, input.deliveryFee, input.deliveryRates),
+      weight_g: input.weightG ?? null,
+      length_cm: input.lengthCm ?? null,
+      width_cm: input.widthCm ?? null,
+      height_cm: input.heightCm ?? null,
+      shipping_profile_id: input.deliveryOption === "Pickup" ? null : input.shippingProfileId ?? null,
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
       moderation_status: matchedRule ? "under_review" : "active",
@@ -862,6 +925,11 @@ export async function updateProduct(
     deliveryFee: number | null;
     deliveryPricing: DeliveryPricing | null;
     deliveryRates: DeliveryRates | null;
+    weightG: number | null;
+    lengthCm: number | null;
+    widthCm: number | null;
+    heightCm: number | null;
+    shippingProfileId: string | null;
     color: string | null;
     variation: string | null;
   }>
@@ -870,6 +938,7 @@ export async function updateProduct(
   if (!existing) return null;
 
   validateProductInput(patch);
+  if (patch.shippingProfileId) await assertProfileBelongsTo(patch.shippingProfileId, existing.sellerId);
   if (patch.category !== undefined && !(await isValidCategoryKey(patch.category))) {
     throw new ValidationError("Unknown category.");
   }
@@ -929,6 +998,16 @@ export async function updateProduct(
             patch.deliveryRates !== undefined ? patch.deliveryRates : existing.deliveryRates
           )
         : {}),
+      weight_g: patch.weightG !== undefined ? patch.weightG : existing.weightG,
+      length_cm: patch.lengthCm !== undefined ? patch.lengthCm : existing.lengthCm,
+      width_cm: patch.widthCm !== undefined ? patch.widthCm : existing.widthCm,
+      height_cm: patch.heightCm !== undefined ? patch.heightCm : existing.heightCm,
+      shipping_profile_id:
+        (patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption) === "Pickup"
+          ? null
+          : patch.shippingProfileId !== undefined
+            ? patch.shippingProfileId
+            : existing.shippingProfileId,
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
       ...(moderationEscalation
@@ -1030,6 +1109,10 @@ function rowToOrder(row: Row): Order {
     deliveryLocked: Boolean(row.delivery_locked),
     deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
     deliveryFeeUnset: Boolean(row.delivery_fee_unset),
+    shippingOption: (row.shipping_option as Order["shippingOption"] | undefined) ?? null,
+    pickupLocation: (row.pickup_location as PickupSnapshot | null | undefined) ?? null,
+    pickupStatus: (row.pickup_status as Order["pickupStatus"] | undefined) ?? null,
+    packageWeightG: (row.package_weight_g as number | null | undefined) ?? null,
     buyerName: null,
     lines: Array.isArray(row.lines) ? (row.lines as OrderLine[]) : [],
     cancelledAt: (row.cancelled_at as string | null | undefined) ?? null,
@@ -1065,7 +1148,9 @@ export async function listOrders(
   if (!seller) {
     const result = await db.from("orders").select("*").eq("user_id", userId).order("created_at", { ascending: false });
     const rows = assertNoError(result, "listing orders") as Row[];
-    return rows.map(rowToOrder);
+    const mine = rows.map(rowToOrder);
+    await attachShipments(mine);
+    return mine;
   }
 
   // business_name has no uniqueness constraint (see the seller_id migration
@@ -1101,7 +1186,20 @@ export async function listOrders(
       if (o.userId !== userId && o.paymentStatus === "paid") o.buyerName = names.get(o.userId) ?? null;
     }
   }
+  await attachShipments(sellerOrders);
   return sellerOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+// Tracking for each order that has been sent out; never breaks the list.
+async function attachShipments(orders: Order[]): Promise<void> {
+  const sent = orders.filter((o) => o.dispatchedAt).map((o) => o.id);
+  if (sent.length === 0) return;
+  try {
+    const byOrder = await shipmentsForOrders(sent);
+    for (const o of orders) o.shipment = byOrder.get(o.id) ?? null;
+  } catch (err) {
+    console.error("[shipping] couldn't load tracking", err);
+  }
 }
 
 // Internal — every field here must already be trusted (derived from a real
@@ -1645,7 +1743,7 @@ export async function getOrder(id: string): Promise<Order | null> {
 export async function setOrderDelivery(
   orderId: string,
   userId: string,
-  input: { method?: unknown; address?: unknown }
+  input: { method?: unknown; address?: unknown; optionId?: unknown; pickupLocationId?: unknown }
 ): Promise<Order | null> {
   const order = await getOrder(orderId);
   if (!order || order.userId !== userId) return null;
@@ -1668,9 +1766,39 @@ export async function setOrderDelivery(
   }
 
   const address = method === "delivery" ? normalizeAddress(input.address) : null;
-  // The fee to the address's state (a flat fee unless the seller set one for
-  // other states).
-  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, feeForState(order, address?.state));
+
+  // Delivery: the seller's shipping settings price it for this address
+  // (lib/shipping). The server works the fee out; nothing from the browser
+  // is taken as an amount.
+  let option: ShippingOption | null = null;
+  let packageWeightG: number | null = null;
+  if (address) {
+    const quote = await quoteOrderShipping(order, { state: address.state, area: address.area });
+    if (!quote.ok) throw new ValidationError(`${quote.message} Choose pickup if you can, or message the seller.`);
+    option = (typeof input.optionId === "string" && quote.options.find((o) => o.id === input.optionId)) || null;
+    if (!option) {
+      if (typeof input.optionId === "string" && input.optionId) throw new ValidationError("That delivery option isn't available any more. Choose again.");
+      option = quote.options[0];
+    }
+    packageWeightG = quote.weightG;
+  }
+
+  // Pickup: from one of the seller's pickup locations, when they've set any.
+  let pickup: SellerLocation | null = null;
+  if (method === "pickup") {
+    const locations = await pickupLocationsForSeller(order.sellerId);
+    if (locations.length > 0) {
+      pickup = locations.find((l) => l.id === input.pickupLocationId) ?? (locations.length === 1 ? locations[0] : null);
+      if (!pickup) throw new ValidationError("Choose where you'll pick it up.");
+    }
+  }
+
+  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, option?.fee ?? 0);
+  // Once paying has started, the price is fixed: an address that would
+  // change the delivery fee can't be switched to now.
+  if (order.deliveryLocked && deliveryFee !== order.deliveryFee) {
+    throw new ValidationError("Delivery to that address costs a different amount, and you've already started paying. Keep the current address, or cancel and order again.");
+  }
 
   const db = getDb();
   let query = db
@@ -1681,6 +1809,13 @@ export async function setOrderDelivery(
       delivery_fee: deliveryFee,
       price,
       delivery_address: address,
+      // What was chosen, frozen with the price (docs/SHIPPING.md).
+      shipping_option: option ? { ...option, address: { state: address?.state, area: address?.area } } : null,
+      pickup_location: pickup
+        ? { id: pickup.id, name: pickup.name, address: pickup.address, area: pickup.area, state: pickup.state, phone: pickup.phone, hours: pickup.pickupHours, instructions: pickup.pickupInstructions }
+        : null,
+      pickup_status: method === "pickup" ? "awaiting" : null,
+      package_weight_g: packageWeightG,
     })
     .eq("id", orderId)
     .neq("payment_status", "paid")
@@ -1758,7 +1893,7 @@ const STATUS_NOTIFICATION_COPY: Record<string, { title: string; body: (item: str
   // so there is no buyer notification to send for it.
 };
 
-export async function updateOrderStatus(id: string, status: string): Promise<Order | null> {
+export async function updateOrderStatus(id: string, status: string, tracking?: TrackingInput | null): Promise<Order | null> {
   validateStatusTransition("", status); // checks `status` is a known one; "" skips the forward-only check
   const existing = await getOrder(id);
   if (!existing) return null;
@@ -1782,6 +1917,9 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   if (!existing.dispatchedAt && ORDER_STATUSES.indexOf(status as (typeof ORDER_STATUSES)[number]) >= ORDER_STATUSES.indexOf("Dispatched")) {
     update.dispatched_at = new Date().toISOString();
   }
+  // For a pickup order, "Dispatched" means it's ready to collect.
+  const pickup = existing.deliveryMethod === "pickup";
+  if (pickup && status === "Dispatched") update.pickup_status = "ready";
   const result = await db
     .from("orders")
     .update(update)
@@ -1794,7 +1932,16 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
   // Let the buyer know their order moved forward — best-effort: a
   // notification failure shouldn't undo or block the status update itself.
   const copy = STATUS_NOTIFICATION_COPY[status];
-  if (copy) {
+  if (pickup && status === "Dispatched") {
+    const where = order.pickupLocation ? `${order.pickupLocation.name}, ${order.pickupLocation.address}, ${order.pickupLocation.area}` : "the seller's";
+    await notifyBestEffort({
+      userId: order.userId,
+      type: "delivery",
+      title: "Ready to collect",
+      body: `"${order.item}" is ready to collect at ${where}.${order.pickupLocation?.hours ? ` Open ${order.pickupLocation.hours}.` : ""}`,
+      sms: `FindIt: "${shortItem(order.item)}" is ready to collect at ${where}. Confirm in FindIt once you have it.`,
+    });
+  } else if (copy) {
     await notifyBestEffort({
       userId: order.userId,
       type: "delivery",
@@ -1804,6 +1951,21 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
         ? { sms: `FindIt: Your order "${shortItem(order.item)}" from ${order.seller} is on its way. Confirm in FindIt once it arrives.` }
         : {}),
     });
+  }
+
+  // The shipment and its tracking follow the order (lib/shipping/shipments.ts).
+  if (!pickup && (status === "Dispatched" || status === "Out for delivery")) {
+    try {
+      await recordShipmentEvent(
+        order,
+        status === "Dispatched" ? "in_transit" : "out_for_delivery",
+        status === "Dispatched" ? "Sent out by the seller" : "Out for delivery",
+        { tracking }
+      );
+    } catch (err) {
+      if (err instanceof ValidationError) throw err;
+      console.error("[shipping] couldn't record tracking for", id, err);
+    }
   }
 
   return order;
@@ -1905,6 +2067,18 @@ export async function confirmDelivery(id: string, userId: string): Promise<Order
       title: "Delivery confirmed",
       body: `The buyer confirmed they received "${order.item}". Your payment has been released.`,
     });
+  }
+
+  // Tracking ends here: delivered, or collected for a pickup order.
+  try {
+    if (order.deliveryMethod === "pickup") {
+      await getDb().from("orders").update({ pickup_status: "collected" }).eq("id", order.id);
+      order.pickupStatus = "collected";
+    } else if (order.dispatchedAt) {
+      await recordShipmentEvent(order, "delivered", "The buyer confirmed it arrived", { source: "system" });
+    }
+  } catch (err) {
+    console.error("[shipping] couldn't close tracking for", order.id, err);
   }
 
   return order;

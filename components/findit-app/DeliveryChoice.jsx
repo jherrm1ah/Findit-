@@ -2,7 +2,8 @@
 
 import { motion } from "motion/react";
 import { Truck, Store, Lock } from "lucide-react";
-import { NIGERIAN_STATES, deliveryChoices, feeForState, feeSummary, hasStateFees } from "@/lib/deliveryShared";
+import { NIGERIAN_STATES, deliveryChoices } from "@/lib/deliveryShared";
+import { etaText } from "@/lib/shipping/engine";
 import { naira } from "./data";
 import { SPRING_BOUNCY } from "./motion";
 
@@ -68,10 +69,43 @@ function Option({ selected, disabled, onClick, icon: Icon, title, detail }) {
   );
 }
 
-export default function DeliveryChoice({ order, method, setMethod, address, setAddress, pickupFrom }) {
+// One delivery option from the seller's rates (lib/shipping): name, when it
+// arrives, the fee. Marked as the seller's own estimate; a live carrier
+// quote (none connected yet) would say so instead.
+function OptionRow({ option, selected, onSelect }) {
+  const eta = etaText(option);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-pressed={selected}
+      className={`w-full flex items-start gap-2.5 text-left rounded-xl p-3 border ${selected ? "border-[#7C3AED] bg-[#F5F2FC]" : "border-[#ECE9F7] bg-white"}`}
+    >
+      <div className={`mt-0.5 w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center shrink-0 ${selected ? "border-[#7C3AED]" : "border-[#B7AFD6]"}`}>
+        {selected && <div className="w-2 h-2 rounded-full bg-[#7C3AED]" />}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-[12.5px] font-semibold text-[#1E1B4B]">{option.name}</p>
+        <p className="text-[11px] text-[#6B6483]">
+          {[eta, option.source === "carrier" ? "Live carrier rate" : "Estimate set by the seller"].filter(Boolean).join(" · ")}
+        </p>
+        {option.freeOver && <p className="text-[11px] text-[#15803D]">Free on orders from {naira(option.freeOver)}</p>}
+      </div>
+      <p className="text-[12.5px] font-semibold text-[#1E1B4B] shrink-0">
+        {option.fee > 0 ? naira(option.fee) : option.unset ? "Not set" : "Free"}
+      </p>
+    </button>
+  );
+}
+
+export default function DeliveryChoice({
+  order, method, setMethod, address, setAddress, pickupFrom,
+  shipping = { loading: false, quote: null, pickupLocations: [] }, optionId, setOptionId, pickupId, setPickupId,
+}) {
   const choices = deliveryChoices(order.deliveryOptions);
-  const byState = hasStateFees(order);
-  const fee = feeForState(order, address.state) || 0;
+  const quote = shipping.quote;
+  const cheapest = quote?.ok ? quote.options[0] : null;
+  const pickups = shipping.pickupLocations || [];
   const locked = order.deliveryLocked;
   const set = (key) => (e) => setAddress({ ...address, [key]: e.target.value });
 
@@ -87,13 +121,17 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
             icon={Truck}
             title="Deliver to me"
             detail={
-              order.deliveryFeeUnset && fee === 0
-                ? "Seller hasn't set a delivery fee"
-                : byState && !address.state
-                ? `${feeSummary(order)}`
-                : fee > 0
-                  ? `+ ${naira(fee)} delivery${byState ? ` to ${address.state}` : ""}`
-                  : "Free delivery"
+              !address.state || method !== "delivery"
+                ? "Options for your address"
+                : quote && !quote.ok
+                  ? "Not available to this address"
+                  : cheapest
+                    ? cheapest.fee > 0
+                      ? `From ${naira(cheapest.fee)}`
+                      : cheapest.unset
+                        ? "Seller hasn't set a delivery fee"
+                        : "Free delivery"
+                    : "Checking…"
             }
           />
         )}
@@ -104,7 +142,9 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
             onClick={() => setMethod("pickup")}
             icon={Store}
             title="I'll pick it up"
-            detail={pickupFrom ? `From ${pickupFrom}` : "From the seller, no delivery fee"}
+            detail={
+              pickups.length > 1 ? `Free, at ${pickups.length} locations` : pickups.length === 1 ? `Free, at ${pickups[0].area}` : pickupFrom ? `From ${pickupFrom}` : "From the seller, no delivery fee"
+            }
           />
         )}
       </div>
@@ -116,10 +156,30 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
         </p>
       )}
 
-      {method === "pickup" && (
+      {method === "pickup" && pickups.length === 0 && (
         <p className="text-[12px] text-[#514B67] bg-[#F7F5FD] rounded-xl px-3 py-2.5">
           Once you've paid, message the seller to agree a time and place to collect it.
         </p>
+      )}
+      {method === "pickup" && pickups.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[12px] font-semibold text-[#1E1B4B]">Where you'll collect it</p>
+          {pickups.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              onClick={() => setPickupId?.(l.id)}
+              aria-pressed={pickupId === l.id}
+              className={`w-full text-left rounded-xl p-3 border ${pickupId === l.id ? "border-[#7C3AED] bg-[#F5F2FC]" : "border-[#ECE9F7] bg-white"}`}
+            >
+              <p className="text-[12.5px] font-semibold text-[#1E1B4B]">{l.name}</p>
+              <p className="text-[11.5px] text-[#514B67]">{l.address}, {l.area}, {l.state}</p>
+              {l.hours && <p className="text-[11px] text-[#6B6483]">Open {l.hours}</p>}
+              {l.instructions && <p className="text-[11px] text-[#6B6483]">{l.instructions}</p>}
+            </button>
+          ))}
+          <p className="text-[11px] text-[#8A8372]">No delivery fee. The seller tells you when it's ready to collect.</p>
+        </div>
       )}
 
       {method === "delivery" && (
@@ -165,6 +225,21 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
             <input value={address.landmark} onChange={set("landmark")} placeholder="e.g. Opposite Shoprite, blue gate" className={`mt-1 ${inputCls}`} />
           </label>
           <p className="text-[11px] text-[#8A8372]">The seller only sees this once you've paid.</p>
+        </div>
+      )}
+
+      {/* The seller's options for this address, priced by the server. */}
+      {method === "delivery" && address.state && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[12px] font-semibold text-[#1E1B4B]">Delivery options</p>
+          {shipping.loading && !quote && <p className="text-[11.5px] text-[#6B6483]">Working out delivery to {address.area || address.state}…</p>}
+          {quote && !quote.ok && (
+            <p className="text-[12px] text-[#B45309] bg-[#FDF6EC] rounded-xl px-3 py-2.5">
+              {quote.message} {choices.pickup ? "You can choose pickup instead, or message the seller." : "Message the seller to arrange it."}
+            </p>
+          )}
+          {quote?.ok &&
+            quote.options.map((o) => <OptionRow key={o.id} option={o} selected={optionId === o.id} onSelect={() => setOptionId?.(o.id)} />)}
         </div>
       )}
     </div>

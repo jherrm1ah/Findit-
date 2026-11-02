@@ -50,6 +50,11 @@ export async function PATCH(
     deliveryFee?: number | null;
     deliveryPricing?: "free" | "fixed" | "location" | null;
     deliveryRates?: Record<string, number> | null;
+    weightG?: number | null;
+    lengthCm?: number | null;
+    widthCm?: number | null;
+    heightCm?: number | null;
+    shippingProfileId?: string | null;
     color?: string | null;
     variation?: string | null;
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, X, Gift, Truck, MapPin } from "lucide-react";
+import { Plus, X, Gift, Truck, MapPin, Package } from "lucide-react";
 import { NIGERIAN_STATES } from "@/lib/deliveryShared";
 
 // "How do you charge for delivery?" on the listing form, like a shop's
@@ -21,8 +21,13 @@ const CHOICES = [
 ];
 
 // The form's starting values for a listing (or a new one: nothing chosen).
+// "profile" means the listing uses one of the seller's shipping profiles.
 export function pricingFormFrom(product) {
+  if (product?.shippingProfileId) {
+    return { deliveryPricing: "profile", shippingProfileId: product.shippingProfileId, deliveryFee: "", deliveryRates: [] };
+  }
   return {
+    shippingProfileId: "",
     deliveryPricing: product?.deliveryPricing ?? "",
     deliveryFee: product?.deliveryFee ? String(product.deliveryFee) : "",
     deliveryRates: Object.entries(product?.deliveryRates ?? {}).map(([state, fee]) => ({ state, fee: String(fee) })),
@@ -34,6 +39,7 @@ const wholeNaira = (v) => v !== "" && Number.isInteger(Number(v)) && Number(v) >
 // Whether the delivery part of the form is complete.
 export function pricingFormValid(form) {
   if (form.deliveryOption === "Pickup") return true;
+  if (form.deliveryPricing === "profile") return Boolean(form.shippingProfileId);
   if (form.deliveryPricing === "free") return true;
   if (form.deliveryPricing === "fixed") return wholeNaira(form.deliveryFee) && Number(form.deliveryFee) > 0;
   if (form.deliveryPricing === "location") {
@@ -48,17 +54,19 @@ export function pricingFormValid(form) {
 
 // What the listing API takes.
 export function pricingPayload(form) {
-  if (form.deliveryOption === "Pickup") return { deliveryPricing: null, deliveryFee: 0, deliveryRates: null };
-  if (form.deliveryPricing === "free") return { deliveryPricing: "free", deliveryFee: 0, deliveryRates: null };
-  if (form.deliveryPricing === "fixed") return { deliveryPricing: "fixed", deliveryFee: Number(form.deliveryFee), deliveryRates: null };
+  if (form.deliveryOption === "Pickup") return { deliveryPricing: null, deliveryFee: 0, deliveryRates: null, shippingProfileId: null };
+  if (form.deliveryPricing === "profile") return { deliveryPricing: null, deliveryFee: 0, deliveryRates: null, shippingProfileId: form.shippingProfileId };
+  if (form.deliveryPricing === "free") return { deliveryPricing: "free", deliveryFee: 0, deliveryRates: null, shippingProfileId: null };
+  if (form.deliveryPricing === "fixed") return { deliveryPricing: "fixed", deliveryFee: Number(form.deliveryFee), deliveryRates: null, shippingProfileId: null };
   return {
+    shippingProfileId: null,
     deliveryPricing: "location",
     deliveryFee: Number(form.deliveryFee || 0),
     deliveryRates: Object.fromEntries(form.deliveryRates.map((r) => [r.state, Number(r.fee)])),
   };
 }
 
-export default function DeliveryPricingField({ form, setForm }) {
+export default function DeliveryPricingField({ form, setForm, profiles = [] }) {
   const set = (patch) => setForm({ ...form, ...patch });
   const rates = form.deliveryRates;
   const used = new Set(rates.map((r) => r.state));
@@ -67,8 +75,11 @@ export default function DeliveryPricingField({ form, setForm }) {
   return (
     <div className="space-y-2.5">
       <p className="text-[11.5px] font-medium text-[#514B67]">How do you charge for delivery?</p>
-      <div className="grid grid-cols-3 gap-2">
-        {CHOICES.map(({ key, icon: Icon, title, detail }) => {
+      <div className={`grid gap-2 ${profiles.length ? "grid-cols-2" : "grid-cols-3"}`}>
+        {(profiles.length
+          ? [{ key: "profile", icon: Package, title: "Shipping profile", detail: "Rates you set up in Shipping" }, ...CHOICES]
+          : CHOICES
+        ).map(({ key, icon: Icon, title, detail }) => {
           const on = form.deliveryPricing === key;
           return (
             <button
@@ -77,6 +88,9 @@ export default function DeliveryPricingField({ form, setForm }) {
               onClick={() =>
                 set({
                   deliveryPricing: key,
+                  ...(key === "profile" && !form.shippingProfileId
+                    ? { shippingProfileId: (profiles.find((p) => p.isDefault) ?? profiles[0])?.id ?? "" }
+                    : {}),
                   ...(key === "location" && rates.length === 0 ? { deliveryRates: [{ state: "", fee: "" }] } : {}),
                 })
               }
@@ -90,6 +104,17 @@ export default function DeliveryPricingField({ form, setForm }) {
           );
         })}
       </div>
+
+      {form.deliveryPricing === "profile" && (
+        <label className="block">
+          <span className="text-[11.5px] text-[#514B67]">Profile</span>
+          <select value={form.shippingProfileId} onChange={(e) => set({ shippingProfileId: e.target.value })} className={`mt-1 ${input}`}>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.isDefault ? " (default)" : ""}</option>
+            ))}
+          </select>
+        </label>
+      )}
 
       {form.deliveryPricing === "free" && (
         <p className="text-[11px] text-[#6B6483]">
