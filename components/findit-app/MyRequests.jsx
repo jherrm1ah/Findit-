@@ -122,7 +122,9 @@ export default function MyRequests({ requests, onAcceptOffer, onCancelRequest })
                         </div>
                         <div className="grid grid-cols-2 gap-y-1 text-[11px] text-[#514B67] mb-2">
                           <span>Condition: {o.condition}</span>
-                          <span>Delivery: {o.delivery === "Pickup only" ? o.delivery : `₦${o.delivery}`}</span>
+                          {/* Newer offers carry their delivery terms already written out
+                              ("Delivery ₦2,500 or pickup"); older ones only a bare amount. */}
+                          <span>{o.deliveryOption ? o.delivery : `Delivery: ${o.delivery === "Pickup only" ? o.delivery : `₦${o.delivery}`}`}</span>
                           <span>ETA: {o.eta}</span>
                           <span>Warranty: {o.warranty}</span>
                         </div>

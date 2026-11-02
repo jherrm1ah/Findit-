@@ -47,6 +47,7 @@ export async function POST(req: NextRequest) {
     qty?: number;
     location?: string | null;
     deliveryOption?: string;
+    deliveryFee?: number | null;
     color?: string | null;
     variation?: string | null;
   };
@@ -114,6 +115,7 @@ export async function POST(req: NextRequest) {
       qty: typeof body.qty === "number" ? body.qty : undefined,
       location: body.location ?? null,
       deliveryOption: body.deliveryOption,
+      deliveryFee: body.deliveryFee ?? 0,
       color: body.color ?? null,
       variation: body.variation ?? null,
     });

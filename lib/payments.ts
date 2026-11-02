@@ -47,8 +47,12 @@ export async function getCurrentPlatformFeeBps(): Promise<number> {
 // Pure — the actual split math, unit-testable without a database. Floors
 // the fee so fee + payout never exceeds the order price by a kobo from
 // rounding (the platform absorbs the fractional kobo, not the seller).
-export function computeFeeSplit(priceNaira: number, feeBps: number): { feeAmount: number; payoutAmount: number } {
-  const feeAmount = Math.floor((priceNaira * feeBps) / 10000);
+// The fee is charged on the item only: a delivery fee included in the price
+// (migration 043) goes to the seller in full, since they pay for delivery.
+// fee + payout still always equals the whole price.
+export function computeFeeSplit(priceNaira: number, feeBps: number, deliveryFee = 0): { feeAmount: number; payoutAmount: number } {
+  const delivery = Math.min(Math.max(0, deliveryFee), priceNaira);
+  const feeAmount = Math.floor(((priceNaira - delivery) * feeBps) / 10000);
   return { feeAmount, payoutAmount: priceNaira - feeAmount };
 }
 
@@ -104,7 +108,7 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
   if (order.paymentStatus === "paid") return; // already applied — nothing to do
 
   const feeBps = await getCurrentPlatformFeeBps();
-  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps);
+  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps, order.deliveryFee);
 
   const db = getDb();
   const result = await db

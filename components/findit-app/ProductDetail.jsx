@@ -229,7 +229,12 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
                 <PackageIcon size={11} /> {product.qty > 0 ? `${product.qty} available` : "Out of stock"}
               </Pill>
             )}
-            {product.deliveryOption && <Pill tone="stone"><Truck size={11} /> {product.deliveryOption}</Pill>}
+            {product.deliveryOption && (
+              <Pill tone="stone">
+                <Truck size={11} /> {product.deliveryOption}
+                {product.deliveryOption !== "Pickup" && (product.deliveryFee > 0 ? ` · ${naira(product.deliveryFee)} delivery` : " · free delivery")}
+              </Pill>
+            )}
             {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}
             {product.variation && <Pill tone="stone">{product.variation}</Pill>}
             {product.location && <Pill tone="stone"><MapPin size={11} /> {product.location}</Pill>}

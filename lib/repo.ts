@@ -20,6 +20,7 @@ import { recordReview } from "./reviews";
 import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
 import { qualifyReferral } from "./referrals";
 import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
+import { deliveryChoices, normalizeAddress, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryMethod, type DeliveryOptions } from "./delivery";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -90,6 +91,10 @@ export type Product = {
   // distinct from lat/lng above (the seller ACCOUNT's location).
   location: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+  // Migration 043: what the seller charges to deliver it (0 = free). Only
+  // used when deliveryOption allows delivery; added to the order's price
+  // when the buyer chooses delivery at checkout (see lib/delivery.ts).
+  deliveryFee: number;
   color: string | null;
   variation: string | null;
   // Every photo, cover first — imageUrl above always equals images[0] and
@@ -151,6 +156,23 @@ export type Order = {
   // part of the fee split above. 0 until paymentStatus === "paid"; never
   // negative, never more than price.
   creditApplied: number;
+
+  // ---- Migration 043: delivery at checkout (see lib/delivery.ts) ----
+  // price above is what the buyer pays: itemPrice + deliveryFee.
+  itemPrice: number;
+  // The choices the buyer has (copied from the listing/offer; null = either).
+  deliveryOptions: DeliveryOptions | null;
+  // What delivery costs IF chosen.
+  deliveryFeeQuote: number;
+  // What the buyer chose; null until they reach checkout.
+  deliveryMethod: DeliveryMethod | null;
+  deliveryFee: number;
+  // Where to deliver. Only shown to the seller once the order is paid
+  // (see listOrders) — the buyer always sees their own.
+  deliveryAddress: DeliveryAddress | null;
+  // True once the buyer has started paying: the method (and so the price)
+  // can no longer change. The address still can, until the order is paid.
+  deliveryLocked: boolean;
 };
 
 export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
@@ -193,6 +215,10 @@ export type Offer = {
   condition: string;
   warranty: string;
   note: string | null;
+  // Migration 043: structured delivery terms (null option = older offer,
+  // the buyer may choose either with no fee).
+  deliveryOption: DeliveryOptions | null;
+  deliveryFee: number;
   accepted: boolean;
   createdAt: string;
   // Computed the same way as Product.verified/rating.
@@ -436,6 +462,7 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     qty: (row.qty as number | undefined) ?? 1,
     location: (row.location as string | null) ?? null,
     deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
     moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
@@ -609,6 +636,7 @@ export function validateProductInput(input: {
   qty?: number;
   location?: string | null;
   deliveryOption?: string | null;
+  deliveryFee?: number | null;
   color?: string | null;
   variation?: string | null;
   images?: string[];
@@ -634,6 +662,7 @@ export function validateProductInput(input: {
   if (input.deliveryOption != null && !(DELIVERY_OPTIONS as readonly string[]).includes(input.deliveryOption)) {
     throw new ValidationError("Delivery option must be Delivery, Pickup, or Both.");
   }
+  if (input.deliveryFee != null) parseDeliveryFee(input.deliveryFee);
   if (input.color != null && input.color.length > MAX_COLOR_LENGTH) {
     throw new ValidationError(`Color must be under ${MAX_COLOR_LENGTH} characters.`);
   }
@@ -695,6 +724,7 @@ export async function createProduct(input: {
   qty?: number;
   location?: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both";
+  deliveryFee?: number | null;
   color?: string | null;
   variation?: string | null;
 }): Promise<Product> {
@@ -753,6 +783,7 @@ export async function createProduct(input: {
       qty: input.qty ?? 1,
       location: input.location?.trim() || null,
       delivery_option: input.deliveryOption,
+      delivery_fee: input.deliveryOption === "Pickup" ? 0 : parseDeliveryFee(input.deliveryFee),
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
       moderation_status: matchedRule ? "under_review" : "active",
@@ -797,6 +828,7 @@ export async function updateProduct(
     qty: number;
     location: string | null;
     deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+    deliveryFee: number | null;
     color: string | null;
     variation: string | null;
   }>
@@ -851,6 +883,12 @@ export async function updateProduct(
       qty: patch.qty !== undefined ? patch.qty : existing.qty,
       location: patch.location !== undefined ? (patch.location?.trim() || null) : existing.location,
       delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
+      delivery_fee:
+        (patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption) === "Pickup"
+          ? 0
+          : patch.deliveryFee !== undefined
+            ? parseDeliveryFee(patch.deliveryFee)
+            : existing.deliveryFee,
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
       ...(moderationEscalation
@@ -943,7 +981,22 @@ function rowToOrder(row: Row): Order {
     platformFeeAmount: (row.platform_fee_amount as number | null) ?? null,
     sellerPayoutAmount: (row.seller_payout_amount as number | null) ?? null,
     creditApplied: (row.credit_applied as number | null) ?? 0,
+    itemPrice: (row.item_price as number | null | undefined) ?? (row.price as number) - ((row.delivery_fee as number | null | undefined) ?? 0),
+    deliveryOptions: (row.delivery_options as DeliveryOptions | null | undefined) ?? null,
+    deliveryFeeQuote: (row.delivery_fee_quote as number | null | undefined) ?? 0,
+    deliveryMethod: (row.delivery_method as DeliveryMethod | null | undefined) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
+    deliveryAddress: (row.delivery_address as DeliveryAddress | null | undefined) ?? null,
+    deliveryLocked: Boolean(row.delivery_locked),
   };
+}
+
+// A buyer's address is theirs until they've actually paid: a seller sees
+// where to deliver only on a paid order, never on a checkout someone started
+// and abandoned.
+function withAddressPrivacy(order: Order, viewerId: string): Order {
+  if (order.userId === viewerId || order.paymentStatus === "paid") return order;
+  return { ...order, deliveryAddress: null };
 }
 
 export const ORDER_STATUSES = [
@@ -992,7 +1045,7 @@ export async function listOrders(
   const byId = new Map<string, Row>();
   for (const row of rowSets.flat()) byId.set(row.id as string, row);
   return [...byId.values()]
-    .map(rowToOrder)
+    .map((row) => withAddressPrivacy(rowToOrder(row), userId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -1011,6 +1064,10 @@ async function insertOrder(input: {
   status: string;
   requestId?: string | null;
   userId: string;
+  // The delivery choices the buyer will have at checkout, and what delivery
+  // costs if chosen. price above is the item alone until they choose.
+  deliveryOptions?: DeliveryOptions | null;
+  deliveryFeeQuote?: number;
 }): Promise<Order> {
   const db = getDb();
   const id = randomId("ORD-");
@@ -1023,6 +1080,11 @@ async function insertOrder(input: {
       seller: input.seller,
       seller_id: input.sellerId ?? null,
       price: input.price,
+      item_price: input.price,
+      delivery_options: input.deliveryOptions ?? null,
+      delivery_fee_quote: input.deliveryOptions === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFeeQuote ?? 0)),
+      delivery_fee: 0,
+      delivery_locked: false,
       status: input.status,
       request_id: input.requestId ?? null,
     })
@@ -1064,6 +1126,8 @@ export async function createOrderFromProduct(
     price: product.price * qty,
     status: "Awaiting payment",
     userId,
+    deliveryOptions: product.deliveryOption,
+    deliveryFeeQuote: product.deliveryOption === "Pickup" ? 0 : product.deliveryFee,
   });
 
   // No seller notification here — the seller learns about this order once
@@ -1165,6 +1229,87 @@ export async function getOrder(id: string): Promise<Order | null> {
   const result = await db.from("orders").select("*").eq("id", id).maybeSingle();
   const row = assertNoError(result, "loading order") as Row | null;
   return row ? rowToOrder(row) : null;
+}
+
+// The buyer's delivery choice at checkout: delivered to an address (adding
+// the seller's delivery fee to the price) or picked up from the seller.
+// Only the buyer, and only while the order is unpaid. Once they've started
+// paying (deliveryLocked) the method and price are fixed and only the
+// address can still be corrected. The address is also saved to the buyer's
+// account so their next checkout is already filled in.
+export async function setOrderDelivery(
+  orderId: string,
+  userId: string,
+  input: { method?: unknown; address?: unknown }
+): Promise<Order | null> {
+  const order = await getOrder(orderId);
+  if (!order || order.userId !== userId) return null;
+  if (order.paymentStatus === "paid") {
+    throw new ValidationError("This order is already paid. Message the seller if the delivery details need to change.");
+  }
+
+  const method = input.method;
+  if (method !== "delivery" && method !== "pickup") {
+    throw new ValidationError("Choose delivery or pickup.");
+  }
+  const choices = deliveryChoices(order.deliveryOptions);
+  if (method === "delivery" && !choices.delivery) throw new ValidationError("This seller only offers pickup for this order.");
+  if (method === "pickup" && !choices.pickup) throw new ValidationError("This seller only offers delivery for this order.");
+  if (order.deliveryLocked && method !== order.deliveryMethod) {
+    throw new ValidationError(
+      "You've already started paying with " + (order.deliveryMethod === "pickup" ? "pickup" : "delivery") +
+        ", so that can't change now. You can still update the address."
+    );
+  }
+
+  const address = method === "delivery" ? normalizeAddress(input.address) : null;
+  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, order.deliveryFeeQuote);
+
+  const db = getDb();
+  let query = db
+    .from("orders")
+    .update({
+      item_price: order.itemPrice,
+      delivery_method: method,
+      delivery_fee: deliveryFee,
+      price,
+      delivery_address: address,
+    })
+    .eq("id", orderId)
+    .neq("payment_status", "paid")
+    // Only if nothing moved underneath us: the same price we read, and (for
+    // an order not yet locked) still not locked. A checkout starting at the
+    // same moment either locks first (and this matches no row) or after (and
+    // locks this new price). Never a payment at one price for another.
+    .eq("price", order.price);
+  if (!order.deliveryLocked) query = query.eq("delivery_locked", false);
+  const result = await query.select().maybeSingle();
+  const row = assertNoError(result, "saving delivery details") as Row | null;
+  if (!row) throw new ValidationError("This order just changed. Refresh and try again.");
+
+  if (address) {
+    const saved = await db.from("users").update({ saved_delivery_address: address }).eq("id", userId);
+    // Only a convenience for next time: never fail the checkout over it.
+    if (saved.error) console.error("[delivery] couldn't save the buyer's address", saved.error.message);
+  }
+  return rowToOrder(row);
+}
+
+// Fixes the delivery method and price the moment checkout starts (see
+// setOrderDelivery). Conditional on the price the caller is about to charge,
+// so it only succeeds if that's still the order's price. Returns false if
+// the order changed, or has no delivery method chosen yet.
+export async function lockOrderDelivery(orderId: string, price: number): Promise<boolean> {
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ delivery_locked: true })
+    .eq("id", orderId)
+    .eq("price", price)
+    .not("delivery_method", "is", null)
+    .select("id")
+    .maybeSingle();
+  return Boolean(assertNoError(result, "locking delivery choice"));
 }
 
 // Advances an order to the next fulfillment status. Callers pass the target
@@ -2055,6 +2200,8 @@ function rowToOffer(row: Row, stats: SellerStats): Offer {
     condition: row.condition as string,
     warranty: row.warranty as string,
     note: (row.note as string | null) ?? null,
+    deliveryOption: (row.delivery_option as DeliveryOptions | null | undefined) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     accepted: Boolean(row.accepted),
     createdAt: row.created_at as string,
     verified: stats.verified,
@@ -2398,7 +2545,15 @@ export async function addSellerOfferToRequest(
   // See sellerId on createProduct — same dual-write, looked up by the caller
   // via getSellerIdForUser.
   sellerId: string | null,
-  input: { price: number; delivery: string; eta: string; warranty: string; note?: string | null }
+  input: {
+    price: number;
+    delivery: string;
+    eta: string;
+    warranty: string;
+    note?: string | null;
+    deliveryOption?: DeliveryOptions | null;
+    deliveryFee?: number;
+  }
 ): Promise<Offer | null> {
   const db = getDb();
   const requestResult = await db.from("requests").select("*").eq("id", requestId).maybeSingle();
@@ -2430,6 +2585,8 @@ export async function addSellerOfferToRequest(
       condition: (request.condition as string) || "New",
       warranty: input.warranty.trim(),
       note: input.note?.trim() || null,
+      delivery_option: input.deliveryOption ?? null,
+      delivery_fee: input.deliveryOption === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFee ?? 0)),
     })
     .select()
     .single();
@@ -2514,6 +2671,8 @@ export async function acceptOffer(
     status: "Awaiting payment",
     requestId,
     userId,
+    deliveryOptions: (offer.delivery_option as DeliveryOptions | null | undefined) ?? null,
+    deliveryFeeQuote: (offer.delivery_fee as number | null | undefined) ?? 0,
   });
 
   // Before this, a winning seller only ever found out indirectly, later,

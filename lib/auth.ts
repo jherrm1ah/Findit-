@@ -4,6 +4,7 @@ import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
 import { normalizeE164 } from "./phone";
 import type { AdminRole } from "./adminRoles";
+import type { DeliveryAddress } from "./delivery";
 import { ensureDefaultStoreSubscription } from "./subscriptions";
 import { ensureReferralCode, attributeReferralBestEffort, qualifyReferral } from "./referrals";
 
@@ -37,6 +38,9 @@ export type User = {
   // up in the admin user-management list, not on a live session.
   suspended: boolean;
   suspendedReason: string | null;
+  // The last delivery address this user checked out with (migration 043), to
+  // fill in their next checkout. Their own data, only ever sent back to them.
+  savedDeliveryAddress: DeliveryAddress | null;
 };
 
 type Row = Record<string, unknown>;
@@ -57,6 +61,7 @@ function rowToUser(row: Row): User {
     adminRole: (row.admin_role as AdminRole | null) ?? null,
     suspended: Boolean(row.suspended),
     suspendedReason: (row.suspended_reason as string | null) ?? null,
+    savedDeliveryAddress: (row.saved_delivery_address as DeliveryAddress | null | undefined) ?? null,
   };
 }
 

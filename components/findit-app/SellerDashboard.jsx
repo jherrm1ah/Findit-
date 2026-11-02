@@ -10,6 +10,7 @@ import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { applyProPurchaseDiscount } from "@/lib/proPricing";
 import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
+import DeliveryDetails from "./DeliveryDetails";
 
 // A bouncier mount pop for this dashboard's listing/order cards — scale
 // only, no rotate/tilt. This screen manages real inventory and payouts, so
@@ -57,11 +58,15 @@ function nextSellerStep(status) {
   return SELLER_STEPS[SELLER_STEPS.indexOf(status) + 1];
 }
 
-const EMPTY_OFFER = { price: "", delivery: "", eta: "", warranty: "", note: "" };
+// deliveryOption/deliveryFee are what the buyer chooses from at checkout:
+// the fee is added to the price only if they choose delivery.
+const EMPTY_OFFER = { price: "", deliveryOption: "Both", deliveryFee: "", eta: "", warranty: "", note: "" };
+const OFFER_DELIVERY_LABELS = { Both: "Delivery or pickup", Delivery: "Delivery only", Pickup: "Pickup only" };
 
 function OfferForm({ onSend, onCancel, sending }) {
   const [form, setForm] = useState(EMPTY_OFFER);
-  const valid = Number(form.price) > 0 && form.delivery.trim() && form.eta.trim() && form.warranty.trim();
+  const feeOk = form.deliveryOption === "Pickup" || form.deliveryFee === "" || (Number.isInteger(Number(form.deliveryFee)) && Number(form.deliveryFee) >= 0);
+  const valid = Number(form.price) > 0 && feeOk && form.eta.trim() && form.warranty.trim();
 
   return (
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
@@ -75,14 +80,32 @@ function OfferForm({ onSend, onCancel, sending }) {
         />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Delivery (₦ or 'Pickup only')">
-          <input
-            value={form.delivery}
-            onChange={(e) => setForm({ ...form, delivery: e.target.value })}
-            placeholder="e.g. 2,000"
+        <Field label="Delivery">
+          <select
+            value={form.deliveryOption}
+            onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
             className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-          />
+          >
+            {Object.entries(OFFER_DELIVERY_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </Field>
+        {form.deliveryOption !== "Pickup" && (
+          <Field label="Delivery fee (₦)">
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={form.deliveryFee}
+              onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })}
+              placeholder="0 = free"
+              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+            />
+          </Field>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <Field label="ETA">
           <input
             value={form.eta}
@@ -91,15 +114,15 @@ function OfferForm({ onSend, onCancel, sending }) {
             className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
           />
         </Field>
+        <Field label="Warranty">
+          <input
+            value={form.warranty}
+            onChange={(e) => setForm({ ...form, warranty: e.target.value })}
+            placeholder="e.g. 6 months"
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
       </div>
-      <Field label="Warranty">
-        <input
-          value={form.warranty}
-          onChange={(e) => setForm({ ...form, warranty: e.target.value })}
-          placeholder="e.g. 6 months, or 'No warranty'"
-          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-        />
-      </Field>
       <Field label="Note to buyer (optional)">
         <textarea
           value={form.note}
@@ -140,6 +163,7 @@ const EMPTY_FORM = {
   qty: "1",
   location: "",
   deliveryOption: "Delivery",
+  deliveryFee: "",
   color: "",
   variation: "",
 };
@@ -303,17 +327,34 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
         />
       </Field>
-      <Field label="Delivery option">
-        <select
-          value={form.deliveryOption}
-          onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
-          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-        >
-          {DELIVERY_OPTIONS.map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
-      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Delivery option">
+          <select
+            value={form.deliveryOption}
+            onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          >
+            {DELIVERY_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        </Field>
+        {/* Added to the buyer's total only when they choose delivery at
+            checkout. FindIt's fee is never taken from it. */}
+        {form.deliveryOption !== "Pickup" && (
+          <Field label="Delivery fee (₦)">
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={form.deliveryFee}
+              onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })}
+              placeholder="0 = free"
+              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+            />
+          </Field>
+        )}
+      </div>
       <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Color">
@@ -1487,7 +1528,8 @@ export default function SellerDashboard({
     try {
       await onSendOffer(requestId, {
         price: Number(form.price),
-        delivery: form.delivery.trim(),
+        deliveryOption: form.deliveryOption,
+        deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
         eta: form.eta.trim(),
         warranty: form.warranty.trim(),
         note: form.note.trim() || null,
@@ -1519,6 +1561,7 @@ export default function SellerDashboard({
     qty: form.qty === "" ? undefined : Number(form.qty),
     location: form.location.trim() || null,
     deliveryOption: form.deliveryOption,
+    deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
     color: form.color.trim() || null,
     variation: form.variation.trim() || null,
   });
@@ -1805,6 +1848,7 @@ export default function SellerDashboard({
                   qty: String(p.qty ?? 1),
                   location: p.location ?? "",
                   deliveryOption: p.deliveryOption ?? "Delivery",
+                  deliveryFee: p.deliveryFee ? String(p.deliveryFee) : "",
                   color: p.color ?? "",
                   variation: p.variation ?? "",
                 }}
@@ -1965,7 +2009,11 @@ export default function SellerDashboard({
                   </motion.span>
                 </AnimatePresence>
               </div>
-              <p className="text-[11px] text-[#6B6483] mb-3">{o.id} · {naira(o.price)}</p>
+              <p className="text-[11px] text-[#6B6483] mb-3">
+                {o.id} · {naira(o.price)}
+                {o.deliveryFee > 0 ? ` (incl. ${naira(o.deliveryFee)} delivery)` : ""}
+              </p>
+              <DeliveryDetails order={o} forSeller showToast={showToast} />
               {/* The verified record for this sale, once it exists. Only
                   rendered when the server actually created one — never
                   inferred from the order's own status. */}

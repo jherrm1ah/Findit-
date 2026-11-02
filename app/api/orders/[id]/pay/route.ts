@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getOrder } from "@/lib/repo";
+import { getOrder, setOrderDelivery, lockOrderDelivery } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: "Log in to pay for this order." }, { status: 401 });
   }
 
-  const order = await getOrder(params.id);
+  let order = await getOrder(params.id);
   if (!order || order.userId !== user.id) {
     return NextResponse.json({ error: "Order not found." }, { status: 404 });
   }
@@ -48,15 +48,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   // credit. The amount is never read from here — see getAvailableCredit/
   // reserveCredit below, which compute it server-side from the real ledger.
   let applyCredit = false;
+  // The buyer's delivery choice from the checkout screen: { method, address }.
+  // Saved through setOrderDelivery, which works the price out server-side
+  // from the order's own delivery fee — never an amount from the client.
+  let delivery: { method?: unknown; address?: unknown } | null = null;
   try {
     const body = await req.json();
     applyCredit = body?.applyCredit === true;
+    if (body?.delivery && typeof body.delivery === "object") delivery = body.delivery;
   } catch {
     // No body (or not JSON) is the normal case for a plain "Pay now" with
     // no credit involved — not a request error.
   }
 
   try {
+    if (delivery) {
+      order = (await setOrderDelivery(order.id, user.id, delivery)) ?? order;
+    }
+    // A seller can't fulfil an order without knowing whether to deliver it
+    // (and where) or wait for the buyer to collect it.
+    if (!order.deliveryMethod) {
+      return NextResponse.json({ error: "Choose delivery or pickup before paying." }, { status: 400 });
+    }
+    if (order.deliveryMethod === "delivery" && !order.deliveryAddress) {
+      return NextResponse.json({ error: "Add your delivery address before paying." }, { status: 400 });
+    }
+
     if (!isPaystackConfigured()) {
       return NextResponse.json({
         applied: false,
@@ -90,6 +107,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // instead of that credit staying locked against a checkout nobody is
     // going to finish.
     if (recentPending) await releaseCredit(recentPending.id as string);
+
+    // From here on the delivery method and price are fixed (see
+    // lib/repo.ts#setOrderDelivery): the amount charged below is exactly
+    // what the order will be confirmed at. Fails only if the order changed
+    // since it was read above.
+    if (!(await lockOrderDelivery(order.id, order.price))) {
+      return NextResponse.json({ error: "This order just changed. Refresh and try again." }, { status: 409 });
+    }
 
     const reference = "findit_ord_" + crypto.randomUUID();
     const insertResult = await db.from("payments").insert({

@@ -3,6 +3,7 @@ import { addSellerOfferToRequest, getSellerStatusForUser, assertSellerCanTransac
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { deliveryTermsText, parseDeliveryFee, type DeliveryOptions } from "@/lib/delivery";
 
 const MAX_OFFERS = 60;
 const WINDOW_MS = 60 * 60 * 1000;
@@ -30,11 +31,37 @@ export async function POST(
     );
   }
 
-  let body: { price?: number; delivery?: string; eta?: string; warranty?: string; note?: string };
+  let body: {
+    price?: number;
+    delivery?: string;
+    // Structured delivery terms (migration 043): what the buyer can choose at
+    // checkout and what delivery adds to the price. The old free-text
+    // delivery above is filled in from these when not given.
+    deliveryOption?: string;
+    deliveryFee?: number | string;
+    eta?: string;
+    warranty?: string;
+    note?: string;
+  };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  let deliveryOption: DeliveryOptions | null = null;
+  let deliveryFee = 0;
+  if (body.deliveryOption !== undefined) {
+    if (body.deliveryOption !== "Delivery" && body.deliveryOption !== "Pickup" && body.deliveryOption !== "Both") {
+      return NextResponse.json({ error: "deliveryOption must be Delivery, Pickup, or Both" }, { status: 400 });
+    }
+    deliveryOption = body.deliveryOption;
+    try {
+      deliveryFee = deliveryOption === "Pickup" ? 0 : parseDeliveryFee(body.deliveryFee);
+    } catch (err) {
+      return errorResponse(err, "Check the delivery fee.");
+    }
+    if (!body.delivery?.trim()) body.delivery = deliveryTermsText(deliveryOption, deliveryFee);
   }
 
   if (
@@ -58,6 +85,8 @@ export async function POST(
       eta: body.eta,
       warranty: body.warranty,
       note: body.note ?? null,
+      deliveryOption,
+      deliveryFee,
     });
     if (!offer) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
