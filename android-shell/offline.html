@@ -27,5 +27,9 @@
     <p>FindIt needs the internet to show sellers and orders. Check your data or Wi-Fi, then try again.</p>
     <button onclick="location.href='https://www.shopwithfindit.com'">Try again</button>
   </div>
+<script>
+  // Take down the app's launch screen so this page is visible.
+  try { window.Capacitor && Capacitor.Plugins.SplashScreen && Capacitor.Plugins.SplashScreen.hide(); } catch (e) {}
+</script>
 </body>
 </html>

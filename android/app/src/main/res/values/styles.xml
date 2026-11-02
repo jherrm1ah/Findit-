@@ -16,7 +16,14 @@
     </style>
 
 
+    <!-- Launch screen: the FindIt logo on white. Android 12+ draws it from these items (the F mark
+         on a purple circle); older phones show @drawable/splash. It stays up until FindIt has
+         loaded (components/findit-app/nativeApp.js), at most 8 seconds (capacitor.config.json). -->
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <item name="windowSplashScreenBackground">#FFFFFF</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">#6002CF</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>
