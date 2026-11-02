@@ -7,7 +7,7 @@
 // logic underneath it, not the HTTP/Paystack-call plumbing.
 
 import { getDb, assertNoError } from "./db";
-import { ValidationError, getOrder, notifySellerOfNewOrder, notifyBestEffort, findUserForSellerId, Order } from "./repo";
+import { ValidationError, getOrder, notifySellerOfNewOrder, notifyBestEffort, findUserForSellerId, decrementStockForOrder, Order } from "./repo";
 import {
   isPaystackConfigured,
   initiateTransfer,
@@ -47,8 +47,12 @@ export async function getCurrentPlatformFeeBps(): Promise<number> {
 // Pure — the actual split math, unit-testable without a database. Floors
 // the fee so fee + payout never exceeds the order price by a kobo from
 // rounding (the platform absorbs the fractional kobo, not the seller).
-export function computeFeeSplit(priceNaira: number, feeBps: number): { feeAmount: number; payoutAmount: number } {
-  const feeAmount = Math.floor((priceNaira * feeBps) / 10000);
+// The fee is charged on the item only: a delivery fee included in the price
+// (migration 043) goes to the seller in full, since they pay for delivery.
+// fee + payout still always equals the whole price.
+export function computeFeeSplit(priceNaira: number, feeBps: number, deliveryFee = 0): { feeAmount: number; payoutAmount: number } {
+  const delivery = Math.min(Math.max(0, deliveryFee), priceNaira);
+  const feeAmount = Math.floor(((priceNaira - delivery) * feeBps) / 10000);
   return { feeAmount, payoutAmount: priceNaira - feeAmount };
 }
 
@@ -104,7 +108,7 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
   if (order.paymentStatus === "paid") return; // already applied — nothing to do
 
   const feeBps = await getCurrentPlatformFeeBps();
-  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps);
+  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps, order.deliveryFee);
 
   const db = getDb();
   const result = await db
@@ -117,6 +121,11 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
       platform_fee_amount: feeAmount,
       seller_payout_amount: payoutAmount,
       credit_applied: creditApplied,
+      // A payment that completes on an order already cancelled (an old
+      // checkout link paid after the buyer cancelled, or after it was closed
+      // for being unpaid) reopens it: the money is real, so the order goes
+      // ahead like any other paid order.
+      ...(order.status === "Cancelled" ? { status: "Awaiting payment", cancelled_at: null, cancel_reason: null } : {}),
     })
     .eq("id", orderId)
     .eq("payment_status", "pending")
@@ -124,6 +133,14 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
     .maybeSingle();
   const row = assertNoError(result, "confirming order payment") as Row | null;
   if (!row) return; // a concurrent call already applied this
+
+  // Sold: take it off stock (exactly once, since only the call that flipped
+  // payment_status above gets here). Never allowed to fail the payment.
+  try {
+    await decrementStockForOrder(order);
+  } catch (err) {
+    console.error("[payments] couldn't update stock for", orderId, err);
+  }
 
   // The seller only learns about this order now that it's real money, not
   // at order creation (see lib/repo.ts#createOrderFromProduct/acceptOffer).

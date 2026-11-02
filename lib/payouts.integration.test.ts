@@ -57,6 +57,16 @@ function seedOrder(overrides: Partial<Order> = {}): Order {
     sellerPayoutAmount: 4750,
     creditApplied: 0,
     dispatchedAt: null,
+    itemPrice: 5000,
+    deliveryOptions: null,
+    deliveryFeeQuote: 0,
+    deliveryMethod: "pickup",
+    deliveryFee: 0,
+    deliveryAddress: null,
+    deliveryLocked: true,
+    lines: [],
+    cancelledAt: null,
+    cancelReason: null,
     ...overrides,
   };
 }

@@ -10,6 +10,7 @@ import {
   type StoreAccentId,
 } from "./subscriptions";
 import { listPublicReviewsForSeller, type PublicReview } from "./reviews";
+import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
 import type { Product } from "./repo";
 
 /* -------------------------------------------------------------------------- */
@@ -88,7 +89,7 @@ export type PublicSellerProfileResult =
 // Only these columns are ever read. Adding a column to the sellers table does
 // not silently widen what a buyer can see.
 const PUBLIC_SELLER_COLUMNS =
-  "id, name, status, logo_url, banner_url, store_template, store_accent, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, store_slug, created_at";
+  "id, user_id, name, status, logo_url, banner_url, store_template, store_accent, seller_type, category, description, years_selling, has_physical_store, public_state, public_city, public_area, verification_status, store_slug, created_at";
 
 // A suspended or rejected seller has no storefront. Returning "not found"
 // rather than "suspended" is deliberate: a buyer has no business learning
@@ -204,13 +205,14 @@ export async function getPublicSellerProfile(
       .join(", ") || null;
 
   const display = planMap.get(resolved.id);
+  const avatar = (await avatarsByUserId(db, [row.user_id as string | null])).get(row.user_id as string);
 
   return {
     status: "ok",
     profile: {
       id: resolved.id,
       name,
-      logoUrl: (row.logo_url as string | null) ?? null,
+      logoUrl: publicSellerPicture(row.logo_url as string | null, avatar),
       bannerUrl: (row.banner_url as string | null) ?? null,
       sellerType: (row.seller_type as string | null) ?? null,
       category: (row.category as string | null) ?? null,

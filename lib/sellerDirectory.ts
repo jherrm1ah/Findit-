@@ -6,6 +6,7 @@
 import { getDb, assertNoError } from "./db";
 import { computeVerificationLevel, type VerificationLevel, type VerificationStatus } from "./sellerVerificationLevels";
 import { getStorePlanDisplayMap, FREE_STORE_PLAN_ID } from "./subscriptions";
+import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
 
 export type PublicSellerSummary = {
   id: string;
@@ -131,7 +132,7 @@ export async function listPublicSellerDirectory(): Promise<PublicSellerSummary[]
     db
       .from("sellers")
       .select(
-        "id, name, logo_url, banner_url, seller_type, category, public_state, public_city, public_area, verification_status, store_slug, created_at"
+        "id, user_id, name, logo_url, banner_url, seller_type, category, public_state, public_city, public_area, verification_status, store_slug, created_at"
       )
       .eq("status", "approved")
       .order("created_at", { ascending: false }),
@@ -141,6 +142,7 @@ export async function listPublicSellerDirectory(): Promise<PublicSellerSummary[]
   if (sellerRows.length === 0) return [];
 
   const ids = sellerRows.map((r) => r.id as string);
+  const avatars = await avatarsByUserId(db, sellerRows.map((r) => r.user_id as string | null));
   const [reviewedResult, outcomeResult, activeProductsResult] = await Promise.all([
     db.from("orders").select("seller_id, my_rating").eq("reviewed", true).in("seller_id", ids),
     db.from("orders").select("seller_id, escrow_status").in("escrow_status", ["released", "disputed"]).in("seller_id", ids),
@@ -160,7 +162,7 @@ export async function listPublicSellerDirectory(): Promise<PublicSellerSummary[]
     sellerRows.map((r) => ({
       id: r.id as string,
       name: r.name as string,
-      logoUrl: (r.logo_url as string | null) ?? null,
+      logoUrl: publicSellerPicture(r.logo_url as string | null, avatars.get(r.user_id as string)),
       bannerUrl: (r.banner_url as string | null) ?? null,
       sellerType: (r.seller_type as string | null) ?? null,
       category: (r.category as string | null) ?? null,

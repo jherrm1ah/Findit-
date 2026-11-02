@@ -3,13 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, ClipboardList, Store, Copy, Check, LayoutTemplate, Megaphone } from "lucide-react";
+import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, Store, Copy, Check, LayoutTemplate, Megaphone } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { applyProPurchaseDiscount } from "@/lib/proPricing";
 import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
+import DeliveryDetails from "./DeliveryDetails";
+import SetupGuide, { setupSteps } from "./SetupGuide";
+import SellerMenu, { SellerMenuBar, currentLabel } from "./SellerMenu";
+import SellerCustomers from "./SellerCustomers";
+import { isLowStock, isBoosted, customersFromOrders } from "@/lib/sellerCustomers";
 
 // A bouncier mount pop for this dashboard's listing/order cards — scale
 // only, no rotate/tilt. This screen manages real inventory and payouts, so
@@ -41,7 +46,7 @@ function budgetLabel(r) {
 
 function statusTone(status) {
   if (status === "Delivered") return "green";
-  if (status === "Awaiting payment") return "stone";
+  if (status === "Awaiting payment" || status === "Cancelled") return "stone";
   return "gold";
 }
 
@@ -57,11 +62,15 @@ function nextSellerStep(status) {
   return SELLER_STEPS[SELLER_STEPS.indexOf(status) + 1];
 }
 
-const EMPTY_OFFER = { price: "", delivery: "", eta: "", warranty: "", note: "" };
+// deliveryOption/deliveryFee are what the buyer chooses from at checkout:
+// the fee is added to the price only if they choose delivery.
+const EMPTY_OFFER = { price: "", deliveryOption: "Both", deliveryFee: "", eta: "", warranty: "", note: "" };
+const OFFER_DELIVERY_LABELS = { Both: "Delivery or pickup", Delivery: "Delivery only", Pickup: "Pickup only" };
 
 function OfferForm({ onSend, onCancel, sending }) {
   const [form, setForm] = useState(EMPTY_OFFER);
-  const valid = Number(form.price) > 0 && form.delivery.trim() && form.eta.trim() && form.warranty.trim();
+  const feeOk = form.deliveryOption === "Pickup" || form.deliveryFee === "" || (Number.isInteger(Number(form.deliveryFee)) && Number(form.deliveryFee) >= 0);
+  const valid = Number(form.price) > 0 && feeOk && form.eta.trim() && form.warranty.trim();
 
   return (
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
@@ -75,14 +84,32 @@ function OfferForm({ onSend, onCancel, sending }) {
         />
       </Field>
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Delivery (₦ or 'Pickup only')">
-          <input
-            value={form.delivery}
-            onChange={(e) => setForm({ ...form, delivery: e.target.value })}
-            placeholder="e.g. 2,000"
+        <Field label="Delivery">
+          <select
+            value={form.deliveryOption}
+            onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
             className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-          />
+          >
+            {Object.entries(OFFER_DELIVERY_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
         </Field>
+        {form.deliveryOption !== "Pickup" && (
+          <Field label="Delivery fee (₦)">
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={form.deliveryFee}
+              onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })}
+              placeholder="0 = free"
+              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+            />
+          </Field>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
         <Field label="ETA">
           <input
             value={form.eta}
@@ -91,15 +118,15 @@ function OfferForm({ onSend, onCancel, sending }) {
             className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
           />
         </Field>
+        <Field label="Warranty">
+          <input
+            value={form.warranty}
+            onChange={(e) => setForm({ ...form, warranty: e.target.value })}
+            placeholder="e.g. 6 months"
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          />
+        </Field>
       </div>
-      <Field label="Warranty">
-        <input
-          value={form.warranty}
-          onChange={(e) => setForm({ ...form, warranty: e.target.value })}
-          placeholder="e.g. 6 months, or 'No warranty'"
-          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-        />
-      </Field>
       <Field label="Note to buyer (optional)">
         <textarea
           value={form.note}
@@ -140,6 +167,7 @@ const EMPTY_FORM = {
   qty: "1",
   location: "",
   deliveryOption: "Delivery",
+  deliveryFee: "",
   color: "",
   variation: "",
 };
@@ -303,17 +331,34 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
         />
       </Field>
-      <Field label="Delivery option">
-        <select
-          value={form.deliveryOption}
-          onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
-          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-        >
-          {DELIVERY_OPTIONS.map((o) => (
-            <option key={o} value={o}>{o}</option>
-          ))}
-        </select>
-      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Delivery option">
+          <select
+            value={form.deliveryOption}
+            onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
+            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+          >
+            {DELIVERY_OPTIONS.map((o) => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        </Field>
+        {/* Added to the buyer's total only when they choose delivery at
+            checkout. FindIt's fee is never taken from it. */}
+        {form.deliveryOption !== "Pickup" && (
+          <Field label="Delivery fee (₦)">
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              value={form.deliveryFee}
+              onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })}
+              placeholder="0 = free"
+              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+            />
+          </Field>
+        )}
+      </div>
       <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Color">
@@ -1337,45 +1382,6 @@ function PayoutAccountCard({ payoutAccount, banks, onSave, saving }) {
 // (Overview), manage the catalog (Listings), fulfill what's sold
 // (Orders), respond to buyers (Requests), and the one-time/occasional
 // setup (Store — branding, payout account, reviews).
-const TABS = [
-  { key: "overview", label: "Overview", icon: LayoutDashboard },
-  { key: "listings", label: "Listings", icon: Package },
-  { key: "orders", label: "Orders", icon: ClipboardList },
-  { key: "requests", label: "Requests", icon: Send },
-  { key: "store", label: "Store", icon: Store },
-];
-
-function TabBar({ active, onChange, counts }) {
-  return (
-    <div className="flex gap-1.5 overflow-x-auto pb-1 mb-6 -mx-5 px-5" style={{ scrollbarWidth: "none" }}>
-      {TABS.map(({ key, label, icon: Icon }) => {
-        const isActive = active === key;
-        const count = counts[key];
-        return (
-          <button
-            key={key}
-            onClick={() => onChange(key)}
-            className={`shrink-0 flex items-center gap-1.5 text-[12.5px] font-semibold px-3.5 py-2 rounded-full border transition ${
-              isActive ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"
-            }`}
-            style={isActive ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
-          >
-            <Icon size={13} /> {label}
-            {count > 0 && (
-              <span
-                className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded-full ${
-                  isActive ? "bg-white/25 text-white" : "bg-[#F5F2FC] text-[#7C3AED]"
-                }`}
-              >
-                {count}
-              </span>
-            )}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
 
 export default function SellerDashboard({
   requests, onSendOffer, user, mySellerId, orders, onAdvanceOrderStatus,
@@ -1406,7 +1412,12 @@ export default function SellerDashboard({
   const [messagingId, setMessagingId] = useState(null);
   const [boostPickerId, setBoostPickerId] = useState(null);
   const [boostingId, setBoostingId] = useState(null);
+  // Where the seller is: a section from the menu (SellerMenu.jsx), a listings
+  // filter (all / low stock / boosted), and an optional search picked there.
   const [activeTab, setActiveTab] = useState("overview");
+  const [listingFilter, setListingFilter] = useState("all");
+  const [searchText, setSearchText] = useState("");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [storeLinkCopied, setStoreLinkCopied] = useState(false);
 
   const boostListing = async (productId, boostPlanId) => {
@@ -1454,6 +1465,26 @@ export default function SellerDashboard({
       : row.seller === user.businessName;
   const myOrders = orders.filter(isMine);
   const myListings = products.filter(isMine);
+  const search = searchText.trim().toLowerCase();
+  const visibleListings = myListings.filter(
+    (p) =>
+      (listingFilter === "low" ? isLowStock(p) : listingFilter === "boosted" ? isBoosted(p) : true) &&
+      (!search || p.name.toLowerCase().includes(search))
+  );
+  const visibleOrders = search ? myOrders.filter((o) => `${o.item} ${o.id}`.toLowerCase().includes(search)) : myOrders;
+  // Paid orders the seller still has to move along.
+  const toFulfil = myOrders.filter((o) => o.paymentStatus === "paid" && nextSellerStep(o.status)).length;
+  const navigate = (target) => {
+    if (target.screen) {
+      go?.(target.screen);
+      return;
+    }
+    setActiveTab(target.tab);
+    if (target.listingFilter) setListingFilter(target.listingFilter);
+    setSearchText(target.search ?? "");
+    setAdding(false);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const plan = storePlan?.plan ?? null;
   // Active-listing count derived live from myListings — the same list
   // rendered below — rather than storePlan.usage.activeProducts, a
@@ -1474,10 +1505,11 @@ export default function SellerDashboard({
   const avgRating = reviewedOrders.length
     ? (reviewedOrders.reduce((sum, o) => sum + o.myRating, 0) / reviewedOrders.length).toFixed(1)
     : null;
-  const orderValue = myOrders.reduce((sum, o) => sum + o.price, 0);
+  // A cancelled order was never a sale.
+  const orderValue = myOrders.filter((o) => o.status !== "Cancelled").reduce((sum, o) => sum + o.price, 0);
   const STATS = [
     ["Rating", avgRating ?? "—"],
-    ["Orders", String(myOrders.length)],
+    ["Orders", String(myOrders.filter((o) => o.status !== "Cancelled").length)],
     ["Listings", String(myListings.length)],
     ["Order value", naira(orderValue)],
   ];
@@ -1487,7 +1519,8 @@ export default function SellerDashboard({
     try {
       await onSendOffer(requestId, {
         price: Number(form.price),
-        delivery: form.delivery.trim(),
+        deliveryOption: form.deliveryOption,
+        deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
         eta: form.eta.trim(),
         warranty: form.warranty.trim(),
         note: form.note.trim() || null,
@@ -1519,6 +1552,7 @@ export default function SellerDashboard({
     qty: form.qty === "" ? undefined : Number(form.qty),
     location: form.location.trim() || null,
     deliveryOption: form.deliveryOption,
+    deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
     color: form.color.trim() || null,
     variation: form.variation.trim() || null,
   });
@@ -1577,14 +1611,45 @@ export default function SellerDashboard({
         )}
       </p>
 
-      <TabBar
-        active={activeTab}
-        onChange={setActiveTab}
-        counts={{ listings: myListings.length, orders: myOrders.length, requests: requests.length }}
+      <SellerMenuBar onOpen={() => setMenuOpen(true)} label={currentLabel(activeTab, listingFilter)} attention={toFulfil} />
+      <SellerMenu
+        open={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        tab={activeTab}
+        listingFilter={listingFilter}
+        onNavigate={navigate}
+        listings={myListings}
+        orders={myOrders}
+        counts={{
+          listings: myListings.length,
+          low: myListings.filter((p) => isLowStock(p)).length,
+          boosted: myListings.filter((p) => isBoosted(p)).length,
+          toFulfil,
+          customers: customersFromOrders(myOrders).length,
+          requests: requests.length,
+        }}
       />
+      {search && (activeTab === "listings" || activeTab === "orders") && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-[12px] text-[#514B67]">Matching &ldquo;{searchText}&rdquo;</span>
+          <button onClick={() => setSearchText("")} className="text-[12px] font-semibold text-[#7C3AED]">Show all</button>
+        </div>
+      )}
 
       {activeTab === "overview" && (
       <>
+      <SetupGuide
+        sellerKey={mySellerId ?? user.id}
+        steps={setupSteps({ user, storeBranding, verification, myListings, payoutAccount, myOrders })}
+        onAction={(action) => {
+          if (action.to) {
+            go?.(action.to);
+            return;
+          }
+          navigate({ tab: action.tab, listingFilter: action.tab === "listings" ? "all" : undefined });
+          if (action.addListing) setAdding(true);
+        }}
+      />
       {plan && (
         <button
           onClick={() => go?.("storePlans")}
@@ -1727,17 +1792,25 @@ export default function SellerDashboard({
         ))}
       </div>
 
-      <StoreAnalytics isFindItPro={isFindItPro} orders={myOrders} go={go} />
-      <AdvertiseCard
-        plans={adCampaignPlans}
-        myCampaigns={myAdCampaigns}
-        listings={myListings}
-        creating={creatingAdCampaign}
-        onCreate={onCreateAdCampaign}
-        showToast={showToast}
-        isFindItPro={isFindItPro}
-      />
       </>
+      )}
+
+      {activeTab === "analytics" && <StoreAnalytics isFindItPro={isFindItPro} orders={myOrders} go={go} />}
+
+      {activeTab === "ads" && (
+        <AdvertiseCard
+          plans={adCampaignPlans}
+          myCampaigns={myAdCampaigns}
+          listings={myListings}
+          creating={creatingAdCampaign}
+          onCreate={onCreateAdCampaign}
+          showToast={showToast}
+          isFindItPro={isFindItPro}
+        />
+      )}
+
+      {activeTab === "customers" && (
+        <SellerCustomers orders={myOrders} onMessage={messageBuyer} messagingId={messagingId} />
       )}
 
       {activeTab === "listings" && (
@@ -1788,10 +1861,31 @@ export default function SellerDashboard({
             </motion.div>
           )}
         </AnimatePresence>
+        {myListings.length > 0 && (
+          <div className="flex gap-1.5">
+            {[["all", "All"], ["low", "Low stock"], ["boosted", "Boosted"]].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setListingFilter(key)}
+                className={`text-[11.5px] font-semibold px-3 py-1.5 rounded-full border ${
+                  listingFilter === key ? "text-white border-transparent" : "bg-white text-[#514B67] border-[#ECE9F7]"
+                }`}
+                style={listingFilter === key ? { background: "linear-gradient(135deg,#A855F7,#7C3AED)" } : {}}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {myListings.length === 0 && !adding && (
           <p className="text-[12px] text-[#6B6483]">No listings yet — add your first product above.</p>
         )}
-        {myListings.map((p) => (
+        {myListings.length > 0 && visibleListings.length === 0 && (
+          <p className="text-[12px] text-[#6B6483]">
+            {search ? "No listings match that search." : listingFilter === "low" ? "Nothing is low on stock." : "No listings are boosted right now."}
+          </p>
+        )}
+        {visibleListings.map((p) => (
           <motion.div key={p.id} {...bounceCard} className={`bg-white border border-[#ECE9F7] rounded-[20px] p-3 shadow-sm shadow-[#4C1D95]/5 ${p.active === false || p.moderationStatus === "removed" ? "opacity-60" : ""}`}>
             {editingId === p.id ? (
               <ListingForm
@@ -1805,6 +1899,7 @@ export default function SellerDashboard({
                   qty: String(p.qty ?? 1),
                   location: p.location ?? "",
                   deliveryOption: p.deliveryOption ?? "Delivery",
+                  deliveryFee: p.deliveryFee ? String(p.deliveryFee) : "",
                   color: p.color ?? "",
                   variation: p.variation ?? "",
                 }}
@@ -1940,7 +2035,7 @@ export default function SellerDashboard({
           <p className="text-[12px] text-[#6B6483]">No orders under your business name yet.</p>
         )}
         <AnimatePresence initial={false}>
-        {myOrders.map((o) => {
+        {visibleOrders.map((o) => {
           const nextStatus = nextSellerStep(o.status);
           const awaitingBuyer = !nextStatus && o.status !== "Delivered";
           return (
@@ -1965,7 +2060,11 @@ export default function SellerDashboard({
                   </motion.span>
                 </AnimatePresence>
               </div>
-              <p className="text-[11px] text-[#6B6483] mb-3">{o.id} · {naira(o.price)}</p>
+              <p className="text-[11px] text-[#6B6483] mb-3">
+                {o.id} · {naira(o.price)}
+                {o.deliveryFee > 0 ? ` (incl. ${naira(o.deliveryFee)} delivery)` : ""}
+              </p>
+              <DeliveryDetails order={o} forSeller showToast={showToast} />
               {/* The verified record for this sale, once it exists. Only
                   rendered when the server actually created one — never
                   inferred from the order's own status. */}
@@ -2003,13 +2102,15 @@ export default function SellerDashboard({
                   settled) instead of cutting instantly when an order moves. */}
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
-                  key={o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
+                  key={o.status === "Cancelled" && o.paymentStatus !== "paid" ? "cancelled" : o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: DURATION.fast, ease: EASE }}
                 >
-                  {o.paymentStatus !== "paid" ? (
+                  {o.status === "Cancelled" && o.paymentStatus !== "paid" ? (
+                    <Pill tone="stone">Cancelled before payment</Pill>
+                  ) : o.paymentStatus !== "paid" ? (
                     <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
                   ) : nextStatus ? (
                     <motion.button

@@ -340,3 +340,15 @@ describe("public seller profile — reputation is computed, never declared", () 
     expect(result.profile.completedOrderCount).toBe(1);
   });
 });
+
+describe("public seller profile — the seller's picture", () => {
+  it("shows their profile photo when they have no store logo (it used to show nothing)", async () => {
+    fakeDb.reset({ sellers: [seedSeller()], users: [{ id: "u_1", avatar_url: "https://x.supabase.co/me.jpg" }], products: [] });
+    const result = await getPublicSellerProfile("seller_1", listings);
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    expect(result.profile.logoUrl).toBe("https://x.supabase.co/me.jpg");
+    for (const field of PRIVATE_SELLER_FIELDS) expect(result.profile).not.toHaveProperty(field);
+  });
+});
+

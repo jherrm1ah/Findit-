@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import { MessageCircle, ChevronRight } from "lucide-react";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
 
@@ -53,8 +54,10 @@ export default function Messages({ conversations, onOpenThread }) {
                 transition={SPRING_BOUNCY}
                 className={`w-full flex items-center gap-3 rounded-[20px] p-3.5 text-left border transition-colors duration-200 ${c.unreadCount > 0 ? "bg-[#F5F2FC] border-[#E4D9FA]" : "bg-white border-[#ECE9F7]"}`}
               >
-                <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 text-white text-[14px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-                  {displayName?.[0]?.toUpperCase() || <MessageCircle size={16} />}
+                <div className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shrink-0 text-white text-[14px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+                  {c.otherParty.avatarUrl
+                    ? <Image src={c.otherParty.avatarUrl} alt="" fill sizes="40px" className="object-cover" />
+                    : displayName?.[0]?.toUpperCase() || <MessageCircle size={16} />}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] font-semibold text-[#1E1B4B] truncate">{displayName}</p>

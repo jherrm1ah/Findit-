@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
+import Image from "next/image";
 import { ChevronLeft, Send } from "lucide-react";
 import { IconButton } from "./sharedMotion";
 import { DURATION, EASE, SPRING_SOFT, wiggleIn, press } from "./motion";
@@ -86,7 +87,12 @@ export default function Thread({ conversationId, otherParty, messages, onBack, o
         <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={wiggleIn.transition}>
           <IconButton onClick={onBack} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         </motion.div>
-        <p className="text-[15px] font-bold text-[#1E1B4B]">{displayName}</p>
+        <div className="relative w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 text-white text-[12px] font-bold" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+          {otherParty?.avatarUrl
+            ? <Image src={otherParty.avatarUrl} alt="" fill sizes="32px" className="object-cover" />
+            : displayName[0]?.toUpperCase()}
+        </div>
+        <p className="text-[15px] font-bold text-[#1E1B4B] truncate">{displayName}</p>
       </div>
 
       <div className="px-5 py-4 space-y-3">

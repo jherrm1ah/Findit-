@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ShoppingBag, ShoppingCart, User, BadgeCheck, Star, Check,
@@ -174,8 +175,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               none, so they fall back to the name and the server decides
               whether that name is unambiguous enough to resolve. */}
           <button onClick={() => onViewSeller(product.sellerId || product.seller)} className="flex items-center gap-2.5 text-left">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-              <User size={17} className="text-white" />
+            {/* The seller's picture: their store logo, or else their profile photo (sellerPicture.ts). */}
+            <div className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+              {product.sellerLogoUrl
+                ? <Image src={product.sellerLogoUrl} alt="" fill sizes="40px" className="object-cover" />
+                : <User size={17} className="text-white" />}
             </div>
             <div>
               <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1">
@@ -222,10 +226,15 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             {product.condition && <Pill tone={product.condition === "New" ? "green" : "gold"}>{product.condition}</Pill>}
             {product.qty != null && (
               <Pill tone={product.qty > 0 ? "stone" : "red"}>
-                <PackageIcon size={11} /> {product.qty > 0 ? `${product.qty} available` : "Out of stock"}
+                <PackageIcon size={11} /> {product.qty === 0 ? "Sold out" : product.qty <= 3 ? `Only ${product.qty} left` : `${product.qty} available`}
               </Pill>
             )}
-            {product.deliveryOption && <Pill tone="stone"><Truck size={11} /> {product.deliveryOption}</Pill>}
+            {product.deliveryOption && (
+              <Pill tone="stone">
+                <Truck size={11} /> {product.deliveryOption}
+                {product.deliveryOption !== "Pickup" && (product.deliveryFee > 0 ? ` · ${naira(product.deliveryFee)} delivery` : " · free delivery")}
+              </Pill>
+            )}
             {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}
             {product.variation && <Pill tone="stone">{product.variation}</Pill>}
             {product.location && <Pill tone="stone"><MapPin size={11} /> {product.location}</Pill>}
@@ -240,7 +249,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
                 <Minus size={12} className="text-[#1E1B4B]" />
               </button>
               <span className="text-[13px] font-semibold text-[#1E1B4B] w-4 text-center">{qty}</span>
-              <button onClick={() => setQty((q) => q + 1)} className="w-6 h-6 rounded-lg bg-white flex items-center justify-center shadow-sm">
+              <button onClick={() => setQty((q) => (product.qty > 0 ? Math.min(product.qty, q + 1) : q + 1))} className="w-6 h-6 rounded-lg bg-white flex items-center justify-center shadow-sm">
                 <Plus size={12} className="text-[#1E1B4B]" />
               </button>
             </div>
@@ -389,7 +398,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
+            <ShoppingBag size={15} /> {product.qty === 0 ? "Sold out" : buying ? "Placing order…" : "Buy now"}
           </motion.button>
         </div>
       </motion.div>

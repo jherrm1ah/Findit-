@@ -47,6 +47,7 @@ export async function PATCH(
     qty?: number;
     location?: string | null;
     deliveryOption?: "Delivery" | "Pickup" | "Both" | null;
+    deliveryFee?: number | null;
     color?: string | null;
     variation?: string | null;
   };

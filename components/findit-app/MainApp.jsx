@@ -558,8 +558,17 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // spent balance, so this patches both directly, the same way a real
   // redirect-back would. The partial/no-credit paths are unaffected: they
   // redirect to Paystack, and the existing flow picks up from there.
-  const handlePayOrder = async (orderId, applyCredit) => {
-    const result = await api.payForOrder(orderId, applyCredit);
+  const handlePayOrder = async (orderId, applyCredit, delivery) => {
+    let result;
+    try {
+      result = await api.payForOrder(orderId, applyCredit, delivery);
+    } catch (err) {
+      // The delivery choice may still have been saved (and the price
+      // changed) before the payment step failed: show the order as it is now.
+      refreshOrderInCheckout(orderId);
+      throw err;
+    }
+    if (!result.applied && !result.checkoutUrl) refreshOrderInCheckout(orderId);
     if (result.applied) {
       api.getReferralDashboard().then((d) => setAvailableCredit(d.availableCredit)).catch(() => {});
       try {
@@ -575,6 +584,39 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       }
     }
     return result;
+  };
+
+  // Re-reads one order into My orders and the open checkout. Best-effort.
+  const refreshOrderInCheckout = async (orderId) => {
+    try {
+      const freshOrders = await api.getOrders();
+      setOrders(freshOrders);
+      const freshOrder = freshOrders.find((o) => o.id === orderId);
+      if (freshOrder) setCheckoutOrder((co) => (co && co.order.id === orderId ? { ...co, order: freshOrder } : co));
+    } catch {
+      // nothing to do: the next visit loads it fresh
+    }
+  };
+
+  // Paying for an order that's already in My orders (a cart line, or an
+  // accepted offer) goes through the same checkout screen as "Buy now", so
+  // the buyer always chooses delivery or pickup, and gives an address,
+  // before paying.
+  const openCheckoutForOrder = (order) => {
+    const line = order.lines?.length === 1 ? order.lines[0] : null;
+    const prod = line ? products.find((p) => p.id === line.productId) || null : null;
+    setCheckoutOrder({ order, product: prod, qty: line ? line.qty : null });
+    go("checkout");
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    try {
+      const order = await api.cancelOrder(orderId);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Order cancelled.");
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel that order — try again.", "error");
+    }
   };
 
   const handleAddToCart = async (prod, qty) => {
@@ -600,42 +642,29 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     setCart((c) => c.filter((it) => it.productId !== productId));
   };
 
-  // One createOrder call per line, same as a direct "Buy now" — a cart is
-  // just a staging list, not a new kind of order. Each order can already be
-  // paid individually from My orders (Account.jsx), so there's no separate
-  // multi-item payment flow to build here.
+  // The whole cart in one call: the server makes ONE order per seller (one
+  // checkout, one delivery fee each) and checks every line before creating
+  // anything, so on an error the cart is left exactly as it was. One seller
+  // goes straight to checkout; several are each paid from My orders.
   const handleCartCheckout = async () => {
     if (!user) {
       onRequireAuth?.();
       return;
     }
     setCheckingOutCart(true);
-    const createdOrders = [];
-    const remaining = [...cart];
     try {
-      for (const item of cart) {
-        const order = await api.createOrder({ productId: item.productId, qty: item.qty });
-        createdOrders.push(order);
-        remaining.shift(); // this line succeeded — it's a real order now, not still "in the cart"
-      }
+      const created = await api.createOrdersFromCart(cart.map((it) => ({ productId: it.productId, qty: it.qty })));
       setCart([]);
-      showToast(`${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed — pay from My orders.`);
-      go("account");
-    } catch (err) {
-      // A failure partway through must never lose a line that already
-      // became a real order, and must never re-attempt one that did —
-      // only what's still unprocessed goes back into the cart.
-      setCart(remaining);
-      showToast(
-        createdOrders.length > 0
-          ? `${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed. The rest couldn't be — ${err.message || "try again"}.`
-          : err.message || "Couldn't complete checkout — try again.",
-        "error"
-      );
-    } finally {
-      if (createdOrders.length > 0) {
-        setOrders((os) => [...createdOrders, ...os]);
+      setOrders((os) => [...created, ...os]);
+      if (created.length === 1) {
+        openCheckoutForOrder(created[0]);
+      } else {
+        showToast(`${created.length} orders placed, one per seller. Choose delivery and pay for each in My orders.`);
+        go("account");
       }
+    } catch (err) {
+      showToast(err.message || "Couldn't complete checkout — try again.", "error");
+    } finally {
       setCheckingOutCart(false);
     }
   };
@@ -1212,7 +1241,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             : r
         )
       );
-      showToast("Order placed — track it in My orders.");
+      // Straight on to choosing delivery and paying, the same as "Buy now".
+      openCheckoutForOrder(order);
     } catch (err) {
       showToast(err.message || "Couldn't accept that offer — try again.", "error");
     }
@@ -1927,7 +1957,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onReview={handleReview}
             onConfirmDelivery={handleConfirmDelivery}
             onReportIssue={handleReportIssue}
-            onPayOrder={api.payForOrder}
+            onPayOrder={openCheckoutForOrder}
+            onCancelOrder={handleCancelOrder}
             showToast={showToast}
             savedIds={savedIds}
           />
@@ -1941,10 +1972,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
         )}
         {screen === "checkout" && checkoutOrder && (
           <Checkout
+            key={checkoutOrder.order.id}
             order={checkoutOrder.order}
             product={checkoutOrder.product}
             qty={checkoutOrder.qty}
             onPay={handlePayOrder}
+            user={user}
             availableCredit={availableCredit}
             showToast={showToast}
             go={go}

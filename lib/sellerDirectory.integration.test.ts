@@ -109,4 +109,21 @@ describe("listPublicSellerDirectory", () => {
     expect(result.rating).toBe(4);
     expect(result.completedOrderCount).toBe(2);
   });
+
+  it("shows a seller's profile photo when they have no store logo, and the logo when they do", async () => {
+    fakeDb.reset({
+      sellers: [
+        seller({ id: "s_photo", user_id: "u_photo", name: "Photo Seller" }),
+        seller({ id: "s_logo", user_id: "u_logo", name: "Logo Seller", logo_url: "https://x.supabase.co/logo.png" }),
+      ],
+      users: [
+        { id: "u_photo", avatar_url: "https://x.supabase.co/new-photo.jpg" },
+        { id: "u_logo", avatar_url: "https://x.supabase.co/other.jpg" },
+      ],
+      orders: [], products: [], subscriptions: [],
+    });
+    const byId = Object.fromEntries((await listPublicSellerDirectory()).map((s) => [s.id, s.logoUrl]));
+    expect(byId.s_photo).toBe("https://x.supabase.co/new-photo.jpg");
+    expect(byId.s_logo).toBe("https://x.supabase.co/logo.png");
+  });
 });

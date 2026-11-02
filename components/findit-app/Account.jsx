@@ -6,6 +6,7 @@ import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, Cr
 import { categoryGroup, naira } from "./data";
 import { Pill, ArtBlock } from "./shared";
 import { DURATION, EASE, SPRING_BOUNCY, press } from "./motion";
+import DeliveryDetails from "./DeliveryDetails";
 
 // A bouncier stagger for this screen's own lists (orders, saved items) —
 // matching Home's browsing-surface treatment rather than a change to
@@ -19,7 +20,7 @@ const BOUNCE_ITEM = {
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
 };
 
-export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
+export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, onCancelOrder, savedIds, showToast, transactionRecords = [] }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -27,22 +28,16 @@ export default function Account({ openProduct, orders, products, onReview, onCon
   const [confirming, setConfirming] = useState(null); // order id being confirmed
   const [reporting, setReporting] = useState(null);   // order id being reported
   const [issueNote, setIssueNote] = useState("");
-  const [paying, setPaying] = useState(null); // order id being paid
   const saved = products.filter((p) => savedIds.includes(p.id));
-
-  const pay = async (orderId) => {
-    setPaying(orderId);
+  const [cancelling, setCancelling] = useState(null); // order id asking "Cancel this order?"
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const cancelOrder = async (orderId) => {
+    setCancelBusy(true);
     try {
-      const result = await onPayOrder(orderId);
-      if (result.configured === false) {
-        showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
-      } else if (result.checkoutUrl) {
-        window.location.href = result.checkoutUrl;
-      }
-    } catch (err) {
-      showToast?.(err.message || "Couldn't start payment — try again.", "error");
+      await onCancelOrder?.(orderId);
     } finally {
-      setPaying(null);
+      setCancelBusy(false);
+      setCancelling(null);
     }
   };
 
@@ -84,7 +79,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
     }
   };
 
-  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" ? "stone" : "gold");
+  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" || s === "Cancelled" ? "stone" : "gold");
 
   // Where the buyer's money stands, in their words rather than ours.
   const ESCROW_COPY = {
@@ -145,7 +140,13 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 </motion.span>
               </AnimatePresence>
             </div>
-            <p className="text-[14px] font-bold text-[#7C3AED] mt-2 mb-2">{naira(o.price)}</p>
+            <p className="text-[14px] font-bold text-[#7C3AED] mt-2 mb-2">
+              {naira(o.price)}
+              {o.deliveryFee > 0 && (
+                <span className="text-[11px] font-medium text-[#6B6483]"> incl. {naira(o.deliveryFee)} delivery</span>
+              )}
+            </p>
+            <DeliveryDetails order={o} showToast={showToast} />
 
             {/* The verified transaction record, created server-side the moment
                 this order completed. Shown only when one actually exists —
@@ -201,7 +202,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
             {/* Where the money stands — the app promises this on every product
                 page and at checkout, so it has to be visible on the order too. */}
             <AnimatePresence mode="wait" initial={false}>
-              {(() => {
+              {o.status !== "Cancelled" && (() => {
                 const escrow = ESCROW_COPY[o.escrowStatus] ?? ESCROW_COPY.held;
                 const EscrowIcon = escrow.icon;
                 return (
@@ -229,21 +230,48 @@ export default function Account({ openProduct, orders, products, onReview, onCon
               </button>
             )}
 
-            {/* An order created straight from "Buy now" already went through
-                Checkout's own "Pay now" — this covers the other path, an
-                accepted request offer, which lands here still unpaid with
-                no other screen that offers to pay it. */}
-            {o.paymentStatus !== "paid" && (
+            {/* An unpaid order (a cart line, an accepted offer, or a checkout
+                left part-way) opens the checkout screen, where the buyer
+                chooses delivery or pickup before paying. */}
+            {o.status === "Cancelled" && (
+              <p className="text-[11.5px] text-[#6B6483] mb-2.5">
+                {o.cancelReason === "expired"
+                  ? "Closed because it wasn't paid within 7 days. You can order it again any time."
+                  : "You cancelled this order before paying. Nothing was charged."}
+              </p>
+            )}
+            {o.paymentStatus !== "paid" && o.status !== "Cancelled" && (
               <motion.button
-                onClick={() => pay(o.id)}
-                disabled={paying === o.id}
+                onClick={() => onPayOrder(o)}
                 {...press}
                 className="w-full flex items-center justify-center gap-1.5 text-white text-[12.5px] font-semibold py-2.5 rounded-xl mb-2.5 disabled:opacity-60"
                 style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
               >
                 <CreditCard size={14} />
-                {paying === o.id ? "Starting checkout…" : `Pay ${naira(o.price)}`}
+                {o.deliveryMethod ? `Pay ${naira(o.price)}` : "Choose delivery and pay"}
               </motion.button>
+            )}
+            {/* Cancel before paying: one tap asks, a second confirms. */}
+            {o.paymentStatus !== "paid" && o.status !== "Cancelled" && (
+              cancelling === o.id ? (
+                <div className="flex items-center gap-3 mb-2.5">
+                  <p className="text-[11.5px] text-[#514B67] flex-1">Cancel this order?</p>
+                  <button
+                    onClick={() => cancelOrder(o.id)}
+                    disabled={cancelBusy}
+                    className="text-[11.5px] font-semibold text-[#B91C1C] disabled:opacity-50"
+                  >
+                    {cancelBusy ? "Cancelling…" : "Yes, cancel"}
+                  </button>
+                  <button onClick={() => setCancelling(null)} disabled={cancelBusy} className="text-[11.5px] font-semibold text-[#6B6483]">
+                    Keep it
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setCancelling(o.id)} className="text-[11px] font-semibold text-[#6B6483] underline mb-2.5">
+                  Cancel order
+                </button>
+              )
             )}
 
             {/* Only the buyer can end an order. Until they tap this, the money

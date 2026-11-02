@@ -19,6 +19,8 @@ import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./req
 import { recordReview } from "./reviews";
 import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
 import { qualifyReferral } from "./referrals";
+import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
+import { deliveryChoices, normalizeAddress, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryMethod, type DeliveryOptions } from "./delivery";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -89,6 +91,10 @@ export type Product = {
   // distinct from lat/lng above (the seller ACCOUNT's location).
   location: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+  // Migration 043: what the seller charges to deliver it (0 = free). Only
+  // used when deliveryOption allows delivery; added to the order's price
+  // when the buyer chooses delivery at checkout (see lib/delivery.ts).
+  deliveryFee: number;
   color: string | null;
   variation: string | null;
   // Every photo, cover first — imageUrl above always equals images[0] and
@@ -150,7 +156,35 @@ export type Order = {
   // part of the fee split above. 0 until paymentStatus === "paid"; never
   // negative, never more than price.
   creditApplied: number;
+
+  // ---- Migration 043: delivery at checkout (see lib/delivery.ts) ----
+  // price above is what the buyer pays: itemPrice + deliveryFee.
+  itemPrice: number;
+  // The choices the buyer has (copied from the listing/offer; null = either).
+  deliveryOptions: DeliveryOptions | null;
+  // What delivery costs IF chosen.
+  deliveryFeeQuote: number;
+  // What the buyer chose; null until they reach checkout.
+  deliveryMethod: DeliveryMethod | null;
+  deliveryFee: number;
+  // Where to deliver. Only shown to the seller once the order is paid
+  // (see listOrders) — the buyer always sees their own.
+  deliveryAddress: DeliveryAddress | null;
+  // True once the buyer has started paying: the method (and so the price)
+  // can no longer change. The address still can, until the order is paid.
+  deliveryLocked: boolean;
+
+  // ---- Migration 044 ----
+  // The products in this order (a cart becomes one order per seller). Empty
+  // for an accepted request offer, and for orders from before 044.
+  lines: OrderLine[];
+  // Set when an unpaid order is cancelled by the buyer or closed after
+  // UNPAID_ORDER_DAYS (status 'Cancelled').
+  cancelledAt: string | null;
+  cancelReason: "buyer" | "expired" | null;
 };
+
+export type OrderLine = { productId: string; name: string; qty: number; unitPrice: number };
 
 export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
 export type PaymentStatus = "pending" | "paid" | "failed";
@@ -192,6 +226,10 @@ export type Offer = {
   condition: string;
   warranty: string;
   note: string | null;
+  // Migration 043: structured delivery terms (null option = older offer,
+  // the buyer may choose either with no fee).
+  deliveryOption: DeliveryOptions | null;
+  deliveryFee: number;
   accepted: boolean;
   createdAt: string;
   // Computed the same way as Product.verified/rating.
@@ -308,8 +346,10 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
 
   const sellersResult = await db
     .from("sellers")
-    .select("id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
+    .select("id, user_id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
   const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
+  // Each seller's own profile photo, shown wherever they have no store logo (see sellerPicture.ts).
+  const avatars = await avatarsByUserId(db, sellerRows.map((r) => r.user_id as string | null));
 
   const ordersResult = await db
     .from("orders")
@@ -353,7 +393,7 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
       ...base,
       proBadge: display?.proBadge ?? false,
       featured: display?.featuredListingAccess ?? false,
-      logoUrl: (row.logo_url as string | null) ?? null,
+      logoUrl: publicSellerPicture(row.logo_url as string | null, avatars.get(row.user_id as string)),
       bannerUrl: (row.banner_url as string | null) ?? null,
       verificationLevel: computeVerificationLevel({
         verificationStatus: row.verification_status as VerificationStatus,
@@ -433,6 +473,7 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     qty: (row.qty as number | undefined) ?? 1,
     location: (row.location as string | null) ?? null,
     deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
     moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
@@ -606,6 +647,7 @@ export function validateProductInput(input: {
   qty?: number;
   location?: string | null;
   deliveryOption?: string | null;
+  deliveryFee?: number | null;
   color?: string | null;
   variation?: string | null;
   images?: string[];
@@ -631,6 +673,7 @@ export function validateProductInput(input: {
   if (input.deliveryOption != null && !(DELIVERY_OPTIONS as readonly string[]).includes(input.deliveryOption)) {
     throw new ValidationError("Delivery option must be Delivery, Pickup, or Both.");
   }
+  if (input.deliveryFee != null) parseDeliveryFee(input.deliveryFee);
   if (input.color != null && input.color.length > MAX_COLOR_LENGTH) {
     throw new ValidationError(`Color must be under ${MAX_COLOR_LENGTH} characters.`);
   }
@@ -692,6 +735,7 @@ export async function createProduct(input: {
   qty?: number;
   location?: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both";
+  deliveryFee?: number | null;
   color?: string | null;
   variation?: string | null;
 }): Promise<Product> {
@@ -750,6 +794,7 @@ export async function createProduct(input: {
       qty: input.qty ?? 1,
       location: input.location?.trim() || null,
       delivery_option: input.deliveryOption,
+      delivery_fee: input.deliveryOption === "Pickup" ? 0 : parseDeliveryFee(input.deliveryFee),
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
       moderation_status: matchedRule ? "under_review" : "active",
@@ -794,6 +839,7 @@ export async function updateProduct(
     qty: number;
     location: string | null;
     deliveryOption: "Delivery" | "Pickup" | "Both" | null;
+    deliveryFee: number | null;
     color: string | null;
     variation: string | null;
   }>
@@ -848,6 +894,12 @@ export async function updateProduct(
       qty: patch.qty !== undefined ? patch.qty : existing.qty,
       location: patch.location !== undefined ? (patch.location?.trim() || null) : existing.location,
       delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
+      delivery_fee:
+        (patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption) === "Pickup"
+          ? 0
+          : patch.deliveryFee !== undefined
+            ? parseDeliveryFee(patch.deliveryFee)
+            : existing.deliveryFee,
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
       ...(moderationEscalation
@@ -940,7 +992,25 @@ function rowToOrder(row: Row): Order {
     platformFeeAmount: (row.platform_fee_amount as number | null) ?? null,
     sellerPayoutAmount: (row.seller_payout_amount as number | null) ?? null,
     creditApplied: (row.credit_applied as number | null) ?? 0,
+    itemPrice: (row.item_price as number | null | undefined) ?? (row.price as number) - ((row.delivery_fee as number | null | undefined) ?? 0),
+    deliveryOptions: (row.delivery_options as DeliveryOptions | null | undefined) ?? null,
+    deliveryFeeQuote: (row.delivery_fee_quote as number | null | undefined) ?? 0,
+    deliveryMethod: (row.delivery_method as DeliveryMethod | null | undefined) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
+    deliveryAddress: (row.delivery_address as DeliveryAddress | null | undefined) ?? null,
+    deliveryLocked: Boolean(row.delivery_locked),
+    lines: Array.isArray(row.lines) ? (row.lines as OrderLine[]) : [],
+    cancelledAt: (row.cancelled_at as string | null | undefined) ?? null,
+    cancelReason: (row.cancel_reason as Order["cancelReason"] | undefined) ?? null,
   };
+}
+
+// A buyer's address is theirs until they've actually paid: a seller sees
+// where to deliver only on a paid order, never on a checkout someone started
+// and abandoned.
+function withAddressPrivacy(order: Order, viewerId: string): Order {
+  if (order.userId === viewerId || order.paymentStatus === "paid") return order;
+  return { ...order, deliveryAddress: null };
 }
 
 export const ORDER_STATUSES = [
@@ -989,7 +1059,7 @@ export async function listOrders(
   const byId = new Map<string, Row>();
   for (const row of rowSets.flat()) byId.set(row.id as string, row);
   return [...byId.values()]
-    .map(rowToOrder)
+    .map((row) => withAddressPrivacy(rowToOrder(row), userId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -1008,6 +1078,11 @@ async function insertOrder(input: {
   status: string;
   requestId?: string | null;
   userId: string;
+  // The delivery choices the buyer will have at checkout, and what delivery
+  // costs if chosen. price above is the item alone until they choose.
+  deliveryOptions?: DeliveryOptions | null;
+  deliveryFeeQuote?: number;
+  lines?: OrderLine[];
 }): Promise<Order> {
   const db = getDb();
   const id = randomId("ORD-");
@@ -1020,6 +1095,12 @@ async function insertOrder(input: {
       seller: input.seller,
       seller_id: input.sellerId ?? null,
       price: input.price,
+      item_price: input.price,
+      delivery_options: input.deliveryOptions ?? null,
+      delivery_fee_quote: input.deliveryOptions === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFeeQuote ?? 0)),
+      delivery_fee: 0,
+      delivery_locked: false,
+      lines: input.lines ?? [],
       status: input.status,
       request_id: input.requestId ?? null,
     })
@@ -1030,43 +1111,259 @@ async function insertOrder(input: {
 }
 
 const MAX_ORDER_QTY = 999;
+const MAX_CART_LINES = 50;
 
-// The "Buy now" path. price/seller/item are NEVER taken from the client —
-// only productId and qty are, and the real price/seller come from the
-// product row itself, exactly as validateProductInput already guarantees
-// (positive price, real seller). This closes what used to be a direct
-// price/seller tampering hole (the client previously supplied all three).
+// The words a buyer sees when they ask for more than there is.
+function stockMessage(product: Product, qty: number): string | null {
+  if (product.qty === 0) return product.name + " is sold out.";
+  if (qty > product.qty) return `Only ${product.qty} of ${product.name} left.`;
+  return null;
+}
+
+// Checks one cart line against the real listing. price/seller/name are NEVER
+// taken from the client — only which product and how many.
+async function orderableProduct(productId: string, qty: number): Promise<Product> {
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_ORDER_QTY) {
+    throw new ValidationError(`Quantity must be between 1 and ${MAX_ORDER_QTY}.`);
+  }
+  const product = await getProduct(productId);
+  if (!product || product.active === false || product.moderationStatus === "removed") {
+    throw new ValidationError("That product is no longer available.");
+  }
+  // qty is real stock now: confirming a payment takes the order's quantity
+  // off it (decrementStockForOrder). Checked again when payment starts.
+  if (product.qty === 0) throw new ValidationError("This item is out of stock.");
+  const short = stockMessage(product, qty);
+  if (short) throw new ValidationError(short);
+  return product;
+}
+
+// One order from several of ONE seller's products (or one product): one
+// checkout, one delivery fee. The buyer can choose only what every item
+// allows; delivery costs the highest of the items' delivery fees (one parcel,
+// one trip), never the sum.
+async function insertOrderForProducts(items: { product: Product; qty: number }[], userId: string): Promise<Order> {
+  const first = items[0].product;
+  const lines: OrderLine[] = items.map(({ product, qty }) => ({
+    productId: product.id,
+    name: product.name,
+    qty,
+    unitPrice: product.price,
+  }));
+  const delivery = items.every(({ product }) => deliveryChoices(product.deliveryOption).delivery);
+  const pickup = items.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
+  const deliveryOptions: DeliveryOptions | null =
+    items.length === 1 ? first.deliveryOption : delivery && pickup ? "Both" : delivery ? "Delivery" : "Pickup";
+  const feeQuote = delivery ? Math.max(0, ...items.map(({ product }) => (product.deliveryOption === "Pickup" ? 0 : product.deliveryFee))) : 0;
+
+  return insertOrder({
+    item: lines.map((l) => (l.qty > 1 ? `${l.name} ×${l.qty}` : l.name)).join(", "),
+    seller: first.seller,
+    sellerId: first.sellerId,
+    price: lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0),
+    status: "Awaiting payment",
+    userId,
+    deliveryOptions,
+    deliveryFeeQuote: feeQuote,
+    lines,
+  });
+}
+
+// The "Buy now" path.
 export async function createOrderFromProduct(
   productId: string,
   qty: number,
   userId: string
 ): Promise<Order> {
-  if (!Number.isFinite(qty) || qty < 1 || qty > MAX_ORDER_QTY) {
-    throw new ValidationError(`Quantity must be between 1 and ${MAX_ORDER_QTY}.`);
-  }
-  const product = await getProduct(productId);
-  if (!product) {
-    throw new ValidationError("That product is no longer available.");
-  }
-  // A seller-declared 0 is a real, deliberate "nothing left to sell" — not
-  // real inventory tracking (nothing decrements qty as orders are placed
-  // today), just refusing the one case that's unambiguous.
-  if (product.qty === 0) {
-    throw new ValidationError("This item is out of stock.");
-  }
-  const order = await insertOrder({
-    item: product.name,
-    seller: product.seller,
-    sellerId: product.sellerId,
-    price: product.price * qty,
-    status: "Awaiting payment",
-    userId,
-  });
-
+  const product = await orderableProduct(productId, qty);
   // No seller notification here — the seller learns about this order once
   // it's actually paid for (see lib/payments.ts#confirmOrderPayment), not
   // the moment a buyer starts checkout on something they might never pay.
+  return insertOrderForProducts([{ product, qty }], userId);
+}
+
+// Checking out a cart: ONE order per seller, so the buyer pays each seller's
+// delivery fee once and checks out once per seller, not once per item. Every
+// line is checked before any order is created, so a problem with one item
+// never leaves half a cart ordered. The rare seller whose items can't share
+// a delivery choice (one is delivery-only, another pickup-only) gets one
+// order per item instead.
+export async function createOrdersFromCart(
+  items: { productId: string; qty: number }[],
+  userId: string
+): Promise<Order[]> {
+  if (!Array.isArray(items) || items.length === 0) throw new ValidationError("Your cart is empty.");
+  if (items.length > MAX_CART_LINES) throw new ValidationError(`A cart can hold up to ${MAX_CART_LINES} different items.`);
+
+  const qtyById = new Map<string, number>();
+  for (const it of items) {
+    if (!it || typeof it.productId !== "string") throw new ValidationError("Something in your cart isn't a product.");
+    qtyById.set(it.productId, (qtyById.get(it.productId) ?? 0) + Number(it.qty));
+  }
+  const checked: { product: Product; qty: number }[] = [];
+  for (const [productId, qty] of qtyById) checked.push({ product: await orderableProduct(productId, qty), qty });
+
+  const bySeller = new Map<string, { product: Product; qty: number }[]>();
+  for (const it of checked) {
+    const key = it.product.sellerId ?? "name:" + it.product.seller;
+    bySeller.set(key, [...(bySeller.get(key) ?? []), it]);
+  }
+
+  const orders: Order[] = [];
+  for (const group of bySeller.values()) {
+    const canShare =
+      group.every(({ product }) => deliveryChoices(product.deliveryOption).delivery) ||
+      group.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
+    if (canShare) orders.push(await insertOrderForProducts(group, userId));
+    else for (const it of group) orders.push(await insertOrderForProducts([it], userId));
+  }
+  return orders;
+}
+
+// Before payment starts: is there still enough of everything in this order?
+// Throws ValidationError with what's short.
+export async function assertOrderInStock(order: Order): Promise<void> {
+  for (const line of order.lines) {
+    const product = await getProduct(line.productId);
+    if (!product || product.active === false || product.moderationStatus === "removed") {
+      throw new ValidationError(`${line.name} is no longer available. Cancel this order and order again.`);
+    }
+    const short = stockMessage(product, line.qty);
+    if (short) throw new ValidationError(`${short} Cancel this order and order again.`);
+  }
+}
+
+// Called once, when an order's payment is confirmed: takes each line's
+// quantity off the product's stock. Never below 0 (two buyers paying for
+// the last one at the same moment both keep their order; the seller sees 0
+// left and sorts it out, the same as a shop that oversold). A conditional
+// write on the qty just read, retried, so two payments can't lose an update.
+export async function decrementStockForOrder(order: Order): Promise<void> {
+  const db = getDb();
+  for (const line of order.lines) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const read = await db.from("products").select("qty, name, seller, seller_id").eq("id", line.productId).maybeSingle();
+      const row = assertNoError(read, "reading stock") as Row | null;
+      if (!row) break; // listing deleted since: nothing to update
+      const current = (row.qty as number | null) ?? 0;
+      const next = Math.max(0, current - line.qty);
+      if (next === current) break;
+      const write = await db.from("products").update({ qty: next }).eq("id", line.productId).eq("qty", current).select("id").maybeSingle();
+      if (assertNoError(write, "updating stock")) {
+        // Most listings start at quantity 1, so the seller needs to know the
+        // moment one sells out, or it silently stops being buyable.
+        if (next === 0) {
+          try {
+          const seller = row.seller_id
+            ? await findUserForSellerId(row.seller_id as string)
+            : await findUserByBusinessName(row.seller as string);
+          if (seller) {
+            await notifyBestEffort({
+              userId: seller.id,
+              type: "payment",
+              title: "Sold out",
+              body: `"${row.name}" is now sold out. Edit the listing to add more stock.`,
+            });
+          }
+          } catch (err) {
+            console.error("[stock] couldn't tell the seller a listing sold out", err);
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+export const UNPAID_ORDER_DAYS = 7;
+
+// Cancels an order that hasn't been paid: status 'Cancelled'. Conditional on
+// it still being unpaid and awaiting payment, so it can't race a payment
+// that is confirming at the same moment (and a payment that completes later
+// anyway reopens it, see lib/payments.ts#confirmOrderPayment). An order from
+// an accepted request offer puts the request back up, so the buyer can pick
+// another offer, and tells the seller whose offer it was.
+// Returns null if the order wasn't in a state that could be cancelled.
+export async function cancelUnpaidOrder(orderId: string, reason: "buyer" | "expired"): Promise<Order | null> {
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ status: "Cancelled", cancelled_at: new Date().toISOString(), cancel_reason: reason })
+    .eq("id", orderId)
+    .eq("status", "Awaiting payment")
+    .neq("payment_status", "paid")
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "cancelling order") as Row | null;
+  if (!row) return null;
+  const order = rowToOrder(row);
+
+  if (order.requestId) {
+    try {
+      await assertNoError(
+        await db.from("requests").update({ status: "open" }).eq("id", order.requestId).eq("status", "matched"),
+        "reopening request"
+      );
+      await assertNoError(
+        await db.from("offers").update({ accepted: false }).eq("request_id", order.requestId).eq("accepted", true),
+        "un-accepting offer"
+      );
+      const seller = order.sellerId ? await findUserForSellerId(order.sellerId) : await findUserByBusinessName(order.seller);
+      if (seller) {
+        await notifyBestEffort({
+          userId: seller.id,
+          type: "offer",
+          title: "Order cancelled",
+          body: `The buyer's order for "${order.item}" was cancelled before payment. The request is open again.`,
+        });
+      }
+    } catch (err) {
+      // The order itself is cancelled either way; this is housekeeping.
+      console.error("[cancel] couldn't reopen the request for", orderId, err);
+    }
+  }
   return order;
+}
+
+// Daily (app/api/cron/expirations): closes orders left unpaid for
+// UNPAID_ORDER_DAYS, so My orders doesn't fill up with checkouts nobody
+// finished. Skips any order with a payment started in the last day, in case
+// the buyer is paying right now. Returns how many were closed.
+export async function expireUnpaidOrders(): Promise<number> {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - UNPAID_ORDER_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const recent = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const staleResult = await db
+    .from("orders")
+    .select("id, user_id, item")
+    .eq("status", "Awaiting payment")
+    .neq("payment_status", "paid")
+    .lte("created_at", cutoff)
+    .limit(200);
+  const stale = assertNoError(staleResult, "listing unpaid orders") as Row[];
+
+  let closed = 0;
+  for (const row of stale) {
+    const pendingResult = await db
+      .from("payments")
+      .select("id")
+      .eq("order_id", row.id as string)
+      .eq("status", "pending")
+      .gte("created_at", recent)
+      .limit(1)
+      .maybeSingle();
+    if (assertNoError(pendingResult, "checking for a payment in progress")) continue;
+    const order = await cancelUnpaidOrder(row.id as string, "expired");
+    if (!order) continue;
+    closed++;
+    await notifyBestEffort({
+      userId: order.userId,
+      type: "payment",
+      title: "Unpaid order closed",
+      body: `Your order for "${order.item}" was closed because it wasn't paid within ${UNPAID_ORDER_DAYS} days. You can order it again any time.`,
+    });
+  }
+  return closed;
 }
 
 // Shared by both ways an order gets created (direct purchase and accepting
@@ -1162,6 +1459,87 @@ export async function getOrder(id: string): Promise<Order | null> {
   const result = await db.from("orders").select("*").eq("id", id).maybeSingle();
   const row = assertNoError(result, "loading order") as Row | null;
   return row ? rowToOrder(row) : null;
+}
+
+// The buyer's delivery choice at checkout: delivered to an address (adding
+// the seller's delivery fee to the price) or picked up from the seller.
+// Only the buyer, and only while the order is unpaid. Once they've started
+// paying (deliveryLocked) the method and price are fixed and only the
+// address can still be corrected. The address is also saved to the buyer's
+// account so their next checkout is already filled in.
+export async function setOrderDelivery(
+  orderId: string,
+  userId: string,
+  input: { method?: unknown; address?: unknown }
+): Promise<Order | null> {
+  const order = await getOrder(orderId);
+  if (!order || order.userId !== userId) return null;
+  if (order.paymentStatus === "paid") {
+    throw new ValidationError("This order is already paid. Message the seller if the delivery details need to change.");
+  }
+
+  const method = input.method;
+  if (method !== "delivery" && method !== "pickup") {
+    throw new ValidationError("Choose delivery or pickup.");
+  }
+  const choices = deliveryChoices(order.deliveryOptions);
+  if (method === "delivery" && !choices.delivery) throw new ValidationError("This seller only offers pickup for this order.");
+  if (method === "pickup" && !choices.pickup) throw new ValidationError("This seller only offers delivery for this order.");
+  if (order.deliveryLocked && method !== order.deliveryMethod) {
+    throw new ValidationError(
+      "You've already started paying with " + (order.deliveryMethod === "pickup" ? "pickup" : "delivery") +
+        ", so that can't change now. You can still update the address."
+    );
+  }
+
+  const address = method === "delivery" ? normalizeAddress(input.address) : null;
+  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, order.deliveryFeeQuote);
+
+  const db = getDb();
+  let query = db
+    .from("orders")
+    .update({
+      item_price: order.itemPrice,
+      delivery_method: method,
+      delivery_fee: deliveryFee,
+      price,
+      delivery_address: address,
+    })
+    .eq("id", orderId)
+    .neq("payment_status", "paid")
+    // Only if nothing moved underneath us: the same price we read, and (for
+    // an order not yet locked) still not locked. A checkout starting at the
+    // same moment either locks first (and this matches no row) or after (and
+    // locks this new price). Never a payment at one price for another.
+    .eq("price", order.price);
+  if (!order.deliveryLocked) query = query.eq("delivery_locked", false);
+  const result = await query.select().maybeSingle();
+  const row = assertNoError(result, "saving delivery details") as Row | null;
+  if (!row) throw new ValidationError("This order just changed. Refresh and try again.");
+
+  if (address) {
+    const saved = await db.from("users").update({ saved_delivery_address: address }).eq("id", userId);
+    // Only a convenience for next time: never fail the checkout over it.
+    if (saved.error) console.error("[delivery] couldn't save the buyer's address", saved.error.message);
+  }
+  return rowToOrder(row);
+}
+
+// Fixes the delivery method and price the moment checkout starts (see
+// setOrderDelivery). Conditional on the price the caller is about to charge,
+// so it only succeeds if that's still the order's price. Returns false if
+// the order changed, or has no delivery method chosen yet.
+export async function lockOrderDelivery(orderId: string, price: number): Promise<boolean> {
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ delivery_locked: true })
+    .eq("id", orderId)
+    .eq("price", price)
+    .not("delivery_method", "is", null)
+    .select("id")
+    .maybeSingle();
+  return Boolean(assertNoError(result, "locking delivery choice"));
 }
 
 // Advances an order to the next fulfillment status. Callers pass the target
@@ -2052,6 +2430,8 @@ function rowToOffer(row: Row, stats: SellerStats): Offer {
     condition: row.condition as string,
     warranty: row.warranty as string,
     note: (row.note as string | null) ?? null,
+    deliveryOption: (row.delivery_option as DeliveryOptions | null | undefined) ?? null,
+    deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     accepted: Boolean(row.accepted),
     createdAt: row.created_at as string,
     verified: stats.verified,
@@ -2395,7 +2775,15 @@ export async function addSellerOfferToRequest(
   // See sellerId on createProduct — same dual-write, looked up by the caller
   // via getSellerIdForUser.
   sellerId: string | null,
-  input: { price: number; delivery: string; eta: string; warranty: string; note?: string | null }
+  input: {
+    price: number;
+    delivery: string;
+    eta: string;
+    warranty: string;
+    note?: string | null;
+    deliveryOption?: DeliveryOptions | null;
+    deliveryFee?: number;
+  }
 ): Promise<Offer | null> {
   const db = getDb();
   const requestResult = await db.from("requests").select("*").eq("id", requestId).maybeSingle();
@@ -2427,6 +2815,8 @@ export async function addSellerOfferToRequest(
       condition: (request.condition as string) || "New",
       warranty: input.warranty.trim(),
       note: input.note?.trim() || null,
+      delivery_option: input.deliveryOption ?? null,
+      delivery_fee: input.deliveryOption === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFee ?? 0)),
     })
     .select()
     .single();
@@ -2511,6 +2901,8 @@ export async function acceptOffer(
     status: "Awaiting payment",
     requestId,
     userId,
+    deliveryOptions: (offer.delivery_option as DeliveryOptions | null | undefined) ?? null,
+    deliveryFeeQuote: (offer.delivery_fee as number | null | undefined) ?? 0,
   });
 
   // Before this, a winning seller only ever found out indirectly, later,
@@ -2604,6 +2996,8 @@ export type PublicUser = {
   name: string;
   role: string;
   businessName: string | null;
+  // Their profile photo, so the other person in a chat sees who they're talking to.
+  avatarUrl: string | null;
 };
 
 export type Conversation = {
@@ -2629,6 +3023,7 @@ function rowToPublicUser(row: Row): PublicUser {
     name: row.name as string,
     role: row.role as string,
     businessName: (row.business_name as string | null) ?? null,
+    avatarUrl: (row.avatar_url as string | null) ?? null,
   };
 }
 
@@ -2722,17 +3117,27 @@ export async function getConversation(
 
 export async function listConversations(userId: string): Promise<Conversation[]> {
   const db = getDb();
-  const result = await db
-    .from("conversations")
-    .select("*")
-    // Just an initial fetch order, not the list's final order — see the
-    // real sort by lastMessageAt below. Ordering by the THREAD's own
-    // created_at here would otherwise mean an old conversation that just
-    // got a brand-new reply never moves, while an idle one created more
-    // recently sits above it — the classic "messages list looks frozen"
-    // bug.
-    .order("created_at", { ascending: false });
-  const rows = assertNoError(result, "listing conversations") as Row[];
+  // ONLY the conversations this user is part of, as buyer or as seller.
+  // This query used to have no filter at all, so every account's Messages
+  // list showed every conversation on FindIt (the other person's name and
+  // the last message), including a brand-new user's. The service-role key
+  // bypasses RLS, so this filter is the real privacy boundary. Two plain
+  // .eq() queries instead of one .or("buyer_id.eq.…,seller_id.eq.…") string,
+  // so a user id can never be read as part of a filter expression.
+  if (!userId) return [];
+  const [asBuyer, asSeller] = await Promise.all([
+    db.from("conversations").select("*").eq("buyer_id", userId),
+    db.from("conversations").select("*").eq("seller_id", userId),
+  ]);
+  const byId = new Map<string, Row>();
+  for (const row of [
+    ...(assertNoError(asBuyer, "listing conversations") as Row[]),
+    ...(assertNoError(asSeller, "listing conversations") as Row[]),
+  ]) {
+    byId.set(row.id as string, row);
+  }
+  // Belt and braces: never return a conversation this user isn't in.
+  const rows = [...byId.values()].filter((row) => row.buyer_id === userId || row.seller_id === userId);
 
   const conversations = await Promise.all(
     rows.map(async (row) => {

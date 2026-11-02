@@ -5,6 +5,9 @@ import { motion } from "motion/react";
 import { CreditCard, ShieldCheck, CheckCircle2, Gift } from "lucide-react";
 import { STEPS, naira } from "./data";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
+import { deliveryChoices } from "@/lib/deliveryShared";
+import DeliveryChoice, { startingAddress, missingAddressField } from "./DeliveryChoice";
+import DeliveryDetails from "./DeliveryDetails";
 
 // A touch bouncier than the shared `press` — scale only, no rotate/tilt.
 // This screen handles real money, so it keeps the playful-elsewhere tilt
@@ -16,17 +19,34 @@ const bouncyPress = { whileTap: { scale: 0.95 }, transition: SPRING_BOUNCY };
 // Paystack charge, confirmed by app/api/payments/paystack/webhook. Nothing
 // here marks the order paid on its own; the button only ever starts a real
 // checkout or reports honestly that payments aren't configured yet.
-export default function Checkout({ order, product, qty, onPay, availableCredit = 0, showToast, go }) {
+//
+// Before paying, the buyer chooses delivery (to an address, adding the
+// seller's delivery fee) or pickup — see DeliveryChoice. product and qty are
+// only known when checkout opens straight from "Buy now"; from My orders or
+// an accepted offer it works from the order alone.
+export default function Checkout({ order, product, qty, user, onPay, availableCredit = 0, showToast, go }) {
   const [paying, setPaying] = useState(false);
   const [notConfigured, setNotConfigured] = useState(false);
-  const total = product.price * qty;
   const alreadyPaid = order?.paymentStatus === "paid";
   const activeIdx = alreadyPaid ? 1 : 0;
+  const itemName = product?.name ?? order.item;
+  const sellerName = order.seller ?? product?.seller;
+
+  // An order from before delivery choices existed has no itemPrice of its
+  // own; its price is the item.
+  const itemTotal = order.itemPrice ?? (product ? product.price * qty : order.price);
+  const choices = deliveryChoices(order.deliveryOptions);
+  const [method, setMethod] = useState(
+    order.deliveryMethod ?? (choices.delivery && !choices.pickup ? "delivery" : !choices.delivery ? "pickup" : null)
+  );
+  const [address, setAddress] = useState(() => startingAddress(order, user));
+  const deliveryFee = alreadyPaid ? order.deliveryFee || 0 : method === "delivery" ? order.deliveryFeeQuote || 0 : 0;
+  const total = alreadyPaid ? order.price : itemTotal + deliveryFee;
 
   // Pre-selected whenever there's credit to spend — the server always caps
   // this at the order's own price (see the pay route), this is just intent.
   const [useCredit, setUseCredit] = useState(availableCredit > 0);
-  const creditToApply = useCredit ? Math.min(availableCredit, total) : 0;
+  const creditToApply = alreadyPaid ? order.creditApplied || 0 : useCredit ? Math.min(availableCredit, total) : 0;
   const payable = total - creditToApply;
 
   // The signature moment plays once — the first time this screen actually
@@ -47,9 +67,20 @@ export default function Checkout({ order, product, qty, onPay, availableCredit =
 
   const pay = async () => {
     if (!order) return;
+    if (!method) {
+      showToast?.("Choose delivery or pickup first.", "error");
+      return;
+    }
+    if (method === "delivery") {
+      const missing = missingAddressField(address);
+      if (missing) {
+        showToast?.(missing, "error");
+        return;
+      }
+    }
     setPaying(true);
     try {
-      const result = await onPay(order.id, useCredit);
+      const result = await onPay(order.id, useCredit, { method, address: method === "delivery" ? address : null });
       if (result.configured === false) {
         setNotConfigured(true);
         showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
@@ -148,17 +179,49 @@ export default function Checkout({ order, product, qty, onPay, availableCredit =
         transition={{ duration: DURATION.base, ease: EASE, delay: justConfirmed ? 0.6 : 0 }}
         className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-5 shadow-sm shadow-[#4C1D95]/5"
       >
-        <p className="text-[12px] text-[#6B6483] mb-1">{product.name} · Qty {qty}</p>
-        <p className="text-[15px] font-semibold text-[#1E1B4B] mb-1">{product.seller}</p>
-        {creditToApply > 0 ? (
-          <div className="flex items-baseline gap-2">
-            <p className="text-[13px] text-[#8A8372] line-through">{naira(total)}</p>
-            <p className="text-[18px] font-bold text-[#7C3AED]">{naira(payable)}</p>
+        <p className="text-[12px] text-[#6B6483] mb-1">{itemName}{qty ? ` · Qty ${qty}` : ""}</p>
+        <p className="text-[15px] font-semibold text-[#1E1B4B] mb-2.5">{sellerName}</p>
+        {/* What the buyer pays, line by line, so a delivery fee is never a surprise. */}
+        <div className="space-y-1 text-[12.5px]">
+          <div className="flex justify-between text-[#514B67]">
+            <span>Item{qty > 1 ? `s (${qty})` : ""}</span>
+            <span>{naira(itemTotal)}</span>
           </div>
-        ) : (
-          <p className="text-[18px] font-bold text-[#7C3AED]">{naira(total)}</p>
-        )}
+          <div className="flex justify-between text-[#514B67]">
+            <span>Delivery</span>
+            <span>
+              {method === "pickup" || (alreadyPaid && order.deliveryMethod === "pickup")
+                ? "Pickup, free"
+                : method === "delivery" || (alreadyPaid && order.deliveryMethod === "delivery")
+                  ? deliveryFee > 0 ? naira(deliveryFee) : "Free"
+                  : "Choose below"}
+            </span>
+          </div>
+          {creditToApply > 0 && (
+            <div className="flex justify-between text-[#15803D]">
+              <span>FindIt credit</span>
+              <span>−{naira(creditToApply)}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-baseline border-t border-[#ECE9F7] pt-2 mt-1.5">
+            <span className="text-[13px] font-semibold text-[#1E1B4B]">{alreadyPaid ? "Paid" : "Total"}</span>
+            <span className="text-[18px] font-bold text-[#7C3AED]">{naira(payable)}</span>
+          </div>
+        </div>
       </motion.div>
+
+      {alreadyPaid && <DeliveryDetails order={order} showToast={showToast} />}
+
+      {!alreadyPaid && !notConfigured && (
+        <DeliveryChoice
+          order={order}
+          method={method}
+          setMethod={setMethod}
+          address={address}
+          setAddress={setAddress}
+          pickupFrom={product?.location}
+        />
+      )}
 
       {!alreadyPaid && !notConfigured && (
         <>
@@ -191,7 +254,7 @@ export default function Checkout({ order, product, qty, onPay, availableCredit =
             className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl mb-6 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            {paying ? "Starting checkout…" : payable <= 0 ? "Pay with credit" : `Pay ${naira(payable)}`}
+            {paying ? "Starting checkout…" : !method ? "Choose delivery or pickup" : payable <= 0 ? "Pay with credit" : `Pay ${naira(payable)}`}
           </motion.button>
         </>
       )}
@@ -199,7 +262,7 @@ export default function Checkout({ order, product, qty, onPay, availableCredit =
       {notConfigured && (
         <div className="bg-[#FDF6EC] border border-[#F5D9A8] rounded-[20px] p-4 mb-6">
           <p className="text-[12px] text-[#514B67]">
-            Online payment isn't set up on FindIt yet. Message {product.seller} directly to arrange payment — your order is saved as "Awaiting payment" under My orders either way.
+            Online payment isn't set up on FindIt yet. Message {sellerName} directly to arrange payment — your order is saved as "Awaiting payment" under My orders either way.
           </p>
         </div>
       )}

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { notifyExpiredBoosts } from "@/lib/boosts";
 import { notifyExpiredAdCampaigns } from "@/lib/adCampaigns";
 import { sweepLapsedSubscriptions } from "@/lib/subscriptions";
-import { autoReleaseStaleDeliveries } from "@/lib/repo";
+import { autoReleaseStaleDeliveries, expireUnpaidOrders } from "@/lib/repo";
 import { initiateSellerPayout } from "@/lib/payments";
 
 // Forced dynamic so Next never tries to statically prerender this at build
@@ -35,11 +35,12 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const [boostsNotified, adCampaignsNotified, subscriptionsResolved, releasedOrders] = await Promise.all([
+  const [boostsNotified, adCampaignsNotified, subscriptionsResolved, releasedOrders, unpaidOrdersClosed] = await Promise.all([
     notifyExpiredBoosts(),
     notifyExpiredAdCampaigns(),
     sweepLapsedSubscriptions(),
     autoReleaseStaleDeliveries(),
+    expireUnpaidOrders(),
   ]);
 
   // Payout initiation stays separate from the release itself — same
@@ -62,5 +63,6 @@ export async function GET(req: NextRequest) {
     adCampaignsNotified,
     subscriptionsResolved,
     autoReleasedOrders: releasedOrders.map((o) => o.id),
+    unpaidOrdersClosed,
   });
 }

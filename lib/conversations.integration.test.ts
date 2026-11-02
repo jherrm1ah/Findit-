@@ -105,6 +105,63 @@ describe("listConversations — ordered by most recent activity, not thread age"
   });
 });
 
+describe("listConversations — only your own conversations (privacy)", () => {
+  function threeUsers() {
+    fakeDb.reset({
+      sellers: [seller({ id: "seller_1", user_id: "user_seller_1" })],
+      users: [
+        user({ id: "buyer_1", role: "buyer", business_name: null, name: "Ada" }),
+        user({ id: "buyer_2", role: "buyer", business_name: null, name: "Tunde" }),
+        user({ id: "user_seller_1" }),
+        user({ id: "newcomer", role: "buyer", business_name: null, name: "New person" }),
+      ],
+      conversations: [
+        { id: "conv_ada", buyer_id: "buyer_1", seller_id: "user_seller_1", created_at: "2024-01-01T00:00:00.000Z" },
+        { id: "conv_tunde", buyer_id: "buyer_2", seller_id: "user_seller_1", created_at: "2024-02-01T00:00:00.000Z" },
+      ],
+      messages: [
+        { id: "m1", conversation_id: "conv_ada", sender_id: "buyer_1", body: "Is the phone still available?", created_at: "2024-01-02T00:00:00.000Z", read: false },
+        { id: "m2", conversation_id: "conv_tunde", sender_id: "buyer_2", body: "My address is 12 Admiralty Way", created_at: "2024-02-02T00:00:00.000Z", read: false },
+      ],
+    });
+  }
+
+  it("a brand-new user sees no conversations at all", async () => {
+    threeUsers();
+    expect(await listConversations("newcomer")).toEqual([]);
+  });
+
+  it("a buyer sees only their own conversation, never another buyer's", async () => {
+    threeUsers();
+    const result = await listConversations("buyer_1");
+    expect(result.map((c) => c.id)).toEqual(["conv_ada"]);
+    expect(JSON.stringify(result)).not.toContain("Admiralty");
+  });
+
+  it("a seller sees every conversation they're part of", async () => {
+    threeUsers();
+    const result = await listConversations("user_seller_1");
+    expect(result.map((c) => c.id).sort()).toEqual(["conv_ada", "conv_tunde"]);
+  });
+
+  it("shows the other person's profile photo in the list", async () => {
+    threeUsers();
+    fakeDb.reset({
+      ...{ sellers: [seller({ id: "seller_1", user_id: "user_seller_1" })] },
+      users: [user({ id: "buyer_1", role: "buyer", business_name: null }), user({ id: "user_seller_1", avatar_url: "https://x.supabase.co/seller.jpg" })],
+      conversations: [{ id: "conv_ada", buyer_id: "buyer_1", seller_id: "user_seller_1", created_at: "2024-01-01T00:00:00.000Z" }],
+      messages: [],
+    });
+    const [c] = await listConversations("buyer_1");
+    expect(c.otherParty.avatarUrl).toBe("https://x.supabase.co/seller.jpg");
+  });
+
+  it("no user id, no conversations", async () => {
+    threeUsers();
+    expect(await listConversations("")).toEqual([]);
+  });
+});
+
 describe("getOrCreateConversation — reaches the right seller via sellerId", () => {
   it("starts a real conversation with the seller resolved via id, not name", async () => {
     fakeDb.reset({

@@ -73,6 +73,9 @@ create table if not exists users (
   suspended boolean not null default false,
   suspended_reason text,
   suspended_at timestamptz,
+  -- The buyer's last delivery address (migration 043), to fill in their next
+  -- checkout. Only ever read back to this account.
+  saved_delivery_address jsonb,
   created_at timestamptz not null default now()
 );
 
@@ -316,6 +319,9 @@ create table if not exists products (
   -- about this specific item).
   location text,
   delivery_option text check (delivery_option in ('Delivery', 'Pickup', 'Both')),
+  -- What delivery costs the buyer, added to the order only if they choose
+  -- delivery at checkout (migration 043). 0 = free delivery.
+  delivery_fee integer not null default 0 constraint products_delivery_fee_nonneg check (delivery_fee >= 0),
   color text,
   variation text,
   -- ---- Moderation (migration 027) ----
@@ -453,6 +459,12 @@ create table if not exists offers (
   condition text not null,
   warranty text not null,
   note text,
+  -- Structured delivery terms (migration 043): what the buyer chooses from
+  -- at checkout. delivery above stays as the written-out version. Null
+  -- option = an older offer: delivery or pickup, no fee.
+  delivery_option text constraint offers_delivery_option_valid
+    check (delivery_option is null or delivery_option in ('Delivery', 'Pickup', 'Both')),
+  delivery_fee integer not null default 0 constraint offers_delivery_fee_nonneg check (delivery_fee >= 0),
   accepted boolean not null default false,
   created_at timestamptz not null default now()
 );
@@ -517,6 +529,31 @@ create table if not exists orders (
   -- discount taken out of the seller's payout.
   credit_applied integer not null default 0,
   constraint orders_credit_applied_nonneg check (credit_applied >= 0),
+  -- ---- Delivery at checkout (migration 043, see lib/delivery.ts) ----
+  -- price is what the buyer pays: item_price + delivery_fee. The platform
+  -- fee is charged on the item only; the seller gets all of delivery_fee.
+  item_price integer,
+  delivery_options text,                              -- choices copied from the listing/offer
+  delivery_fee_quote integer not null default 0,      -- the fee IF delivered
+  delivery_method text,                               -- 'delivery' | 'pickup', null until chosen
+  delivery_fee integer not null default 0,            -- the fee included in price
+  delivery_address jsonb,                             -- shown to the seller only once paid
+  -- Set when the buyer starts paying: method and price can't change after.
+  delivery_locked boolean not null default false,
+  constraint orders_delivery_method_valid
+    check (delivery_method is null or delivery_method in ('delivery', 'pickup')),
+  constraint orders_delivery_fee_nonneg check (delivery_fee >= 0 and delivery_fee_quote >= 0),
+  constraint orders_price_includes_delivery
+    check (item_price is null or price = item_price + delivery_fee),
+  -- ---- Migration 044 ----
+  -- The products in the order, [{ productId, name, qty, unitPrice }]: a cart
+  -- is one order per seller. Paying takes each line's qty off stock.
+  lines jsonb not null default '[]'::jsonb,
+  -- An unpaid order cancelled by the buyer, or closed after 7 days unpaid
+  -- (status 'Cancelled'). A payment that completes later reopens it.
+  cancelled_at timestamptz,
+  cancel_reason text constraint orders_cancel_reason_valid
+    check (cancel_reason is null or cancel_reason in ('buyer', 'expired')),
   -- ---- Money invariants (migration 021) ----
   -- Already enforced in application code (lib/payments.ts) before these
   -- existed — these are the backstop, not a replacement for those checks.
@@ -554,6 +591,8 @@ create index if not exists orders_escrow_status_idx on orders(escrow_status)
   where escrow_status = 'disputed';
 create index if not exists orders_seller_id_idx on orders(seller_id);
 create index if not exists orders_request_id_idx on orders(request_id);
+create index if not exists orders_unpaid_created_idx on orders(created_at)
+  where payment_status <> 'paid' and status = 'Awaiting payment';
 
 -- ---------------------------------------------------------------------------
 -- reviews (migration 025) — a real, listable, repliable form of a review.
