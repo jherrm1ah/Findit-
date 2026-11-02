@@ -13,6 +13,7 @@ export type SetupStep = {
 };
 
 export function setupSteps({
+  hasDefaultShippingProfile = false,
   user,
   storeBranding,
   verification,
@@ -26,6 +27,8 @@ export function setupSteps({
   myListings?: unknown[];
   payoutAccount?: { hasAccount?: boolean } | null;
   myOrders?: { paymentStatus?: string; status?: string }[];
+  // A default shipping profile prices every listing without its own pricing.
+  hasDefaultShippingProfile?: boolean;
 }): SetupStep[] {
   const verificationStatus = verification?.status ?? "approved";
   return [
@@ -63,10 +66,11 @@ export function setupSteps({
         "Choose free shipping (delivery included in your price), a fixed fee, or fees by state for each listing, so buyers see the real cost.",
       done:
         (myListings?.length ?? 0) > 0 &&
-        (myListings ?? []).every((p) => {
-          const l = p as { deliveryOption?: string | null; deliveryPricing?: string | null };
-          return l.deliveryOption === "Pickup" || Boolean(l.deliveryPricing);
-        }),
+        (hasDefaultShippingProfile ||
+          (myListings ?? []).every((p) => {
+            const l = p as { deliveryOption?: string | null; deliveryPricing?: string | null; shippingProfileId?: string | null };
+            return l.deliveryOption === "Pickup" || Boolean(l.deliveryPricing) || Boolean(l.shippingProfileId);
+          })),
       action: { label: "Set delivery pricing", tab: "listings" },
     },
     {

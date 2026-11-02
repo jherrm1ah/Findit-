@@ -114,6 +114,24 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
+  // Shipping & delivery (lib/shipping, docs/SHIPPING.md).
+  getShipping: () => request("/api/sellers/me/shipping"),
+  saveShippingProfile: (profile) =>
+    request("/api/sellers/me/shipping/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(profile),
+    }).then((d) => d.profile),
+  deleteShippingProfile: (id) => request(`/api/sellers/me/shipping/profiles/${id}`, { method: "DELETE" }),
+  saveShippingLocation: (location) =>
+    request("/api/sellers/me/shipping/locations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(location),
+    }).then((d) => d.location),
+  deleteShippingLocation: (id) => request(`/api/sellers/me/shipping/locations/${id}`, { method: "DELETE" }),
+  getShippingOptions: (orderId, state, area) =>
+    request(`/api/orders/${orderId}/shipping-options?state=${encodeURIComponent(state || "")}&area=${encodeURIComponent(area || "")}`),
   // A whole cart at once: one order per seller (see lib/repo.ts#createOrdersFromCart).
   createOrdersFromCart: (items) =>
     request("/api/orders", {
@@ -142,11 +160,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
-  updateOrderStatus: (orderId, status) =>
+  // tracking (optional, when dispatching): { carrier, trackingNumber, trackingUrl }
+  updateOrderStatus: (orderId, status, tracking) =>
     request(`/api/orders/${orderId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(tracking ? { tracking } : {}) }),
     }).then((d) => d.order),
   // Buyer-only: this is what marks an order delivered and releases the payment.
   confirmDelivery: (orderId) =>

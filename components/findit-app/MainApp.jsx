@@ -719,10 +719,12 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
-  const handleAdvanceOrderStatus = async (orderId, status) => {
+  const handleAdvanceOrderStatus = async (orderId, status, tracking) => {
     try {
-      const order = await api.updateOrderStatus(orderId, status);
+      const order = await api.updateOrderStatus(orderId, status, tracking);
       setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      // Reload so the new tracking shows on the card.
+      api.getOrders().then(setOrders).catch(() => {});
       showToast(`Order marked "${status}".`);
     } catch (err) {
       showToast(err.message || "Couldn't update that order — try again.", "error");

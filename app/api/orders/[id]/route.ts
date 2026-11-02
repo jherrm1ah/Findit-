@@ -13,7 +13,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Log in to manage this order." }, { status: 401 });
   }
 
-  let body: { rating?: number; comment?: string | null; status?: string };
+  let body: { rating?: number; comment?: string | null; status?: string; tracking?: { carrier?: string; trackingNumber?: string; trackingUrl?: string } };
   try {
     body = await req.json();
   } catch {
@@ -43,7 +43,8 @@ export async function PATCH(
       // "Delivered" is the buyer's word, not the seller's — it goes through
       // POST /api/orders/[id]/confirm, which is what releases the payment.
       assertSellerCanSetStatus(body.status);
-      const order = await updateOrderStatus(params.id, body.status);
+      // Optional carrier and tracking reference when sending it out.
+      const order = await updateOrderStatus(params.id, body.status, body.tracking ?? null);
       return NextResponse.json({ order });
     } catch (err) {
       return errorResponse(err, "Couldn't update that order.");

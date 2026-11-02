@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { CreditCard, ShieldCheck, CheckCircle2, Gift } from "lucide-react";
 import { STEPS, naira } from "./data";
 import { DURATION, EASE, SPRING_BOUNCY } from "./motion";
-import { deliveryChoices, feeForState } from "@/lib/deliveryShared";
+import { deliveryChoices } from "@/lib/deliveryShared";
+import { api } from "./api";
 import DeliveryChoice, { startingAddress, missingAddressField } from "./DeliveryChoice";
 import DeliveryDetails from "./DeliveryDetails";
 
@@ -40,10 +41,41 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
     order.deliveryMethod ?? (choices.delivery && !choices.pickup ? "delivery" : !choices.delivery ? "pickup" : null)
   );
   const [address, setAddress] = useState(() => startingAddress(order, user));
-  // The fee to the state in the address form (one flat fee unless the seller
-  // charges differently for other states).
-  const deliveryFee = alreadyPaid ? order.deliveryFee || 0 : method === "delivery" ? feeForState(order, address.state) || 0 : 0;
-  const total = alreadyPaid ? order.price : itemTotal + deliveryFee;
+
+  // The seller's delivery options for this address, worked out by the
+  // server (lib/shipping) once a state is chosen; and their pickup locations.
+  // Nothing is priced without an address.
+  const [shipping, setShipping] = useState({ loading: false, quote: null, pickupLocations: [] });
+  const [optionId, setOptionId] = useState(order.shippingOption?.id ?? null);
+  const [pickupId, setPickupId] = useState(order.pickupLocation?.id ?? null);
+  const quoteState = method === "delivery" ? address.state : "";
+  const quoteArea = method === "delivery" ? address.area : "";
+  useEffect(() => {
+    if (alreadyPaid) return;
+    let live = true;
+    setShipping((s) => ({ ...s, loading: Boolean(quoteState) }));
+    const t = setTimeout(() => {
+      api
+        .getShippingOptions(order.id, quoteState, quoteArea)
+        .then((d) => {
+          if (!live) return;
+          setShipping({ loading: false, quote: d.quote, pickupLocations: d.pickupLocations || [] });
+          if (d.quote?.ok) setOptionId((cur) => (d.quote.options.some((o) => o.id === cur) ? cur : d.quote.options[0]?.id ?? null));
+          if ((d.pickupLocations || []).length === 1) setPickupId((cur) => cur ?? d.pickupLocations[0].id);
+        })
+        .catch(() => live && setShipping((s) => ({ ...s, loading: false })));
+    }, quoteState ? 350 : 0);
+    return () => {
+      live = false;
+      clearTimeout(t);
+    };
+  }, [order.id, quoteState, quoteArea, alreadyPaid]);
+  const chosenOption = shipping.quote?.ok ? shipping.quote.options.find((o) => o.id === optionId) ?? null : null;
+
+  // null = not known yet (no address, or still working it out).
+  const deliveryFee = alreadyPaid ? order.deliveryFee || 0 : method === "pickup" ? 0 : method === "delivery" ? chosenOption?.fee ?? null : 0;
+  const total = alreadyPaid ? order.price : itemTotal + (deliveryFee ?? 0);
+  const deliveryReady = method !== "delivery" || (deliveryFee != null && !shipping.loading);
 
   // Pre-selected whenever there's credit to spend — the server always caps
   // this at the order's own price (see the pay route), this is just intent.
@@ -79,10 +111,19 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
         showToast?.(missing, "error");
         return;
       }
+      if (!chosenOption) {
+        showToast?.(shipping.quote && !shipping.quote.ok ? shipping.quote.message : "Choose a delivery option.", "error");
+        return;
+      }
     }
     setPaying(true);
     try {
-      const result = await onPay(order.id, useCredit, { method, address: method === "delivery" ? address : null });
+      const result = await onPay(order.id, useCredit, {
+        method,
+        address: method === "delivery" ? address : null,
+        optionId: method === "delivery" ? chosenOption?.id : null,
+        pickupLocationId: method === "pickup" ? pickupId : null,
+      });
       if (result.configured === false) {
         setNotConfigured(true);
         showToast?.(result.message || "Payments aren't set up yet — contact the seller directly.", "error");
@@ -195,7 +236,13 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
               {method === "pickup" || (alreadyPaid && order.deliveryMethod === "pickup")
                 ? "Pickup, free"
                 : method === "delivery" || (alreadyPaid && order.deliveryMethod === "delivery")
-                  ? deliveryFee > 0 ? naira(deliveryFee) : order.deliveryFeeUnset ? "Not set by seller" : "Free"
+                  ? deliveryFee == null
+                    ? "Add your address"
+                    : deliveryFee > 0
+                      ? naira(deliveryFee)
+                      : chosenOption?.unset || (alreadyPaid && order.deliveryFeeUnset)
+                        ? "Not set by seller"
+                        : "Free"
                   : "Choose below"}
             </span>
           </div>
@@ -222,6 +269,11 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
           address={address}
           setAddress={setAddress}
           pickupFrom={product?.location}
+          shipping={shipping}
+          optionId={optionId}
+          setOptionId={setOptionId}
+          pickupId={pickupId}
+          setPickupId={setPickupId}
         />
       )}
 
@@ -251,12 +303,18 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
           </div>
           <motion.button
             onClick={pay}
-            disabled={paying}
+            disabled={paying || !deliveryReady}
             {...bouncyPress}
             className="w-full text-white text-[14px] font-semibold py-3.5 rounded-xl mb-6 disabled:opacity-60"
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            {paying ? "Starting checkout…" : !method ? "Choose delivery or pickup" : payable <= 0 ? "Pay with credit" : `Pay ${naira(payable)}`}
+            {paying
+              ? "Starting checkout…"
+              : !method
+                ? "Choose delivery or pickup"
+                : !deliveryReady
+                  ? shipping.loading ? "Working out delivery…" : "Add your address to see delivery"
+                  : payable <= 0 ? "Pay with credit" : `Pay ${naira(payable)}`}
           </motion.button>
         </>
       )}

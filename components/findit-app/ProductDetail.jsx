@@ -233,7 +233,9 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             {product.deliveryOption && (
               <Pill tone="stone">
                 <Truck size={11} /> {product.deliveryOption}
-                {productDeliveryText(product) ? ` · ${productDeliveryText(product)}` : ""}
+                {product.deliveryOption !== "Pickup" && (product.shippingSummary || productDeliveryText(product))
+                  ? ` · ${product.shippingSummary || productDeliveryText(product)}`
+                  : ""}
               </Pill>
             )}
             {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}
