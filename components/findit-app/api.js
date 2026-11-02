@@ -121,6 +121,13 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ items }),
     }).then((d) => d.orders),
+  // The seller can't fulfil a paid order: cancel it and refund the buyer.
+  sellerCancelOrder: (orderId, reason) =>
+    request(`/api/orders/${orderId}/seller-cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason }),
+    }),
   cancelOrder: (orderId) => request(`/api/orders/${orderId}/cancel`, { method: "POST" }).then((d) => d.order),
   // delivery: { method: "delivery" | "pickup", address } from checkout.
   payForOrder: (orderId, applyCredit, delivery) =>

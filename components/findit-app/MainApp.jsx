@@ -729,6 +729,21 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     }
   };
 
+  const handleSellerCancelOrder = async (orderId, reason) => {
+    try {
+      const { order, refunded } = await api.sellerCancelOrder(orderId, reason);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast(
+        refunded
+          ? "Order cancelled. The buyer is being refunded."
+          : "Order cancelled. FindIt will refund the buyer (the automatic refund didn't go through)."
+      );
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel that order — try again.", "error");
+      throw err;
+    }
+  };
+
   const handleUploadImage = async (file) => {
     try {
       return await api.uploadImage(file);
@@ -1775,6 +1790,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
               mySellerId={mySellerId}
               orders={orders}
               onAdvanceOrderStatus={handleAdvanceOrderStatus}
+              onSellerCancelOrder={handleSellerCancelOrder}
               products={products}
               onCreateProduct={handleCreateProduct}
               onUpdateProduct={handleUpdateProduct}

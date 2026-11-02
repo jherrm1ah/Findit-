@@ -8,6 +8,7 @@ type OrderLike = {
   price: number;
   createdAt: string;
   paymentStatus: string;
+  status?: string;
   deliveryAddress?: { fullName?: string; phone?: string } | null;
 };
 
@@ -29,7 +30,7 @@ export type Customer = {
 export function customersFromOrders(orders: OrderLike[]): Customer[] {
   const byBuyer = new Map<string, OrderLike[]>();
   for (const o of orders) {
-    if (o.paymentStatus !== "paid") continue;
+    if (o.paymentStatus !== "paid" || o.status === "Cancelled") continue;
     byBuyer.set(o.userId, [...(byBuyer.get(o.userId) ?? []), o]);
   }
   return [...byBuyer.entries()]

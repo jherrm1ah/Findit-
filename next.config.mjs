@@ -1,4 +1,4 @@
-import { withSentryConfig } from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs/config";
 
 // Content-Security-Policy tuned to what this app actually loads:
 // - Next.js App Router's own hydration payload is inlined as a <script>
@@ -115,5 +115,7 @@ const nextConfig = {
 // instead of logging upload-skipped noise on every build.
 export default withSentryConfig(nextConfig, {
   silent: true,
-  disableLogger: true,
+  // Strips Sentry's own debug logging from the bundle (replaces the
+  // deprecated disableLogger option).
+  webpack: { treeshake: { removeDebugLogging: true } },
 });
