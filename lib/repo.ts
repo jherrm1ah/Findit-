@@ -19,6 +19,7 @@ import { sellersToNotifyForNewRequest, type RequestNotifyCandidate } from "./req
 import { recordReview } from "./reviews";
 import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
 import { qualifyReferral } from "./referrals";
+import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -308,8 +309,10 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
 
   const sellersResult = await db
     .from("sellers")
-    .select("id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
+    .select("id, user_id, name, status, logo_url, banner_url, verification_status, public_state, public_city, public_area, created_at");
   const sellerRows = assertNoError(sellersResult, "loading sellers") as Row[];
+  // Each seller's own profile photo, shown wherever they have no store logo (see sellerPicture.ts).
+  const avatars = await avatarsByUserId(db, sellerRows.map((r) => r.user_id as string | null));
 
   const ordersResult = await db
     .from("orders")
@@ -353,7 +356,7 @@ async function getSellerStatsMap(): Promise<Map<string, SellerStats>> {
       ...base,
       proBadge: display?.proBadge ?? false,
       featured: display?.featuredListingAccess ?? false,
-      logoUrl: (row.logo_url as string | null) ?? null,
+      logoUrl: publicSellerPicture(row.logo_url as string | null, avatars.get(row.user_id as string)),
       bannerUrl: (row.banner_url as string | null) ?? null,
       verificationLevel: computeVerificationLevel({
         verificationStatus: row.verification_status as VerificationStatus,
@@ -2604,6 +2607,8 @@ export type PublicUser = {
   name: string;
   role: string;
   businessName: string | null;
+  // Their profile photo, so the other person in a chat sees who they're talking to.
+  avatarUrl: string | null;
 };
 
 export type Conversation = {
@@ -2629,6 +2634,7 @@ function rowToPublicUser(row: Row): PublicUser {
     name: row.name as string,
     role: row.role as string,
     businessName: (row.business_name as string | null) ?? null,
+    avatarUrl: (row.avatar_url as string | null) ?? null,
   };
 }
 

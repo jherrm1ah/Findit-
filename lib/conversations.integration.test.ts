@@ -144,6 +144,18 @@ describe("listConversations — only your own conversations (privacy)", () => {
     expect(result.map((c) => c.id).sort()).toEqual(["conv_ada", "conv_tunde"]);
   });
 
+  it("shows the other person's profile photo in the list", async () => {
+    threeUsers();
+    fakeDb.reset({
+      ...{ sellers: [seller({ id: "seller_1", user_id: "user_seller_1" })] },
+      users: [user({ id: "buyer_1", role: "buyer", business_name: null }), user({ id: "user_seller_1", avatar_url: "https://x.supabase.co/seller.jpg" })],
+      conversations: [{ id: "conv_ada", buyer_id: "buyer_1", seller_id: "user_seller_1", created_at: "2024-01-01T00:00:00.000Z" }],
+      messages: [],
+    });
+    const [c] = await listConversations("buyer_1");
+    expect(c.otherParty.avatarUrl).toBe("https://x.supabase.co/seller.jpg");
+  });
+
   it("no user id, no conversations", async () => {
     threeUsers();
     expect(await listConversations("")).toEqual([]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ShoppingBag, ShoppingCart, User, BadgeCheck, Star, Check,
@@ -174,8 +175,11 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
               none, so they fall back to the name and the server decides
               whether that name is unambiguous enough to resolve. */}
           <button onClick={() => onViewSeller(product.sellerId || product.seller)} className="flex items-center gap-2.5 text-left">
-            <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
-              <User size={17} className="text-white" />
+            {/* The seller's picture: their store logo, or else their profile photo (sellerPicture.ts). */}
+            <div className="relative w-10 h-10 rounded-full overflow-hidden flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
+              {product.sellerLogoUrl
+                ? <Image src={product.sellerLogoUrl} alt="" fill sizes="40px" className="object-cover" />
+                : <User size={17} className="text-white" />}
             </div>
             <div>
               <p className="text-[13px] font-semibold text-[#1E1B4B] flex items-center gap-1">
