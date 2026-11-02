@@ -10,6 +10,7 @@ type OrderLike = {
   paymentStatus: string;
   status?: string;
   deliveryAddress?: { fullName?: string; phone?: string } | null;
+  buyerName?: string | null;
 };
 
 export type Customer = {
@@ -39,7 +40,8 @@ export function customersFromOrders(orders: OrderLike[]): Customer[] {
       const withAddress = sorted.find((o) => o.deliveryAddress?.fullName);
       return {
         userId,
-        name: withAddress?.deliveryAddress?.fullName ?? null,
+        // Their delivery name, else their account name (pickup customers).
+        name: withAddress?.deliveryAddress?.fullName ?? sorted.find((o) => o.buyerName)?.buyerName ?? null,
         phone: withAddress?.deliveryAddress?.phone ?? null,
         orderCount: sorted.length,
         totalSpent: sorted.reduce((sum, o) => sum + o.price, 0),

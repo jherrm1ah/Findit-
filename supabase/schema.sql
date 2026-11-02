@@ -322,6 +322,12 @@ create table if not exists products (
   -- What delivery costs the buyer, added to the order only if they choose
   -- delivery at checkout (migration 043). 0 = free delivery.
   delivery_fee integer not null default 0 constraint products_delivery_fee_nonneg check (delivery_fee >= 0),
+  -- Migration 046: how delivery is priced. 'free' (included in the price),
+  -- 'fixed' (delivery_fee everywhere) or 'location' (delivery_rates per
+  -- state, delivery_fee for every other state). Null = not chosen yet.
+  delivery_pricing text constraint products_delivery_pricing_valid
+    check (delivery_pricing is null or delivery_pricing in ('free', 'fixed', 'location')),
+  delivery_rates jsonb,
   color text,
   variation text,
   -- ---- Moderation (migration 027) ----
@@ -545,6 +551,11 @@ create table if not exists orders (
   constraint orders_delivery_fee_nonneg check (delivery_fee >= 0 and delivery_fee_quote >= 0),
   constraint orders_price_includes_delivery
     check (item_price is null or price = item_price + delivery_fee),
+  -- Migration 046: per-state fees (delivery_fee_quote for any other state;
+  -- lib/deliveryShared.ts#feeForState), and whether the listing had no
+  -- delivery pricing chosen.
+  delivery_rates jsonb,
+  delivery_fee_unset boolean not null default false,
   -- ---- Migration 044 ----
   -- The products in the order, [{ productId, name, qty, unitPrice }]: a cart
   -- is one order per seller. Paying takes each line's qty off stock.
@@ -1352,3 +1363,18 @@ insert into categories (id, label, icon_key, sort_order) values
   ('plant', 'Plant & Agriculture', 'Leaf', 13),
   ('desk', 'Desk Setup', 'Monitor', 14)
 on conflict (id) do nothing;
+
+-- ---------------------------------------------------------------------------
+-- push_subscriptions (migration 045): one row per browser/phone where someone
+-- turned on alerts (lib/outsideAlerts.ts). Server-only, like everything here.
+-- ---------------------------------------------------------------------------
+create table if not exists push_subscriptions (
+  id text primary key,
+  user_id text not null references users(id) on delete cascade,
+  endpoint text not null unique,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_id_idx on push_subscriptions(user_id);
+alter table push_subscriptions enable row level security;

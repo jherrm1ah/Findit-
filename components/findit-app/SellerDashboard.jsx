@@ -3,15 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { CheckCircle2, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, Store, Copy, Check, LayoutTemplate, Megaphone } from "lucide-react";
+import { CheckCircle2, Truck, Send, LayoutDashboard, Package, ArrowRight, Plus, Pencil, Trash2, Image as ImageIcon, MapPin, Clock, MessageCircle, Crown, EyeOff, Palette, Lock, BarChart3, TrendingUp, ShieldCheck, ShieldAlert, Landmark, Link2 as LinkIcon, Star, X, Sparkles, Store, Copy, Check, LayoutTemplate, Megaphone } from "lucide-react";
 import { naira, SELLER_STEPS, GROUPS } from "./data";
 import { Pill, Field } from "./shared";
 import { api } from "./api";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
+import DeliveryPricingField, { pricingFormFrom, pricingFormValid, pricingPayload } from "./DeliveryPricingField";
 import { applyProPurchaseDiscount } from "@/lib/proPricing";
 import { DURATION, EASE, STAGGER_CONTAINER, SPRING_BOUNCY, press } from "./motion";
 import DeliveryDetails from "./DeliveryDetails";
 import SetupGuide, { setupSteps } from "./SetupGuide";
+import PushPrompt from "./PushPrompt";
 import SellerMenu, { SellerMenuBar, currentLabel } from "./SellerMenu";
 import SellerCustomers from "./SellerCustomers";
 import { isLowStock, isBoosted, customersFromOrders } from "@/lib/sellerCustomers";
@@ -167,7 +169,9 @@ const EMPTY_FORM = {
   qty: "1",
   location: "",
   deliveryOption: "Delivery",
+  deliveryPricing: "",
   deliveryFee: "",
+  deliveryRates: [],
   color: "",
   variation: "",
 };
@@ -213,7 +217,7 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
     }
   };
 
-  const valid = form.name.trim() && Number(form.price) > 0 && form.condition && form.deliveryOption;
+  const valid = form.name.trim() && Number(form.price) > 0 && form.condition && form.deliveryOption && pricingFormValid(form);
 
   return (
     <div className="bg-[#F5F2FC] rounded-xl p-3 mt-2 space-y-2.5">
@@ -331,34 +335,20 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage }) {
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
         />
       </Field>
-      <div className="grid grid-cols-2 gap-2">
-        <Field label="Delivery option">
-          <select
-            value={form.deliveryOption}
-            onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
-            className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-          >
-            {DELIVERY_OPTIONS.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-        </Field>
-        {/* Added to the buyer's total only when they choose delivery at
-            checkout. FindIt's fee is never taken from it. */}
-        {form.deliveryOption !== "Pickup" && (
-          <Field label="Delivery fee (₦)">
-            <input
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={form.deliveryFee}
-              onChange={(e) => setForm({ ...form, deliveryFee: e.target.value })}
-              placeholder="0 = free"
-              className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
-            />
-          </Field>
-        )}
-      </div>
+      <Field label="Delivery option">
+        <select
+          value={form.deliveryOption}
+          onChange={(e) => setForm({ ...form, deliveryOption: e.target.value })}
+          className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none"
+        >
+          {DELIVERY_OPTIONS.map((o) => (
+            <option key={o} value={o}>{o}</option>
+          ))}
+        </select>
+      </Field>
+      {/* What delivery costs the buyer: added to their total only when they
+          choose delivery at checkout, and FindIt's fee is never taken from it. */}
+      {form.deliveryOption !== "Pickup" && <DeliveryPricingField form={form} setForm={setForm} />}
       <p className="text-[10.5px] font-medium text-[#8A8372] uppercase tracking-wide pt-1">Optional</p>
       <div className="grid grid-cols-2 gap-2">
         <Field label="Color">
@@ -1567,7 +1557,7 @@ export default function SellerDashboard({
     qty: form.qty === "" ? undefined : Number(form.qty),
     location: form.location.trim() || null,
     deliveryOption: form.deliveryOption,
-    deliveryFee: form.deliveryOption === "Pickup" ? 0 : Number(form.deliveryFee || 0),
+    ...pricingPayload(form),
     color: form.color.trim() || null,
     variation: form.variation.trim() || null,
   });
@@ -1653,6 +1643,7 @@ export default function SellerDashboard({
 
       {activeTab === "overview" && (
       <>
+      <PushPrompt forSeller showToast={showToast} />
       <SetupGuide
         sellerKey={mySellerId ?? user.id}
         steps={setupSteps({ user, storeBranding, verification, myListings, payoutAccount, myOrders })}
@@ -1914,7 +1905,7 @@ export default function SellerDashboard({
                   qty: String(p.qty ?? 1),
                   location: p.location ?? "",
                   deliveryOption: p.deliveryOption ?? "Delivery",
-                  deliveryFee: p.deliveryFee ? String(p.deliveryFee) : "",
+                  ...pricingFormFrom(p),
                   color: p.color ?? "",
                   variation: p.variation ?? "",
                 }}
@@ -1942,6 +1933,11 @@ export default function SellerDashboard({
                       {p.moderationStatus === "removed" && (
                         <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#C22468] bg-[#E64980]/10 px-1.5 py-0.5 rounded-full shrink-0">
                           <X size={9} /> Rejected{p.moderationReason ? `: ${p.moderationReason}` : ""}
+                        </span>
+                      )}
+                      {p.deliveryOption !== "Pickup" && !p.deliveryPricing && (
+                        <span className="flex items-center gap-1 text-[9.5px] font-semibold text-[#B45309] bg-[#F59E0B]/12 px-1.5 py-0.5 rounded-full shrink-0">
+                          <Truck size={9} /> Set delivery pricing
                         </span>
                       )}
                       {p.boostedUntil && new Date(p.boostedUntil).getTime() > Date.now() && (
@@ -2078,6 +2074,7 @@ export default function SellerDashboard({
               <p className="text-[11px] text-[#6B6483] mb-3">
                 {o.id} · {naira(o.price)}
                 {o.deliveryFee > 0 ? ` (incl. ${naira(o.deliveryFee)} delivery)` : ""}
+                {o.buyerName ? ` · Buyer: ${o.buyerName}` : ""}
               </p>
               <DeliveryDetails order={o} forSeller showToast={showToast} />
               {/* The verified record for this sale, once it exists. Only

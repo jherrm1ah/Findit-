@@ -41,3 +41,63 @@ export function addressLines(a: DeliveryAddress | null | undefined): string[] {
   if (!a) return [];
   return [a.fullName, a.address, [a.area, a.state].filter(Boolean).join(", "), a.landmark ? `Landmark: ${a.landmark}` : "", a.phone].filter(Boolean);
 }
+
+// How a listing prices delivery (migration 046), like a shop's shipping
+// settings:
+// - "free": delivery is included in the price (no fee at checkout);
+// - "fixed": one fee everywhere (deliveryFee);
+// - "location": a fee per state (deliveryRates), and deliveryFee for every
+//   state not listed;
+// - null: an older listing whose seller hasn't chosen yet. It's charged
+//   nothing at checkout and shown as "ask the seller", never as "free".
+export type DeliveryPricing = "free" | "fixed" | "location";
+export const DELIVERY_PRICING: readonly DeliveryPricing[] = ["free", "fixed", "location"];
+export type DeliveryRates = Record<string, number>;
+
+// What an order (or listing) charges to deliver: deliveryFeeQuote for any
+// state not in deliveryRates.
+export type FeeQuote = { deliveryFeeQuote: number; deliveryRates?: DeliveryRates | null };
+
+export function hasStateFees(q: FeeQuote): boolean {
+  return Object.keys(q.deliveryRates ?? {}).length > 0;
+}
+
+// The delivery fee to this state. With no state chosen yet: the fee for
+// "every other state" (checkout lists the rates until an address is given).
+export function feeForState(q: FeeQuote, state?: string | null): number {
+  const rates = q.deliveryRates ?? {};
+  if (state && Object.prototype.hasOwnProperty.call(rates, state)) return rates[state];
+  return q.deliveryFeeQuote;
+}
+
+const nairaText = (n: number) => (n > 0 ? `₦${n.toLocaleString("en-NG")}` : "free");
+
+// "Lagos ₦2,500 · Ogun ₦4,000 · other states ₦6,000", or "₦2,500" / "free".
+export function feeSummary(q: FeeQuote): string {
+  const rates = Object.entries(q.deliveryRates ?? {}).sort((a, b) => a[1] - b[1]);
+  if (rates.length === 0) return nairaText(q.deliveryFeeQuote);
+  return [...rates.map(([state, fee]) => `${state} ${nairaText(fee)}`), `other states ${nairaText(q.deliveryFeeQuote)}`].join(" · ");
+}
+
+// The cheapest delivery a listing offers, for "Delivery from ₦2,500".
+export function lowestFee(q: FeeQuote): number {
+  return Math.min(q.deliveryFeeQuote, ...Object.values(q.deliveryRates ?? {}));
+}
+
+// How a listing's delivery reads to a buyer on the product page.
+export function productDeliveryText(p: {
+  deliveryOption?: string | null;
+  deliveryPricing?: DeliveryPricing | null;
+  deliveryFee?: number;
+  deliveryRates?: DeliveryRates | null;
+}): string | null {
+  if (p.deliveryOption === "Pickup") return null;
+  if (p.deliveryPricing === "free") return "Free delivery";
+  if (p.deliveryPricing === "fixed") return `${nairaText(p.deliveryFee ?? 0)} delivery`;
+  if (p.deliveryPricing === "location") {
+    const q = { deliveryFeeQuote: p.deliveryFee ?? 0, deliveryRates: p.deliveryRates };
+    const low = lowestFee(q);
+    return low > 0 ? `Delivery from ${nairaText(low)}` : "Delivery fee by location";
+  }
+  return "Delivery fee: ask the seller";
+}

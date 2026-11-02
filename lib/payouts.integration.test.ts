@@ -67,6 +67,9 @@ function seedOrder(overrides: Partial<Order> = {}): Order {
     lines: [],
     cancelledAt: null,
     cancelReason: null,
+    deliveryRates: null,
+    deliveryFeeUnset: false,
+    buyerName: null,
     ...overrides,
   };
 }

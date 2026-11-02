@@ -93,3 +93,55 @@ describe("computeFeeSplit with a delivery fee", () => {
     expect(feeAmount + payoutAmount).toBe(10999);
   });
 });
+
+import { feeForState, feeSummary, hasStateFees, productDeliveryText } from "./deliveryShared";
+import { normalizeDeliveryPricing } from "./delivery";
+
+describe("delivery fees by location", () => {
+  const q = { deliveryFeeQuote: 6000, deliveryRates: { Lagos: 2500, Ogun: 4000 } };
+  it("charge each listed state its own fee, and every other state the default", () => {
+    expect(feeForState(q, "Lagos")).toBe(2500);
+    expect(feeForState(q, "Ogun")).toBe(4000);
+    expect(feeForState(q, "Kano")).toBe(6000);
+    expect(feeForState(q, null)).toBe(6000);
+    expect(hasStateFees(q)).toBe(true);
+    expect(hasStateFees({ deliveryFeeQuote: 2000 })).toBe(false);
+  });
+  it("read clearly, cheapest first", () => {
+    expect(feeSummary(q)).toBe("Lagos ₦2,500 · Ogun ₦4,000 · other states ₦6,000");
+    expect(feeSummary({ deliveryFeeQuote: 0 })).toBe("free");
+  });
+});
+
+describe("how a listing's delivery reads to buyers", () => {
+  it("covers each pricing choice, and never calls an unset fee free", () => {
+    expect(productDeliveryText({ deliveryOption: "Both", deliveryPricing: "free" })).toBe("Free delivery");
+    expect(productDeliveryText({ deliveryOption: "Delivery", deliveryPricing: "fixed", deliveryFee: 2500 })).toBe("₦2,500 delivery");
+    expect(productDeliveryText({ deliveryOption: "Delivery", deliveryPricing: "location", deliveryFee: 6000, deliveryRates: { Lagos: 2500 } })).toBe("Delivery from ₦2,500");
+    expect(productDeliveryText({ deliveryOption: "Delivery", deliveryPricing: null, deliveryFee: 0 })).toBe("Delivery fee: ask the seller");
+    expect(productDeliveryText({ deliveryOption: "Pickup", deliveryPricing: null })).toBeNull();
+  });
+});
+
+describe("normalizeDeliveryPricing", () => {
+  const base = { deliveryOption: "Delivery", deliveryFee: "", deliveryRates: null };
+  it("free shipping stores no fee", () => {
+    expect(normalizeDeliveryPricing({ ...base, deliveryPricing: "free", deliveryFee: 3000 })).toEqual({ deliveryPricing: "free", deliveryFee: 0, deliveryRates: null });
+  });
+  it("a fixed fee must be more than ₦0 (that's free shipping)", () => {
+    expect(normalizeDeliveryPricing({ ...base, deliveryPricing: "fixed", deliveryFee: "2,500" })).toEqual({ deliveryPricing: "fixed", deliveryFee: 2500, deliveryRates: null });
+    expect(() => normalizeDeliveryPricing({ ...base, deliveryPricing: "fixed", deliveryFee: 0 })).toThrow(/Free shipping/);
+  });
+  it("by location needs at least one real state", () => {
+    expect(normalizeDeliveryPricing({ ...base, deliveryPricing: "location", deliveryFee: 6000, deliveryRates: { Lagos: "2500" } })).toEqual({
+      deliveryPricing: "location", deliveryFee: 6000, deliveryRates: { Lagos: 2500 },
+    });
+    expect(() => normalizeDeliveryPricing({ ...base, deliveryPricing: "location", deliveryFee: 6000, deliveryRates: {} })).toThrow(/at least one state/);
+    expect(() => normalizeDeliveryPricing({ ...base, deliveryPricing: "location", deliveryFee: 6000, deliveryRates: { Atlantis: 1 } })).toThrow(/Nigerian state/);
+  });
+  it("pickup-only has no delivery pricing, and an older caller with no choice is 'not set' unless it sent a fee", () => {
+    expect(normalizeDeliveryPricing({ ...base, deliveryOption: "Pickup", deliveryPricing: "fixed", deliveryFee: 9 }).deliveryPricing).toBeNull();
+    expect(normalizeDeliveryPricing({ ...base, deliveryPricing: null }).deliveryPricing).toBeNull();
+    expect(normalizeDeliveryPricing({ ...base, deliveryPricing: null, deliveryFee: 1500 })).toMatchObject({ deliveryPricing: "fixed", deliveryFee: 1500 });
+  });
+});

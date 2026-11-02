@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, AnimatePresence } from "motion/react";
+import PushPrompt from "./PushPrompt";
 import { Bell } from "lucide-react";
 import { NOTIFICATION_ICONS } from "./data";
 import { DURATION, EASE, SPRING_BOUNCY, floatLoop } from "./motion";
@@ -14,7 +15,7 @@ const BOUNCE_ITEM = {
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
 };
 
-export default function Notifications({ notifications, onMarkRead, onMarkAllRead }) {
+export default function Notifications({ notifications, onMarkRead, onMarkAllRead, showToast }) {
   const unreadCount = notifications.filter((n) => n.unread).length;
 
   return (
@@ -37,6 +38,7 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
         </AnimatePresence>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">Order updates, offers, and account activity.</p>
+      <PushPrompt showToast={showToast} />
       {notifications.length === 0 ? (
         <motion.div
           initial={{ opacity: 0, y: 10 }}

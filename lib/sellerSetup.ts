@@ -57,6 +57,19 @@ export function setupSteps({
       action: { label: "Add listing", tab: "listings", addListing: true },
     },
     {
+      key: "delivery",
+      title: "Set delivery pricing",
+      detail:
+        "Choose free shipping (delivery included in your price), a fixed fee, or fees by state for each listing, so buyers see the real cost.",
+      done:
+        (myListings?.length ?? 0) > 0 &&
+        (myListings ?? []).every((p) => {
+          const l = p as { deliveryOption?: string | null; deliveryPricing?: string | null };
+          return l.deliveryOption === "Pickup" || Boolean(l.deliveryPricing);
+        }),
+      action: { label: "Set delivery pricing", tab: "listings" },
+    },
+    {
       key: "payout",
       title: "Add your bank account",
       detail: "So FindIt can pay you. Your money is released here as soon as a buyer confirms delivery.",

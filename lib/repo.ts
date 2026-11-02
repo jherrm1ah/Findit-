@@ -20,7 +20,8 @@ import { recordReview } from "./reviews";
 import { listActiveModerationRules, findMatchingModerationRule } from "./moderationRules";
 import { qualifyReferral } from "./referrals";
 import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
-import { deliveryChoices, normalizeAddress, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryMethod, type DeliveryOptions } from "./delivery";
+import { sendPushToUser, sendTextAlert } from "./outsideAlerts";
+import { deliveryChoices, feeForState, normalizeAddress, normalizeDeliveryPricing, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryPricing, type DeliveryRates, type DeliveryMethod, type DeliveryOptions } from "./delivery";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -95,6 +96,12 @@ export type Product = {
   // used when deliveryOption allows delivery; added to the order's price
   // when the buyer chooses delivery at checkout (see lib/delivery.ts).
   deliveryFee: number;
+  // Migration 046: how delivery is priced (lib/deliveryShared.ts): "free"
+  // (included in the price), "fixed" (deliveryFee everywhere) or "location"
+  // (deliveryRates per state, deliveryFee for every other state). Null = an
+  // older listing whose seller hasn't chosen yet.
+  deliveryPricing: DeliveryPricing | null;
+  deliveryRates: DeliveryRates | null;
   color: string | null;
   variation: string | null;
   // Every photo, cover first — imageUrl above always equals images[0] and
@@ -173,6 +180,15 @@ export type Order = {
   // True once the buyer has started paying: the method (and so the price)
   // can no longer change. The address still can, until the order is paid.
   deliveryLocked: boolean;
+  // Migration 046: delivery fee per state (deliveryFeeQuote for every other
+  // state). Null = one fee everywhere. See lib/deliveryShared.ts#feeForState.
+  deliveryRates: DeliveryRates | null;
+  // True when the order came from a listing whose seller never chose how to
+  // price delivery: no fee is charged, and checkout says so.
+  deliveryFeeUnset: boolean;
+  // The buyer's name, on a PAID order the seller is looking at (listOrders).
+  // Null everywhere else.
+  buyerName: string | null;
 
   // ---- Migration 044 ----
   // The products in this order (a cart becomes one order per seller). Empty
@@ -474,6 +490,8 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     location: (row.location as string | null) ?? null,
     deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
+    deliveryPricing: (row.delivery_pricing as DeliveryPricing | null | undefined) ?? null,
+    deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
     moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
@@ -736,6 +754,8 @@ export async function createProduct(input: {
   location?: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both";
   deliveryFee?: number | null;
+  deliveryPricing?: DeliveryPricing | null;
+  deliveryRates?: DeliveryRates | null;
   color?: string | null;
   variation?: string | null;
 }): Promise<Product> {
@@ -794,7 +814,7 @@ export async function createProduct(input: {
       qty: input.qty ?? 1,
       location: input.location?.trim() || null,
       delivery_option: input.deliveryOption,
-      delivery_fee: input.deliveryOption === "Pickup" ? 0 : parseDeliveryFee(input.deliveryFee),
+      ...pricingColumns(input.deliveryOption, input.deliveryPricing, input.deliveryFee, input.deliveryRates),
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
       moderation_status: matchedRule ? "under_review" : "active",
@@ -840,6 +860,8 @@ export async function updateProduct(
     location: string | null;
     deliveryOption: "Delivery" | "Pickup" | "Both" | null;
     deliveryFee: number | null;
+    deliveryPricing: DeliveryPricing | null;
+    deliveryRates: DeliveryRates | null;
     color: string | null;
     variation: string | null;
   }>
@@ -894,12 +916,19 @@ export async function updateProduct(
       qty: patch.qty !== undefined ? patch.qty : existing.qty,
       location: patch.location !== undefined ? (patch.location?.trim() || null) : existing.location,
       delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
-      delivery_fee:
-        (patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption) === "Pickup"
-          ? 0
-          : patch.deliveryFee !== undefined
-            ? parseDeliveryFee(patch.deliveryFee)
-            : existing.deliveryFee,
+      // Delivery pricing is re-checked only when the seller changes it, so an
+      // unrelated edit (price, photos) never forces a choice on an older listing.
+      ...(patch.deliveryOption !== undefined ||
+      patch.deliveryPricing !== undefined ||
+      patch.deliveryFee !== undefined ||
+      patch.deliveryRates !== undefined
+        ? pricingColumns(
+            patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
+            patch.deliveryPricing !== undefined ? patch.deliveryPricing : existing.deliveryPricing,
+            patch.deliveryFee !== undefined ? patch.deliveryFee : existing.deliveryFee,
+            patch.deliveryRates !== undefined ? patch.deliveryRates : existing.deliveryRates
+          )
+        : {}),
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
       ...(moderationEscalation
@@ -999,6 +1028,9 @@ function rowToOrder(row: Row): Order {
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     deliveryAddress: (row.delivery_address as DeliveryAddress | null | undefined) ?? null,
     deliveryLocked: Boolean(row.delivery_locked),
+    deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
+    deliveryFeeUnset: Boolean(row.delivery_fee_unset),
+    buyerName: null,
     lines: Array.isArray(row.lines) ? (row.lines as OrderLine[]) : [],
     cancelledAt: (row.cancelled_at as string | null | undefined) ?? null,
     cancelReason: (row.cancel_reason as Order["cancelReason"] | undefined) ?? null,
@@ -1058,9 +1090,18 @@ export async function listOrders(
   const rowSets = results.map((r, i) => assertNoError(r, i === 0 ? "listing orders" : "listing seller orders") as Row[]);
   const byId = new Map<string, Row>();
   for (const row of rowSets.flat()) byId.set(row.id as string, row);
-  return [...byId.values()]
-    .map((row) => withAddressPrivacy(rowToOrder(row), userId))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const sellerOrders = [...byId.values()].map((row) => withAddressPrivacy(rowToOrder(row), userId));
+  // The buyer's name on PAID orders the seller is looking at: who to deliver
+  // to or expect for pickup, and who their customers are.
+  const paidBuyerIds = [...new Set(sellerOrders.filter((o) => o.userId !== userId && o.paymentStatus === "paid").map((o) => o.userId))];
+  if (paidBuyerIds.length > 0) {
+    const namesResult = await db.from("users").select("id, name").in("id", paidBuyerIds);
+    const names = new Map((assertNoError(namesResult, "loading buyer names") as Row[]).map((r) => [r.id as string, r.name as string]));
+    for (const o of sellerOrders) {
+      if (o.userId !== userId && o.paymentStatus === "paid") o.buyerName = names.get(o.userId) ?? null;
+    }
+  }
+  return sellerOrders.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 // Internal — every field here must already be trusted (derived from a real
@@ -1082,6 +1123,8 @@ async function insertOrder(input: {
   // costs if chosen. price above is the item alone until they choose.
   deliveryOptions?: DeliveryOptions | null;
   deliveryFeeQuote?: number;
+  deliveryRates?: DeliveryRates | null;
+  deliveryFeeUnset?: boolean;
   lines?: OrderLine[];
 }): Promise<Order> {
   const db = getDb();
@@ -1100,6 +1143,8 @@ async function insertOrder(input: {
       delivery_fee_quote: input.deliveryOptions === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFeeQuote ?? 0)),
       delivery_fee: 0,
       delivery_locked: false,
+      delivery_rates: input.deliveryOptions === "Pickup" ? null : input.deliveryRates ?? null,
+      delivery_fee_unset: input.deliveryOptions !== "Pickup" && Boolean(input.deliveryFeeUnset),
       lines: input.lines ?? [],
       status: input.status,
       request_id: input.requestId ?? null,
@@ -1108,6 +1153,19 @@ async function insertOrder(input: {
     .single();
   const row = assertNoError(result, "creating order") as Row;
   return rowToOrder(row);
+}
+
+// A listing's delivery pricing columns, checked (lib/delivery.ts#normalizeDeliveryPricing).
+function pricingColumns(option: string | null | undefined, pricing: unknown, fee: unknown, rates: unknown) {
+  const p = normalizeDeliveryPricing({ deliveryOption: option, deliveryPricing: pricing, deliveryFee: fee, deliveryRates: rates });
+  return { delivery_pricing: p.deliveryPricing, delivery_fee: p.deliveryFee, delivery_rates: p.deliveryRates };
+}
+
+// What delivering one listing costs to a state (0 for free shipping).
+function listingFeeFor(p: Product, state: string | null): number {
+  if (p.deliveryOption === "Pickup" || p.deliveryPricing === "free") return 0;
+  if (p.deliveryPricing === "location" && state && p.deliveryRates && state in p.deliveryRates) return p.deliveryRates[state];
+  return p.deliveryFee;
 }
 
 const MAX_ORDER_QTY = 999;
@@ -1154,7 +1212,17 @@ async function insertOrderForProducts(items: { product: Product; qty: number }[]
   const pickup = items.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
   const deliveryOptions: DeliveryOptions | null =
     items.length === 1 ? first.deliveryOption : delivery && pickup ? "Both" : delivery ? "Delivery" : "Pickup";
-  const feeQuote = delivery ? Math.max(0, ...items.map(({ product }) => (product.deliveryOption === "Pickup" ? 0 : product.deliveryFee))) : 0;
+  // One parcel, one trip: for each state, the highest of the items' fees to
+  // that state; deliveryFeeQuote for any state no item prices separately.
+  const deliverable = items.filter(({ product }) => product.deliveryOption !== "Pickup").map(({ product }) => product);
+  const feeQuote = delivery ? Math.max(0, ...deliverable.map((p) => listingFeeFor(p, null))) : 0;
+  const rateStates = new Set(deliverable.flatMap((p) => (p.deliveryPricing === "location" ? Object.keys(p.deliveryRates ?? {}) : [])));
+  const rates: DeliveryRates = {};
+  for (const state of rateStates) {
+    const fee = Math.max(0, ...deliverable.map((p) => listingFeeFor(p, state)));
+    if (fee !== feeQuote) rates[state] = fee;
+  }
+  const deliveryRates = delivery && Object.keys(rates).length > 0 ? rates : null;
 
   return insertOrder({
     item: lines.map((l) => (l.qty > 1 ? `${l.name} ×${l.qty}` : l.name)).join(", "),
@@ -1165,6 +1233,8 @@ async function insertOrderForProducts(items: { product: Product; qty: number }[]
     userId,
     deliveryOptions,
     deliveryFeeQuote: feeQuote,
+    deliveryRates,
+    deliveryFeeUnset: delivery && deliverable.some((p) => p.deliveryPricing == null && p.deliveryFee === 0),
     lines,
   });
 }
@@ -1363,8 +1433,14 @@ export async function sellerCancelPaidOrder(
     type: "payment",
     title: "Order cancelled and refunded",
     body: `${order.seller} cancelled your order for "${order.item}" because ${SELLER_CANCEL_REASONS[reason]}. FindIt is refunding your ₦${order.price.toLocaleString("en-NG")}.`,
+    sms: `FindIt: ${order.seller} couldn't fulfil "${shortItem(order.item)}", so it was cancelled. Your ₦${order.price.toLocaleString("en-NG")} is being refunded.`,
   });
   return order;
+}
+
+// Item names in text messages: short enough to keep a text to one or two SMS pages.
+function shortItem(item: string): string {
+  return item.length > 40 ? item.slice(0, 37) + "..." : item;
 }
 
 export const UNPAID_ORDER_DAYS = 7;
@@ -1482,6 +1558,13 @@ export async function notifySellerOfNewOrder(sellerBusinessName: string, order: 
     type: "payment",
     title: "New order",
     body: `"${order.item}" was just ordered — ₦${order.price.toLocaleString("en-NG")} is held by FindIt until delivery is confirmed.`,
+    sms: `FindIt: New paid order! "${shortItem(order.item)}" (₦${order.price.toLocaleString("en-NG")}). ${
+      order.deliveryMethod === "pickup"
+        ? "The buyer will pick it up."
+        : order.deliveryAddress
+          ? `Deliver to ${order.deliveryAddress.area}, ${order.deliveryAddress.state}.`
+          : ""
+    } Open FindIt to prepare it.`,
   });
 }
 
@@ -1585,7 +1668,9 @@ export async function setOrderDelivery(
   }
 
   const address = method === "delivery" ? normalizeAddress(input.address) : null;
-  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, order.deliveryFeeQuote);
+  // The fee to the address's state (a flat fee unless the seller set one for
+  // other states).
+  const { deliveryFee, price } = orderPriceFor(order.itemPrice, method, feeForState(order, address?.state));
 
   const db = getDb();
   let query = db
@@ -1715,6 +1800,9 @@ export async function updateOrderStatus(id: string, status: string): Promise<Ord
       type: "delivery",
       title: copy.title,
       body: copy.body(order.item),
+      ...(status === "Dispatched"
+        ? { sms: `FindIt: Your order "${shortItem(order.item)}" from ${order.seller} is on its way. Confirm in FindIt once it arrives.` }
+        : {}),
     });
   }
 
@@ -2088,6 +2176,9 @@ export async function resolveOrderIssue(
       outcome === "refunded"
         ? `FindIt reviewed your report on "${order.item}" and approved a refund.`
         : `FindIt reviewed your report on "${order.item}" and released the payment to the seller.`,
+    ...(outcome === "refunded"
+      ? { sms: `FindIt: Your refund for "${shortItem(order.item)}" was approved. ₦${order.price.toLocaleString("en-NG")} is on its way back to you.` }
+      : {}),
   });
 
   // order.sellerId when available (unambiguous) — see notifySellerOfNewOrder's
@@ -2154,6 +2245,9 @@ export async function createNotification(input: {
     .select()
     .single();
   const row = assertNoError(result, "creating notification") as Row;
+  // The same alert as a phone notification, on every device where this user
+  // turned alerts on (lib/outsideAlerts.ts). Never fails the notification.
+  await sendPushToUser(input.userId, { title: input.title, body: input.body, tag: input.type });
   return rowToNotification(row);
 }
 
@@ -2166,6 +2260,9 @@ export async function notifyBestEffort(input: {
   type: string;
   title: string;
   body: string;
+  // Also send this as a text message (SMS/WhatsApp, lib/alerts.ts). Only for
+  // alerts about money someone has to act on: each one costs a little.
+  sms?: string;
 }): Promise<void> {
   try {
     const db = getDb();
@@ -2176,7 +2273,13 @@ export async function notifyBestEffort(input: {
       .maybeSingle();
     const pref = assertNoError(prefResult, "checking notification preference") as Row | null;
     if (pref && pref.notifications_enabled === false) return;
-    await createNotification(input);
+    // Side by side: a money alert's text still goes out if saving the in-app
+    // notification fails, and the other way round.
+    const [saved] = await Promise.allSettled([
+      createNotification({ userId: input.userId, type: input.type, title: input.title, body: input.body }),
+      input.sms ? sendTextAlert(input.userId, input.sms) : Promise.resolve(),
+    ]);
+    if (saved.status === "rejected") throw saved.reason;
   } catch (err) {
     console.error("[notify] failed to create notification:", err);
   }

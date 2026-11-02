@@ -12,7 +12,7 @@ vi.mock("@supabase/supabase-js", () => ({ createClient: () => fakeDb }));
 process.env.SUPABASE_URL = "http://fake.local";
 process.env.SUPABASE_SERVICE_ROLE_KEY = "fake-service-role-key";
 
-const { createProduct, updateProduct, createOrderFromProduct, setOrderDelivery, lockOrderDelivery, listOrders, acceptOffer, getOrder } =
+const { createProduct, updateProduct, createOrderFromProduct, createOrdersFromCart, setOrderDelivery, lockOrderDelivery, listOrders, acceptOffer, getOrder } =
   await import("./repo");
 const { confirmOrderPayment } = await import("./payments");
 
@@ -189,5 +189,74 @@ describe("an accepted offer", () => {
     });
     const { order } = (await acceptOffer("req_1", "off_1", "buyer_1"))!;
     expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: ADDRESS }))!.price).toBe(15000);
+  });
+});
+
+describe("delivery pricing choices", () => {
+  const LAGOS = { ...ADDRESS, state: "Lagos" };
+  const OYO = { ...ADDRESS, state: "Oyo", area: "Bodija" };
+  async function priced(deliveryPricing: "free" | "fixed" | "location", fee = 0, rates: Record<string, number> | null = null, name = "Fan") {
+    return createProduct({
+      category: "electronics", name, price: 10000, seller: "Terra Gadgets", sellerId: null, condition: "New", qty: 10,
+      deliveryOption: "Both", deliveryPricing, deliveryFee: fee, deliveryRates: rates,
+    });
+  }
+
+  it("free shipping: nothing added at checkout", async () => {
+    const order = await newOrder((await priced("free")).id);
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: OYO }))!).toMatchObject({ deliveryFee: 0, price: 10000 });
+  });
+
+  it("fixed fee: the same everywhere", async () => {
+    const order = await newOrder((await priced("fixed", 3000)).id);
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: OYO }))!).toMatchObject({ deliveryFee: 3000, price: 13000 });
+  });
+
+  it("by location: the address's state decides", async () => {
+    const p = await priced("location", 6000, { Lagos: 2500 });
+    expect(p).toMatchObject({ deliveryPricing: "location", deliveryFee: 6000, deliveryRates: { Lagos: 2500 } });
+    const order = await newOrder(p.id);
+    expect(order).toMatchObject({ deliveryFeeQuote: 6000, deliveryRates: { Lagos: 2500 } });
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: LAGOS }))!).toMatchObject({ deliveryFee: 2500, price: 12500 });
+    expect((await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: OYO }))!).toMatchObject({ deliveryFee: 6000, price: 16000 });
+  });
+
+  it("a cart from one seller pays the highest fee for each state, once", async () => {
+    const a = await priced("location", 6000, { Lagos: 2500 }, "Fan");
+    const b = await priced("fixed", 3000, null, "Kettle");
+    const c = await priced("free", 0, null, "Cable");
+    const [order] = await createOrdersFromCart([{ productId: a.id, qty: 1 }, { productId: b.id, qty: 1 }, { productId: c.id, qty: 1 }], "buyer_1");
+    // Lagos: max(2500, 3000, 0) = 3000; elsewhere: max(6000, 3000, 0) = 6000.
+    expect(order).toMatchObject({ deliveryFeeQuote: 6000, deliveryRates: { Lagos: 3000 } });
+  });
+
+  it("an older listing with no choice is 'not set', and editing other things doesn't force one", async () => {
+    const p = await createProduct({ category: "electronics", name: "Old", price: 1000, seller: "Terra Gadgets", sellerId: null, condition: "New", deliveryOption: "Delivery" });
+    expect(p.deliveryPricing).toBeNull();
+    expect((await updateProduct(p.id, { price: 1200 }))!.deliveryPricing).toBeNull();
+    expect((await updateProduct(p.id, { deliveryPricing: "free" }))!.deliveryPricing).toBe("free");
+  });
+
+  it("an order from a listing with no pricing says the fee isn't set (rather than 'free')", async () => {
+    const unset = await createProduct({ category: "electronics", name: "Old", price: 1000, seller: "Terra Gadgets", sellerId: null, condition: "New", qty: 5, deliveryOption: "Delivery" });
+    expect((await newOrder(unset.id)).deliveryFeeUnset).toBe(true);
+    expect((await newOrder((await priced("free")).id)).deliveryFeeUnset).toBe(false);
+  });
+
+  it("pickup-only clears delivery pricing", async () => {
+    const p = await priced("location", 6000, { Lagos: 2500 });
+    expect((await updateProduct(p.id, { deliveryOption: "Pickup" }))!).toMatchObject({ deliveryPricing: null, deliveryRates: null, deliveryFee: 0 });
+  });
+});
+
+describe("buyer names for the seller", () => {
+  it("appear on paid orders only", async () => {
+    const order = await newOrder((await listing("Delivery")).id);
+    await setOrderDelivery(order.id, "buyer_1", { method: "delivery", address: ADDRESS });
+    const sellerView = async () => (await listOrders("seller_user", { name: "Terra Gadgets", id: "seller_1" })).find((o) => o.id === order.id)!;
+    expect((await sellerView()).buyerName).toBeNull();
+    await confirmOrderPayment(order.id);
+    expect((await sellerView()).buyerName).toBe("Ada");
+    expect((await listOrders("buyer_1")).find((o) => o.id === order.id)!.buyerName).toBeNull();
   });
 });

@@ -1981,6 +1981,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
         )}
         {screen === "notifications" && (
           <Notifications
+            showToast={showToast}
             notifications={notifications}
             onMarkRead={handleMarkNotificationRead}
             onMarkAllRead={handleMarkAllRead}
