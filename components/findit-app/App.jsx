@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { turnOffPush, reattachPush } from "./push";
 import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
+import { inFindItApp } from "./nativeApp";
 import Welcome from "./Welcome";
 import Login from "./Login";
 import MainApp from "./MainApp";
@@ -59,6 +60,11 @@ export default function App() {
         mainDataRef.current = Promise.all([api.getProducts(), api.getOrders(), api.getNotifications()]);
       }
     });
+    // In the Android app, the app's own launch screen (the logo) is already
+    // showing and stays up until FindIt has loaded (MainApp takes it down),
+    // so go straight on instead of showing this splash as a second one.
+    if (inFindItApp()) handleSplashDone();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // A session can lapse while someone is mid-way through the app. Without

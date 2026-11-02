@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>FindIt is offline</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #FAFAFF; color: #1E1B4B; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px; }
+  .card { max-width: 340px; text-align: center; }
+  .mark { width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 20px;
+          background: linear-gradient(135deg, #A855F7, #7C3AED 45%, #4C1D95); display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { font-size: 14px; line-height: 1.5; color: #514B67; margin: 0 0 24px; }
+  button { width: 100%; border: 0; border-radius: 14px; padding: 14px; font-size: 15px; font-weight: 600;
+           background: #7C3AED; color: #fff; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="mark" aria-hidden="true">
+      <svg width="34" height="34" viewBox="0 0 32 32"><circle cx="14" cy="14" r="6" fill="none" stroke="#fff" stroke-width="2.6"/><line x1="18.4" y1="18.4" x2="24" y2="24" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/></svg>
+    </div>
+    <h1>You're offline</h1>
+    <p>FindIt needs the internet to show sellers and orders. Check your data or Wi-Fi, then try again.</p>
+    <button onclick="location.href='https://www.shopwithfindit.com'">Try again</button>
+  </div>
+<script>
+  // Take down the app's launch screen so this page is visible.
+  try { window.Capacitor && Capacitor.Plugins.SplashScreen && Capacitor.Plugins.SplashScreen.hide(); } catch (e) {}
+</script>
+</body>
+</html>

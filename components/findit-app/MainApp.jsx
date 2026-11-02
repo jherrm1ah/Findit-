@@ -8,6 +8,7 @@ import {
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
+import { hideNativeSplash } from "./nativeApp";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { storePendingReferralCode } from "./referral";
@@ -81,6 +82,11 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const [checkingOutCart, setCheckingOutCart] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
+  // In the Android app, the launch screen stays up until this first load is
+  // done, so the app opens straight onto FindIt (see nativeApp.js).
+  useEffect(() => {
+    if (loaded) hideNativeSplash();
+  }, [loaded]);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
