@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getOrder, setOrderDelivery, lockOrderDelivery } from "@/lib/repo";
+import { getOrder, setOrderDelivery, lockOrderDelivery, assertOrderInStock } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { getDb, assertNoError } from "@/lib/db";
 import { isPaystackConfigured, initializeTransaction } from "@/lib/paystack";
@@ -34,6 +34,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
   if (order.paymentStatus === "paid") {
     return NextResponse.json({ error: "This order has already been paid for." }, { status: 400 });
+  }
+  if (order.status === "Cancelled") {
+    return NextResponse.json({ error: "This order was cancelled. Order it again from the listing." }, { status: 400 });
   }
 
   const { allowed, retryAfterSeconds } = await checkRateLimit(`order-checkout:${user.id}`, MAX_CHECKOUT_ATTEMPTS, CHECKOUT_WINDOW_MS);
@@ -107,6 +110,9 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
     // instead of that credit staying locked against a checkout nobody is
     // going to finish.
     if (recentPending) await releaseCredit(recentPending.id as string);
+
+    // Stock may have sold since the order was placed.
+    await assertOrderInStock(order);
 
     // From here on the delivery method and price are fixed (see
     // lib/repo.ts#setOrderDelivery): the amount charged below is exactly

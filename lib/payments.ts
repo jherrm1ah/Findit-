@@ -7,7 +7,7 @@
 // logic underneath it, not the HTTP/Paystack-call plumbing.
 
 import { getDb, assertNoError } from "./db";
-import { ValidationError, getOrder, notifySellerOfNewOrder, notifyBestEffort, findUserForSellerId, Order } from "./repo";
+import { ValidationError, getOrder, notifySellerOfNewOrder, notifyBestEffort, findUserForSellerId, decrementStockForOrder, Order } from "./repo";
 import {
   isPaystackConfigured,
   initiateTransfer,
@@ -121,6 +121,11 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
       platform_fee_amount: feeAmount,
       seller_payout_amount: payoutAmount,
       credit_applied: creditApplied,
+      // A payment that completes on an order already cancelled (an old
+      // checkout link paid after the buyer cancelled, or after it was closed
+      // for being unpaid) reopens it: the money is real, so the order goes
+      // ahead like any other paid order.
+      ...(order.status === "Cancelled" ? { status: "Awaiting payment", cancelled_at: null, cancel_reason: null } : {}),
     })
     .eq("id", orderId)
     .eq("payment_status", "pending")
@@ -128,6 +133,14 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
     .maybeSingle();
   const row = assertNoError(result, "confirming order payment") as Row | null;
   if (!row) return; // a concurrent call already applied this
+
+  // Sold: take it off stock (exactly once, since only the call that flipped
+  // payment_status above gets here). Never allowed to fail the payment.
+  try {
+    await decrementStockForOrder(order);
+  } catch (err) {
+    console.error("[payments] couldn't update stock for", orderId, err);
+  }
 
   // The seller only learns about this order now that it's real money, not
   // at order creation (see lib/repo.ts#createOrderFromProduct/acceptOffer).

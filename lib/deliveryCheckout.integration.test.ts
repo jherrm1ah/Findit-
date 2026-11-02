@@ -42,6 +42,7 @@ async function listing(deliveryOption: "Delivery" | "Pickup" | "Both", deliveryF
     // here); orders then reach the seller by business name.
     sellerId: null,
     condition: "New",
+    qty: 10,
     deliveryOption,
     deliveryFee,
   });

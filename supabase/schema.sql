@@ -545,6 +545,15 @@ create table if not exists orders (
   constraint orders_delivery_fee_nonneg check (delivery_fee >= 0 and delivery_fee_quote >= 0),
   constraint orders_price_includes_delivery
     check (item_price is null or price = item_price + delivery_fee),
+  -- ---- Migration 044 ----
+  -- The products in the order, [{ productId, name, qty, unitPrice }]: a cart
+  -- is one order per seller. Paying takes each line's qty off stock.
+  lines jsonb not null default '[]'::jsonb,
+  -- An unpaid order cancelled by the buyer, or closed after 7 days unpaid
+  -- (status 'Cancelled'). A payment that completes later reopens it.
+  cancelled_at timestamptz,
+  cancel_reason text constraint orders_cancel_reason_valid
+    check (cancel_reason is null or cancel_reason in ('buyer', 'expired')),
   -- ---- Money invariants (migration 021) ----
   -- Already enforced in application code (lib/payments.ts) before these
   -- existed — these are the backstop, not a replacement for those checks.
@@ -582,6 +591,8 @@ create index if not exists orders_escrow_status_idx on orders(escrow_status)
   where escrow_status = 'disputed';
 create index if not exists orders_seller_id_idx on orders(seller_id);
 create index if not exists orders_request_id_idx on orders(request_id);
+create index if not exists orders_unpaid_created_idx on orders(created_at)
+  where payment_status <> 'paid' and status = 'Awaiting payment';
 
 -- ---------------------------------------------------------------------------
 -- reviews (migration 025) — a real, listable, repliable form of a review.

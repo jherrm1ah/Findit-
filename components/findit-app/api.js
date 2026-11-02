@@ -114,6 +114,14 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     }).then((d) => d.order),
+  // A whole cart at once: one order per seller (see lib/repo.ts#createOrdersFromCart).
+  createOrdersFromCart: (items) =>
+    request("/api/orders", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items }),
+    }).then((d) => d.orders),
+  cancelOrder: (orderId) => request(`/api/orders/${orderId}/cancel`, { method: "POST" }).then((d) => d.order),
   // delivery: { method: "delivery" | "pickup", address } from checkout.
   payForOrder: (orderId, applyCredit, delivery) =>
     request(`/api/orders/${orderId}/pay`, {

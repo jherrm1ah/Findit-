@@ -226,7 +226,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             {product.condition && <Pill tone={product.condition === "New" ? "green" : "gold"}>{product.condition}</Pill>}
             {product.qty != null && (
               <Pill tone={product.qty > 0 ? "stone" : "red"}>
-                <PackageIcon size={11} /> {product.qty > 0 ? `${product.qty} available` : "Out of stock"}
+                <PackageIcon size={11} /> {product.qty === 0 ? "Sold out" : product.qty <= 3 ? `Only ${product.qty} left` : `${product.qty} available`}
               </Pill>
             )}
             {product.deliveryOption && (
@@ -249,7 +249,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
                 <Minus size={12} className="text-[#1E1B4B]" />
               </button>
               <span className="text-[13px] font-semibold text-[#1E1B4B] w-4 text-center">{qty}</span>
-              <button onClick={() => setQty((q) => q + 1)} className="w-6 h-6 rounded-lg bg-white flex items-center justify-center shadow-sm">
+              <button onClick={() => setQty((q) => (product.qty > 0 ? Math.min(product.qty, q + 1) : q + 1))} className="w-6 h-6 rounded-lg bg-white flex items-center justify-center shadow-sm">
                 <Plus size={12} className="text-[#1E1B4B]" />
               </button>
             </div>
@@ -398,7 +398,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             className={`flex items-center gap-2 text-white text-[13px] font-semibold pl-5 pr-6 py-3 rounded-full shadow-lg shadow-[#7C3AED]/25 ${buying || product.qty === 0 ? "opacity-60" : ""}`}
             style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
           >
-            <ShoppingBag size={15} /> {product.qty === 0 ? "Out of stock" : buying ? "Placing order…" : "Buy now"}
+            <ShoppingBag size={15} /> {product.qty === 0 ? "Sold out" : buying ? "Placing order…" : "Buy now"}
           </motion.button>
         </div>
       </motion.div>

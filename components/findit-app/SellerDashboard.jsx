@@ -42,7 +42,7 @@ function budgetLabel(r) {
 
 function statusTone(status) {
   if (status === "Delivered") return "green";
-  if (status === "Awaiting payment") return "stone";
+  if (status === "Awaiting payment" || status === "Cancelled") return "stone";
   return "gold";
 }
 
@@ -1515,10 +1515,11 @@ export default function SellerDashboard({
   const avgRating = reviewedOrders.length
     ? (reviewedOrders.reduce((sum, o) => sum + o.myRating, 0) / reviewedOrders.length).toFixed(1)
     : null;
-  const orderValue = myOrders.reduce((sum, o) => sum + o.price, 0);
+  // A cancelled order was never a sale.
+  const orderValue = myOrders.filter((o) => o.status !== "Cancelled").reduce((sum, o) => sum + o.price, 0);
   const STATS = [
     ["Rating", avgRating ?? "—"],
-    ["Orders", String(myOrders.length)],
+    ["Orders", String(myOrders.filter((o) => o.status !== "Cancelled").length)],
     ["Listings", String(myListings.length)],
     ["Order value", naira(orderValue)],
   ];
@@ -2051,13 +2052,15 @@ export default function SellerDashboard({
                   settled) instead of cutting instantly when an order moves. */}
               <AnimatePresence mode="wait" initial={false}>
                 <motion.div
-                  key={o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
+                  key={o.status === "Cancelled" && o.paymentStatus !== "paid" ? "cancelled" : o.paymentStatus !== "paid" ? "unpaid" : nextStatus ? `next:${nextStatus}` : awaitingBuyer ? "awaiting" : o.escrowStatus === "refunded" ? "refunded" : "delivered"}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 4 }}
                   transition={{ duration: DURATION.fast, ease: EASE }}
                 >
-                  {o.paymentStatus !== "paid" ? (
+                  {o.status === "Cancelled" && o.paymentStatus !== "paid" ? (
+                    <Pill tone="stone">Cancelled before payment</Pill>
+                  ) : o.paymentStatus !== "paid" ? (
                     <Pill tone="stone"><Clock size={11} /> Waiting for the buyer to pay</Pill>
                   ) : nextStatus ? (
                     <motion.button

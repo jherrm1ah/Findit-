@@ -28,6 +28,7 @@ export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove
 
   const subtotal = lines.reduce((sum, l) => sum + l.product.price * l.qty, 0);
   const itemCount = lines.reduce((n, l) => n + l.qty, 0);
+  const sellerCount = new Set(lines.map((l) => l.product.sellerId ?? l.product.seller)).size;
 
   return (
     <div className="fixed inset-0 bg-[#FAFAFF] z-40 flex flex-col">
@@ -124,6 +125,10 @@ export default function Cart({ cart, products, onBack, go, onUpdateQty, onRemove
             <div>
               <p className="text-[11px] text-[#8A8372]">Subtotal · {itemCount} item{itemCount === 1 ? "" : "s"}</p>
               <AnimatedNumber value={subtotal} format={(n) => naira(Math.round(n))} className="text-[19px] font-bold text-[#1E1B4B]" />
+              {/* One order per seller: one checkout and one delivery fee each. */}
+              <p className="text-[10.5px] text-[#8A8372]">
+                {sellerCount > 1 ? `From ${sellerCount} sellers · delivery added at checkout` : "Delivery added at checkout"}
+              </p>
             </div>
             <motion.button
               onClick={onCheckout}

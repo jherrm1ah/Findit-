@@ -603,9 +603,20 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   // the buyer always chooses delivery or pickup, and gives an address,
   // before paying.
   const openCheckoutForOrder = (order) => {
-    const prod = products.find((p) => p.name === order.item && p.seller === order.seller) || null;
-    setCheckoutOrder({ order, product: prod, qty: null });
+    const line = order.lines?.length === 1 ? order.lines[0] : null;
+    const prod = line ? products.find((p) => p.id === line.productId) || null : null;
+    setCheckoutOrder({ order, product: prod, qty: line ? line.qty : null });
     go("checkout");
+  };
+
+  const handleCancelOrder = async (orderId) => {
+    try {
+      const order = await api.cancelOrder(orderId);
+      setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
+      showToast("Order cancelled.");
+    } catch (err) {
+      showToast(err.message || "Couldn't cancel that order — try again.", "error");
+    }
   };
 
   const handleAddToCart = async (prod, qty) => {
@@ -631,42 +642,29 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     setCart((c) => c.filter((it) => it.productId !== productId));
   };
 
-  // One createOrder call per line, same as a direct "Buy now" — a cart is
-  // just a staging list, not a new kind of order. Each order can already be
-  // paid individually from My orders (Account.jsx), so there's no separate
-  // multi-item payment flow to build here.
+  // The whole cart in one call: the server makes ONE order per seller (one
+  // checkout, one delivery fee each) and checks every line before creating
+  // anything, so on an error the cart is left exactly as it was. One seller
+  // goes straight to checkout; several are each paid from My orders.
   const handleCartCheckout = async () => {
     if (!user) {
       onRequireAuth?.();
       return;
     }
     setCheckingOutCart(true);
-    const createdOrders = [];
-    const remaining = [...cart];
     try {
-      for (const item of cart) {
-        const order = await api.createOrder({ productId: item.productId, qty: item.qty });
-        createdOrders.push(order);
-        remaining.shift(); // this line succeeded — it's a real order now, not still "in the cart"
-      }
+      const created = await api.createOrdersFromCart(cart.map((it) => ({ productId: it.productId, qty: it.qty })));
       setCart([]);
-      showToast(`${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed — pay from My orders.`);
-      go("account");
-    } catch (err) {
-      // A failure partway through must never lose a line that already
-      // became a real order, and must never re-attempt one that did —
-      // only what's still unprocessed goes back into the cart.
-      setCart(remaining);
-      showToast(
-        createdOrders.length > 0
-          ? `${createdOrders.length} order${createdOrders.length === 1 ? "" : "s"} placed. The rest couldn't be — ${err.message || "try again"}.`
-          : err.message || "Couldn't complete checkout — try again.",
-        "error"
-      );
-    } finally {
-      if (createdOrders.length > 0) {
-        setOrders((os) => [...createdOrders, ...os]);
+      setOrders((os) => [...created, ...os]);
+      if (created.length === 1) {
+        openCheckoutForOrder(created[0]);
+      } else {
+        showToast(`${created.length} orders placed, one per seller. Choose delivery and pay for each in My orders.`);
+        go("account");
       }
+    } catch (err) {
+      showToast(err.message || "Couldn't complete checkout — try again.", "error");
+    } finally {
       setCheckingOutCart(false);
     }
   };
@@ -1960,6 +1958,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onConfirmDelivery={handleConfirmDelivery}
             onReportIssue={handleReportIssue}
             onPayOrder={openCheckoutForOrder}
+            onCancelOrder={handleCancelOrder}
             showToast={showToast}
             savedIds={savedIds}
           />

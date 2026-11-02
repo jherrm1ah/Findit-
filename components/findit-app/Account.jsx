@@ -20,7 +20,7 @@ const BOUNCE_ITEM = {
   visible: { opacity: 1, y: 0, scale: 1, rotate: 0, transition: SPRING_BOUNCY },
 };
 
-export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, savedIds, showToast, transactionRecords = [] }) {
+export default function Account({ openProduct, orders, products, onReview, onConfirmDelivery, onReportIssue, onPayOrder, onCancelOrder, savedIds, showToast, transactionRecords = [] }) {
   const [reviewing, setReviewing] = useState(null); // order id currently being reviewed
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -29,6 +29,17 @@ export default function Account({ openProduct, orders, products, onReview, onCon
   const [reporting, setReporting] = useState(null);   // order id being reported
   const [issueNote, setIssueNote] = useState("");
   const saved = products.filter((p) => savedIds.includes(p.id));
+  const [cancelling, setCancelling] = useState(null); // order id asking "Cancel this order?"
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const cancelOrder = async (orderId) => {
+    setCancelBusy(true);
+    try {
+      await onCancelOrder?.(orderId);
+    } finally {
+      setCancelBusy(false);
+      setCancelling(null);
+    }
+  };
 
   const submitReview = async (orderId) => {
     setSubmitting(true);
@@ -68,7 +79,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
     }
   };
 
-  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" ? "stone" : "gold");
+  const statusTone = (s) => (s === "Delivered" ? "green" : s === "Awaiting payment" || s === "Cancelled" ? "stone" : "gold");
 
   // Where the buyer's money stands, in their words rather than ours.
   const ESCROW_COPY = {
@@ -222,7 +233,14 @@ export default function Account({ openProduct, orders, products, onReview, onCon
             {/* An unpaid order (a cart line, an accepted offer, or a checkout
                 left part-way) opens the checkout screen, where the buyer
                 chooses delivery or pickup before paying. */}
-            {o.paymentStatus !== "paid" && (
+            {o.status === "Cancelled" && (
+              <p className="text-[11.5px] text-[#6B6483] mb-2.5">
+                {o.cancelReason === "expired"
+                  ? "Closed because it wasn't paid within 7 days. You can order it again any time."
+                  : "You cancelled this order before paying. Nothing was charged."}
+              </p>
+            )}
+            {o.paymentStatus !== "paid" && o.status !== "Cancelled" && (
               <motion.button
                 onClick={() => onPayOrder(o)}
                 {...press}
@@ -232,6 +250,28 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                 <CreditCard size={14} />
                 {o.deliveryMethod ? `Pay ${naira(o.price)}` : "Choose delivery and pay"}
               </motion.button>
+            )}
+            {/* Cancel before paying: one tap asks, a second confirms. */}
+            {o.paymentStatus !== "paid" && o.status !== "Cancelled" && (
+              cancelling === o.id ? (
+                <div className="flex items-center gap-3 mb-2.5">
+                  <p className="text-[11.5px] text-[#514B67] flex-1">Cancel this order?</p>
+                  <button
+                    onClick={() => cancelOrder(o.id)}
+                    disabled={cancelBusy}
+                    className="text-[11.5px] font-semibold text-[#B91C1C] disabled:opacity-50"
+                  >
+                    {cancelBusy ? "Cancelling…" : "Yes, cancel"}
+                  </button>
+                  <button onClick={() => setCancelling(null)} disabled={cancelBusy} className="text-[11.5px] font-semibold text-[#6B6483]">
+                    Keep it
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setCancelling(o.id)} className="text-[11px] font-semibold text-[#6B6483] underline mb-2.5">
+                  Cancel order
+                </button>
+              )
             )}
 
             {/* Only the buyer can end an order. Until they tap this, the money

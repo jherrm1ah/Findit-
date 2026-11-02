@@ -173,7 +173,18 @@ export type Order = {
   // True once the buyer has started paying: the method (and so the price)
   // can no longer change. The address still can, until the order is paid.
   deliveryLocked: boolean;
+
+  // ---- Migration 044 ----
+  // The products in this order (a cart becomes one order per seller). Empty
+  // for an accepted request offer, and for orders from before 044.
+  lines: OrderLine[];
+  // Set when an unpaid order is cancelled by the buyer or closed after
+  // UNPAID_ORDER_DAYS (status 'Cancelled').
+  cancelledAt: string | null;
+  cancelReason: "buyer" | "expired" | null;
 };
+
+export type OrderLine = { productId: string; name: string; qty: number; unitPrice: number };
 
 export type EscrowStatus = "unpaid" | "held" | "released" | "disputed" | "refunded";
 export type PaymentStatus = "pending" | "paid" | "failed";
@@ -988,6 +999,9 @@ function rowToOrder(row: Row): Order {
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     deliveryAddress: (row.delivery_address as DeliveryAddress | null | undefined) ?? null,
     deliveryLocked: Boolean(row.delivery_locked),
+    lines: Array.isArray(row.lines) ? (row.lines as OrderLine[]) : [],
+    cancelledAt: (row.cancelled_at as string | null | undefined) ?? null,
+    cancelReason: (row.cancel_reason as Order["cancelReason"] | undefined) ?? null,
   };
 }
 
@@ -1068,6 +1082,7 @@ async function insertOrder(input: {
   // costs if chosen. price above is the item alone until they choose.
   deliveryOptions?: DeliveryOptions | null;
   deliveryFeeQuote?: number;
+  lines?: OrderLine[];
 }): Promise<Order> {
   const db = getDb();
   const id = randomId("ORD-");
@@ -1085,6 +1100,7 @@ async function insertOrder(input: {
       delivery_fee_quote: input.deliveryOptions === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFeeQuote ?? 0)),
       delivery_fee: 0,
       delivery_locked: false,
+      lines: input.lines ?? [],
       status: input.status,
       request_id: input.requestId ?? null,
     })
@@ -1095,45 +1111,259 @@ async function insertOrder(input: {
 }
 
 const MAX_ORDER_QTY = 999;
+const MAX_CART_LINES = 50;
 
-// The "Buy now" path. price/seller/item are NEVER taken from the client —
-// only productId and qty are, and the real price/seller come from the
-// product row itself, exactly as validateProductInput already guarantees
-// (positive price, real seller). This closes what used to be a direct
-// price/seller tampering hole (the client previously supplied all three).
+// The words a buyer sees when they ask for more than there is.
+function stockMessage(product: Product, qty: number): string | null {
+  if (product.qty === 0) return product.name + " is sold out.";
+  if (qty > product.qty) return `Only ${product.qty} of ${product.name} left.`;
+  return null;
+}
+
+// Checks one cart line against the real listing. price/seller/name are NEVER
+// taken from the client — only which product and how many.
+async function orderableProduct(productId: string, qty: number): Promise<Product> {
+  if (!Number.isInteger(qty) || qty < 1 || qty > MAX_ORDER_QTY) {
+    throw new ValidationError(`Quantity must be between 1 and ${MAX_ORDER_QTY}.`);
+  }
+  const product = await getProduct(productId);
+  if (!product || product.active === false || product.moderationStatus === "removed") {
+    throw new ValidationError("That product is no longer available.");
+  }
+  // qty is real stock now: confirming a payment takes the order's quantity
+  // off it (decrementStockForOrder). Checked again when payment starts.
+  if (product.qty === 0) throw new ValidationError("This item is out of stock.");
+  const short = stockMessage(product, qty);
+  if (short) throw new ValidationError(short);
+  return product;
+}
+
+// One order from several of ONE seller's products (or one product): one
+// checkout, one delivery fee. The buyer can choose only what every item
+// allows; delivery costs the highest of the items' delivery fees (one parcel,
+// one trip), never the sum.
+async function insertOrderForProducts(items: { product: Product; qty: number }[], userId: string): Promise<Order> {
+  const first = items[0].product;
+  const lines: OrderLine[] = items.map(({ product, qty }) => ({
+    productId: product.id,
+    name: product.name,
+    qty,
+    unitPrice: product.price,
+  }));
+  const delivery = items.every(({ product }) => deliveryChoices(product.deliveryOption).delivery);
+  const pickup = items.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
+  const deliveryOptions: DeliveryOptions | null =
+    items.length === 1 ? first.deliveryOption : delivery && pickup ? "Both" : delivery ? "Delivery" : "Pickup";
+  const feeQuote = delivery ? Math.max(0, ...items.map(({ product }) => (product.deliveryOption === "Pickup" ? 0 : product.deliveryFee))) : 0;
+
+  return insertOrder({
+    item: lines.map((l) => (l.qty > 1 ? `${l.name} ×${l.qty}` : l.name)).join(", "),
+    seller: first.seller,
+    sellerId: first.sellerId,
+    price: lines.reduce((sum, l) => sum + l.unitPrice * l.qty, 0),
+    status: "Awaiting payment",
+    userId,
+    deliveryOptions,
+    deliveryFeeQuote: feeQuote,
+    lines,
+  });
+}
+
+// The "Buy now" path.
 export async function createOrderFromProduct(
   productId: string,
   qty: number,
   userId: string
 ): Promise<Order> {
-  if (!Number.isFinite(qty) || qty < 1 || qty > MAX_ORDER_QTY) {
-    throw new ValidationError(`Quantity must be between 1 and ${MAX_ORDER_QTY}.`);
-  }
-  const product = await getProduct(productId);
-  if (!product) {
-    throw new ValidationError("That product is no longer available.");
-  }
-  // A seller-declared 0 is a real, deliberate "nothing left to sell" — not
-  // real inventory tracking (nothing decrements qty as orders are placed
-  // today), just refusing the one case that's unambiguous.
-  if (product.qty === 0) {
-    throw new ValidationError("This item is out of stock.");
-  }
-  const order = await insertOrder({
-    item: product.name,
-    seller: product.seller,
-    sellerId: product.sellerId,
-    price: product.price * qty,
-    status: "Awaiting payment",
-    userId,
-    deliveryOptions: product.deliveryOption,
-    deliveryFeeQuote: product.deliveryOption === "Pickup" ? 0 : product.deliveryFee,
-  });
-
+  const product = await orderableProduct(productId, qty);
   // No seller notification here — the seller learns about this order once
   // it's actually paid for (see lib/payments.ts#confirmOrderPayment), not
   // the moment a buyer starts checkout on something they might never pay.
+  return insertOrderForProducts([{ product, qty }], userId);
+}
+
+// Checking out a cart: ONE order per seller, so the buyer pays each seller's
+// delivery fee once and checks out once per seller, not once per item. Every
+// line is checked before any order is created, so a problem with one item
+// never leaves half a cart ordered. The rare seller whose items can't share
+// a delivery choice (one is delivery-only, another pickup-only) gets one
+// order per item instead.
+export async function createOrdersFromCart(
+  items: { productId: string; qty: number }[],
+  userId: string
+): Promise<Order[]> {
+  if (!Array.isArray(items) || items.length === 0) throw new ValidationError("Your cart is empty.");
+  if (items.length > MAX_CART_LINES) throw new ValidationError(`A cart can hold up to ${MAX_CART_LINES} different items.`);
+
+  const qtyById = new Map<string, number>();
+  for (const it of items) {
+    if (!it || typeof it.productId !== "string") throw new ValidationError("Something in your cart isn't a product.");
+    qtyById.set(it.productId, (qtyById.get(it.productId) ?? 0) + Number(it.qty));
+  }
+  const checked: { product: Product; qty: number }[] = [];
+  for (const [productId, qty] of qtyById) checked.push({ product: await orderableProduct(productId, qty), qty });
+
+  const bySeller = new Map<string, { product: Product; qty: number }[]>();
+  for (const it of checked) {
+    const key = it.product.sellerId ?? "name:" + it.product.seller;
+    bySeller.set(key, [...(bySeller.get(key) ?? []), it]);
+  }
+
+  const orders: Order[] = [];
+  for (const group of bySeller.values()) {
+    const canShare =
+      group.every(({ product }) => deliveryChoices(product.deliveryOption).delivery) ||
+      group.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
+    if (canShare) orders.push(await insertOrderForProducts(group, userId));
+    else for (const it of group) orders.push(await insertOrderForProducts([it], userId));
+  }
+  return orders;
+}
+
+// Before payment starts: is there still enough of everything in this order?
+// Throws ValidationError with what's short.
+export async function assertOrderInStock(order: Order): Promise<void> {
+  for (const line of order.lines) {
+    const product = await getProduct(line.productId);
+    if (!product || product.active === false || product.moderationStatus === "removed") {
+      throw new ValidationError(`${line.name} is no longer available. Cancel this order and order again.`);
+    }
+    const short = stockMessage(product, line.qty);
+    if (short) throw new ValidationError(`${short} Cancel this order and order again.`);
+  }
+}
+
+// Called once, when an order's payment is confirmed: takes each line's
+// quantity off the product's stock. Never below 0 (two buyers paying for
+// the last one at the same moment both keep their order; the seller sees 0
+// left and sorts it out, the same as a shop that oversold). A conditional
+// write on the qty just read, retried, so two payments can't lose an update.
+export async function decrementStockForOrder(order: Order): Promise<void> {
+  const db = getDb();
+  for (const line of order.lines) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const read = await db.from("products").select("qty, name, seller, seller_id").eq("id", line.productId).maybeSingle();
+      const row = assertNoError(read, "reading stock") as Row | null;
+      if (!row) break; // listing deleted since: nothing to update
+      const current = (row.qty as number | null) ?? 0;
+      const next = Math.max(0, current - line.qty);
+      if (next === current) break;
+      const write = await db.from("products").update({ qty: next }).eq("id", line.productId).eq("qty", current).select("id").maybeSingle();
+      if (assertNoError(write, "updating stock")) {
+        // Most listings start at quantity 1, so the seller needs to know the
+        // moment one sells out, or it silently stops being buyable.
+        if (next === 0) {
+          try {
+          const seller = row.seller_id
+            ? await findUserForSellerId(row.seller_id as string)
+            : await findUserByBusinessName(row.seller as string);
+          if (seller) {
+            await notifyBestEffort({
+              userId: seller.id,
+              type: "payment",
+              title: "Sold out",
+              body: `"${row.name}" is now sold out. Edit the listing to add more stock.`,
+            });
+          }
+          } catch (err) {
+            console.error("[stock] couldn't tell the seller a listing sold out", err);
+          }
+        }
+        break;
+      }
+    }
+  }
+}
+
+export const UNPAID_ORDER_DAYS = 7;
+
+// Cancels an order that hasn't been paid: status 'Cancelled'. Conditional on
+// it still being unpaid and awaiting payment, so it can't race a payment
+// that is confirming at the same moment (and a payment that completes later
+// anyway reopens it, see lib/payments.ts#confirmOrderPayment). An order from
+// an accepted request offer puts the request back up, so the buyer can pick
+// another offer, and tells the seller whose offer it was.
+// Returns null if the order wasn't in a state that could be cancelled.
+export async function cancelUnpaidOrder(orderId: string, reason: "buyer" | "expired"): Promise<Order | null> {
+  const db = getDb();
+  const result = await db
+    .from("orders")
+    .update({ status: "Cancelled", cancelled_at: new Date().toISOString(), cancel_reason: reason })
+    .eq("id", orderId)
+    .eq("status", "Awaiting payment")
+    .neq("payment_status", "paid")
+    .select()
+    .maybeSingle();
+  const row = assertNoError(result, "cancelling order") as Row | null;
+  if (!row) return null;
+  const order = rowToOrder(row);
+
+  if (order.requestId) {
+    try {
+      await assertNoError(
+        await db.from("requests").update({ status: "open" }).eq("id", order.requestId).eq("status", "matched"),
+        "reopening request"
+      );
+      await assertNoError(
+        await db.from("offers").update({ accepted: false }).eq("request_id", order.requestId).eq("accepted", true),
+        "un-accepting offer"
+      );
+      const seller = order.sellerId ? await findUserForSellerId(order.sellerId) : await findUserByBusinessName(order.seller);
+      if (seller) {
+        await notifyBestEffort({
+          userId: seller.id,
+          type: "offer",
+          title: "Order cancelled",
+          body: `The buyer's order for "${order.item}" was cancelled before payment. The request is open again.`,
+        });
+      }
+    } catch (err) {
+      // The order itself is cancelled either way; this is housekeeping.
+      console.error("[cancel] couldn't reopen the request for", orderId, err);
+    }
+  }
   return order;
+}
+
+// Daily (app/api/cron/expirations): closes orders left unpaid for
+// UNPAID_ORDER_DAYS, so My orders doesn't fill up with checkouts nobody
+// finished. Skips any order with a payment started in the last day, in case
+// the buyer is paying right now. Returns how many were closed.
+export async function expireUnpaidOrders(): Promise<number> {
+  const db = getDb();
+  const cutoff = new Date(Date.now() - UNPAID_ORDER_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const recent = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const staleResult = await db
+    .from("orders")
+    .select("id, user_id, item")
+    .eq("status", "Awaiting payment")
+    .neq("payment_status", "paid")
+    .lte("created_at", cutoff)
+    .limit(200);
+  const stale = assertNoError(staleResult, "listing unpaid orders") as Row[];
+
+  let closed = 0;
+  for (const row of stale) {
+    const pendingResult = await db
+      .from("payments")
+      .select("id")
+      .eq("order_id", row.id as string)
+      .eq("status", "pending")
+      .gte("created_at", recent)
+      .limit(1)
+      .maybeSingle();
+    if (assertNoError(pendingResult, "checking for a payment in progress")) continue;
+    const order = await cancelUnpaidOrder(row.id as string, "expired");
+    if (!order) continue;
+    closed++;
+    await notifyBestEffort({
+      userId: order.userId,
+      type: "payment",
+      title: "Unpaid order closed",
+      body: `Your order for "${order.item}" was closed because it wasn't paid within ${UNPAID_ORDER_DAYS} days. You can order it again any time.`,
+    });
+  }
+  return closed;
 }
 
 // Shared by both ways an order gets created (direct purchase and accepting

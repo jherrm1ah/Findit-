@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { listOrders, createOrderFromProduct, getSellerIdForUser } from "@/lib/repo";
+import { listOrders, createOrderFromProduct, createOrdersFromCart, getSellerIdForUser } from "@/lib/repo";
 import { getSessionUser } from "@/lib/auth";
 import { errorResponse } from "@/lib/errors";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -29,15 +29,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Log in to place an order." }, { status: 401 });
   }
 
-  let body: { productId?: string; qty?: number };
+  // Either one product ("Buy now") or a whole cart: { items: [{ productId, qty }] },
+  // which becomes one order per seller (see createOrdersFromCart).
+  let body: { productId?: string; qty?: number; items?: { productId: string; qty: number }[] };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  if (!body.productId) {
-    return NextResponse.json({ error: "productId is required" }, { status: 400 });
+  if (!body.productId && !Array.isArray(body.items)) {
+    return NextResponse.json({ error: "productId or items is required" }, { status: 400 });
   }
 
   const { allowed, retryAfterSeconds } = await checkRateLimit(`order:${user.id}`, MAX_ORDERS, WINDOW_MS);
@@ -53,8 +55,15 @@ export async function POST(req: NextRequest) {
   // row itself (see lib/repo.ts#createOrderFromProduct), so a buyer can't
   // tamper with what they're charged or who they appear to be ordering from.
   try {
+    if (Array.isArray(body.items)) {
+      const orders = await createOrdersFromCart(
+        body.items.map((it) => ({ productId: it?.productId, qty: Number(it?.qty) || 1 })),
+        user.id
+      );
+      return NextResponse.json({ orders });
+    }
     const qty = Number(body.qty) > 0 ? Number(body.qty) : 1;
-    const order = await createOrderFromProduct(body.productId, qty, user.id);
+    const order = await createOrderFromProduct(body.productId!, qty, user.id);
     return NextResponse.json({ order });
   } catch (err) {
     return errorResponse(err, "Couldn't place that order.");
