@@ -21,7 +21,7 @@ import { listActiveModerationRules, findMatchingModerationRule } from "./moderat
 import { qualifyReferral } from "./referrals";
 import { publicSellerPicture, avatarsByUserId } from "./sellerPicture";
 import { sendPushToUser, sendTextAlert } from "./outsideAlerts";
-import { deliveryChoices, feeForState, isNigerianState, normalizeAddress, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryMethod, type DeliveryOptions } from "./delivery";
+import { deliveryChoices, feeForState, normalizeAddress, normalizeDeliveryPricing, orderPriceFor, parseDeliveryFee, type DeliveryAddress, type DeliveryPricing, type DeliveryRates, type DeliveryMethod, type DeliveryOptions } from "./delivery";
 
 // Re-exported for backward compatibility — every other module in this app
 // imports ValidationError from here (its original home); see lib/errors.ts
@@ -96,10 +96,12 @@ export type Product = {
   // used when deliveryOption allows delivery; added to the order's price
   // when the buyer chooses delivery at checkout (see lib/delivery.ts).
   deliveryFee: number;
-  // Migration 045: the state it ships from, and the fee to other states
-  // (deliveryFee is then the fee within that state). Null = flat fee.
-  deliveryState: string | null;
-  deliveryFeeOther: number | null;
+  // Migration 046: how delivery is priced (lib/deliveryShared.ts): "free"
+  // (included in the price), "fixed" (deliveryFee everywhere) or "location"
+  // (deliveryRates per state, deliveryFee for every other state). Null = an
+  // older listing whose seller hasn't chosen yet.
+  deliveryPricing: DeliveryPricing | null;
+  deliveryRates: DeliveryRates | null;
   color: string | null;
   variation: string | null;
   // Every photo, cover first — imageUrl above always equals images[0] and
@@ -178,10 +180,12 @@ export type Order = {
   // True once the buyer has started paying: the method (and so the price)
   // can no longer change. The address still can, until the order is paid.
   deliveryLocked: boolean;
-  // Migration 045: fee to other states (deliveryFeeQuote is then the fee
-  // within deliveryFromState). Null = flat. See lib/deliveryShared.ts#feeForState.
-  deliveryFromState: string | null;
-  deliveryFeeQuoteOther: number | null;
+  // Migration 046: delivery fee per state (deliveryFeeQuote for every other
+  // state). Null = one fee everywhere. See lib/deliveryShared.ts#feeForState.
+  deliveryRates: DeliveryRates | null;
+  // True when the order came from a listing whose seller never chose how to
+  // price delivery: no fee is charged, and checkout says so.
+  deliveryFeeUnset: boolean;
   // The buyer's name, on a PAID order the seller is looking at (listOrders).
   // Null everywhere else.
   buyerName: string | null;
@@ -486,8 +490,8 @@ function rowToProduct(row: Row, stats: SellerStats, images?: string[]): Product 
     location: (row.location as string | null) ?? null,
     deliveryOption: (row.delivery_option as Product["deliveryOption"]) ?? null,
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
-    deliveryState: (row.delivery_state as string | null | undefined) ?? null,
-    deliveryFeeOther: (row.delivery_fee_other as number | null | undefined) ?? null,
+    deliveryPricing: (row.delivery_pricing as DeliveryPricing | null | undefined) ?? null,
+    deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
     color: (row.color as string | null) ?? null,
     variation: (row.variation as string | null) ?? null,
     moderationStatus: (row.moderation_status as Product["moderationStatus"] | undefined) ?? "active",
@@ -662,8 +666,6 @@ export function validateProductInput(input: {
   location?: string | null;
   deliveryOption?: string | null;
   deliveryFee?: number | null;
-  deliveryState?: string | null;
-  deliveryFeeOther?: number | null;
   color?: string | null;
   variation?: string | null;
   images?: string[];
@@ -690,10 +692,6 @@ export function validateProductInput(input: {
     throw new ValidationError("Delivery option must be Delivery, Pickup, or Both.");
   }
   if (input.deliveryFee != null) parseDeliveryFee(input.deliveryFee);
-  if (input.deliveryFeeOther != null) parseDeliveryFee(input.deliveryFeeOther);
-  if (input.deliveryState != null && input.deliveryState !== "" && !isNigerianState(input.deliveryState)) {
-    throw new ValidationError("Choose the state you deliver from.");
-  }
   if (input.color != null && input.color.length > MAX_COLOR_LENGTH) {
     throw new ValidationError(`Color must be under ${MAX_COLOR_LENGTH} characters.`);
   }
@@ -756,8 +754,8 @@ export async function createProduct(input: {
   location?: string | null;
   deliveryOption: "Delivery" | "Pickup" | "Both";
   deliveryFee?: number | null;
-  deliveryState?: string | null;
-  deliveryFeeOther?: number | null;
+  deliveryPricing?: DeliveryPricing | null;
+  deliveryRates?: DeliveryRates | null;
   color?: string | null;
   variation?: string | null;
 }): Promise<Product> {
@@ -816,8 +814,7 @@ export async function createProduct(input: {
       qty: input.qty ?? 1,
       location: input.location?.trim() || null,
       delivery_option: input.deliveryOption,
-      delivery_fee: input.deliveryOption === "Pickup" ? 0 : parseDeliveryFee(input.deliveryFee),
-      ...stateFeeColumns(input.deliveryOption, input.deliveryState, input.deliveryFeeOther),
+      ...pricingColumns(input.deliveryOption, input.deliveryPricing, input.deliveryFee, input.deliveryRates),
       color: input.color?.trim() || null,
       variation: input.variation?.trim() || null,
       moderation_status: matchedRule ? "under_review" : "active",
@@ -863,8 +860,8 @@ export async function updateProduct(
     location: string | null;
     deliveryOption: "Delivery" | "Pickup" | "Both" | null;
     deliveryFee: number | null;
-    deliveryState: string | null;
-    deliveryFeeOther: number | null;
+    deliveryPricing: DeliveryPricing | null;
+    deliveryRates: DeliveryRates | null;
     color: string | null;
     variation: string | null;
   }>
@@ -919,17 +916,19 @@ export async function updateProduct(
       qty: patch.qty !== undefined ? patch.qty : existing.qty,
       location: patch.location !== undefined ? (patch.location?.trim() || null) : existing.location,
       delivery_option: patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
-      delivery_fee:
-        (patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption) === "Pickup"
-          ? 0
-          : patch.deliveryFee !== undefined
-            ? parseDeliveryFee(patch.deliveryFee)
-            : existing.deliveryFee,
-      ...stateFeeColumns(
-        patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
-        patch.deliveryState !== undefined ? patch.deliveryState : existing.deliveryState,
-        patch.deliveryFeeOther !== undefined ? patch.deliveryFeeOther : existing.deliveryFeeOther
-      ),
+      // Delivery pricing is re-checked only when the seller changes it, so an
+      // unrelated edit (price, photos) never forces a choice on an older listing.
+      ...(patch.deliveryOption !== undefined ||
+      patch.deliveryPricing !== undefined ||
+      patch.deliveryFee !== undefined ||
+      patch.deliveryRates !== undefined
+        ? pricingColumns(
+            patch.deliveryOption !== undefined ? patch.deliveryOption : existing.deliveryOption,
+            patch.deliveryPricing !== undefined ? patch.deliveryPricing : existing.deliveryPricing,
+            patch.deliveryFee !== undefined ? patch.deliveryFee : existing.deliveryFee,
+            patch.deliveryRates !== undefined ? patch.deliveryRates : existing.deliveryRates
+          )
+        : {}),
       color: patch.color !== undefined ? (patch.color?.trim() || null) : existing.color,
       variation: patch.variation !== undefined ? (patch.variation?.trim() || null) : existing.variation,
       ...(moderationEscalation
@@ -1029,8 +1028,8 @@ function rowToOrder(row: Row): Order {
     deliveryFee: (row.delivery_fee as number | null | undefined) ?? 0,
     deliveryAddress: (row.delivery_address as DeliveryAddress | null | undefined) ?? null,
     deliveryLocked: Boolean(row.delivery_locked),
-    deliveryFromState: (row.delivery_from_state as string | null | undefined) ?? null,
-    deliveryFeeQuoteOther: (row.delivery_fee_quote_other as number | null | undefined) ?? null,
+    deliveryRates: (row.delivery_rates as DeliveryRates | null | undefined) ?? null,
+    deliveryFeeUnset: Boolean(row.delivery_fee_unset),
     buyerName: null,
     lines: Array.isArray(row.lines) ? (row.lines as OrderLine[]) : [],
     cancelledAt: (row.cancelled_at as string | null | undefined) ?? null,
@@ -1124,8 +1123,8 @@ async function insertOrder(input: {
   // costs if chosen. price above is the item alone until they choose.
   deliveryOptions?: DeliveryOptions | null;
   deliveryFeeQuote?: number;
-  deliveryFromState?: string | null;
-  deliveryFeeQuoteOther?: number | null;
+  deliveryRates?: DeliveryRates | null;
+  deliveryFeeUnset?: boolean;
   lines?: OrderLine[];
 }): Promise<Order> {
   const db = getDb();
@@ -1144,8 +1143,8 @@ async function insertOrder(input: {
       delivery_fee_quote: input.deliveryOptions === "Pickup" ? 0 : Math.max(0, Math.round(input.deliveryFeeQuote ?? 0)),
       delivery_fee: 0,
       delivery_locked: false,
-      delivery_from_state: input.deliveryOptions === "Pickup" ? null : input.deliveryFromState ?? null,
-      delivery_fee_quote_other: input.deliveryOptions === "Pickup" ? null : input.deliveryFeeQuoteOther ?? null,
+      delivery_rates: input.deliveryOptions === "Pickup" ? null : input.deliveryRates ?? null,
+      delivery_fee_unset: input.deliveryOptions !== "Pickup" && Boolean(input.deliveryFeeUnset),
       lines: input.lines ?? [],
       status: input.status,
       request_id: input.requestId ?? null,
@@ -1156,15 +1155,17 @@ async function insertOrder(input: {
   return rowToOrder(row);
 }
 
-// A listing's state-based delivery columns: a ships-from state and a fee to
-// other states only when it delivers; null (flat fee) otherwise.
-function stateFeeColumns(option: string | null, state: string | null | undefined, other: number | string | null | undefined) {
-  const delivers = option !== "Pickup";
-  const fromState = delivers && state ? state : null;
-  return {
-    delivery_state: fromState,
-    delivery_fee_other: fromState && other != null && other !== "" ? parseDeliveryFee(other) : null,
-  };
+// A listing's delivery pricing columns, checked (lib/delivery.ts#normalizeDeliveryPricing).
+function pricingColumns(option: string | null | undefined, pricing: unknown, fee: unknown, rates: unknown) {
+  const p = normalizeDeliveryPricing({ deliveryOption: option, deliveryPricing: pricing, deliveryFee: fee, deliveryRates: rates });
+  return { delivery_pricing: p.deliveryPricing, delivery_fee: p.deliveryFee, delivery_rates: p.deliveryRates };
+}
+
+// What delivering one listing costs to a state (0 for free shipping).
+function listingFeeFor(p: Product, state: string | null): number {
+  if (p.deliveryOption === "Pickup" || p.deliveryPricing === "free") return 0;
+  if (p.deliveryPricing === "location" && state && p.deliveryRates && state in p.deliveryRates) return p.deliveryRates[state];
+  return p.deliveryFee;
 }
 
 const MAX_ORDER_QTY = 999;
@@ -1211,15 +1212,17 @@ async function insertOrderForProducts(items: { product: Product; qty: number }[]
   const pickup = items.every(({ product }) => deliveryChoices(product.deliveryOption).pickup);
   const deliveryOptions: DeliveryOptions | null =
     items.length === 1 ? first.deliveryOption : delivery && pickup ? "Both" : delivery ? "Delivery" : "Pickup";
+  // One parcel, one trip: for each state, the highest of the items' fees to
+  // that state; deliveryFeeQuote for any state no item prices separately.
   const deliverable = items.filter(({ product }) => product.deliveryOption !== "Pickup").map(({ product }) => product);
-  const sameStateFee = Math.max(0, ...deliverable.map((p) => p.deliveryFee));
-  const otherStateFee = Math.max(0, ...deliverable.map((p) => p.deliveryFeeOther ?? p.deliveryFee));
-  // State-based fees only when every item ships from the same state;
-  // otherwise one flat fee, the highest of them.
-  const states = new Set(deliverable.map((p) => p.deliveryState));
-  const fromState = deliverable.length > 0 && states.size === 1 ? [...states][0] : null;
-  const feeQuote = !delivery ? 0 : fromState ? sameStateFee : Math.max(sameStateFee, otherStateFee);
-  const feeQuoteOther = delivery && fromState && otherStateFee !== sameStateFee ? otherStateFee : null;
+  const feeQuote = delivery ? Math.max(0, ...deliverable.map((p) => listingFeeFor(p, null))) : 0;
+  const rateStates = new Set(deliverable.flatMap((p) => (p.deliveryPricing === "location" ? Object.keys(p.deliveryRates ?? {}) : [])));
+  const rates: DeliveryRates = {};
+  for (const state of rateStates) {
+    const fee = Math.max(0, ...deliverable.map((p) => listingFeeFor(p, state)));
+    if (fee !== feeQuote) rates[state] = fee;
+  }
+  const deliveryRates = delivery && Object.keys(rates).length > 0 ? rates : null;
 
   return insertOrder({
     item: lines.map((l) => (l.qty > 1 ? `${l.name} ×${l.qty}` : l.name)).join(", "),
@@ -1230,8 +1233,8 @@ async function insertOrderForProducts(items: { product: Product; qty: number }[]
     userId,
     deliveryOptions,
     deliveryFeeQuote: feeQuote,
-    deliveryFromState: feeQuoteOther != null ? fromState : null,
-    deliveryFeeQuoteOther: feeQuoteOther,
+    deliveryRates,
+    deliveryFeeUnset: delivery && deliverable.some((p) => p.deliveryPricing == null && p.deliveryFee === 0),
     lines,
   });
 }

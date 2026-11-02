@@ -1,5 +1,5 @@
 import { ValidationError } from "./errors";
-import { NIGERIAN_STATES, type DeliveryAddress, type DeliveryMethod } from "./deliveryShared";
+import { NIGERIAN_STATES, DELIVERY_PRICING, type DeliveryAddress, type DeliveryMethod, type DeliveryPricing, type DeliveryRates } from "./deliveryShared";
 
 export function isNigerianState(s: unknown): boolean {
   return typeof s === "string" && (NIGERIAN_STATES as readonly string[]).includes(s);
@@ -59,4 +59,43 @@ export function normalizeAddress(input: unknown): DeliveryAddress {
   if (landmark.length > 120) throw new ValidationError("That landmark is too long.");
 
   return { fullName, phone, address, area, state, landmark: landmark || null };
+}
+
+// A listing's delivery pricing as the seller entered it, checked and tidied.
+// Returns what to store: the pricing, the fee (fixed fee, or "every other
+// state" for by-location) and the per-state rates.
+export function normalizeDeliveryPricing(input: {
+  deliveryOption: string | null | undefined;
+  deliveryPricing: unknown;
+  deliveryFee: unknown;
+  deliveryRates: unknown;
+}): { deliveryPricing: DeliveryPricing | null; deliveryFee: number; deliveryRates: DeliveryRates | null } {
+  if (input.deliveryOption === "Pickup") return { deliveryPricing: null, deliveryFee: 0, deliveryRates: null };
+  const pricing = input.deliveryPricing;
+  if (pricing == null || pricing === "") {
+    // No choice sent (an older caller): a fee means a fixed fee; otherwise
+    // "not set yet", shown to buyers as "ask the seller", never as free.
+    // The listing form always sends a choice.
+    const fee = parseDeliveryFee(input.deliveryFee);
+    return fee > 0 ? { deliveryPricing: "fixed", deliveryFee: fee, deliveryRates: null } : { deliveryPricing: null, deliveryFee: 0, deliveryRates: null };
+  }
+  if (!(DELIVERY_PRICING as readonly unknown[]).includes(pricing)) throw new ValidationError("Choose how you charge for delivery.");
+  if (pricing === "free") return { deliveryPricing: "free", deliveryFee: 0, deliveryRates: null };
+
+  const fee = parseDeliveryFee(input.deliveryFee);
+  if (pricing === "fixed") {
+    if (fee === 0) throw new ValidationError("Enter your delivery fee, or choose Free shipping if delivery is included in the price.");
+    return { deliveryPricing: "fixed", deliveryFee: fee, deliveryRates: null };
+  }
+
+  const raw = input.deliveryRates && typeof input.deliveryRates === "object" ? (input.deliveryRates as Record<string, unknown>) : {};
+  const rates: DeliveryRates = {};
+  for (const [state, value] of Object.entries(raw)) {
+    if (!(NIGERIAN_STATES as readonly string[]).includes(state)) throw new ValidationError(`"${state}" isn't a Nigerian state.`);
+    rates[state] = parseDeliveryFee(value);
+  }
+  if (Object.keys(rates).length === 0) {
+    throw new ValidationError("Add at least one state with its delivery fee, or choose a fixed fee instead.");
+  }
+  return { deliveryPricing: "location", deliveryFee: fee, deliveryRates: rates };
 }

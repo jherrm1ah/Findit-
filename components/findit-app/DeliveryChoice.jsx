@@ -87,7 +87,9 @@ export default function DeliveryChoice({ order, method, setMethod, address, setA
             icon={Truck}
             title="Deliver to me"
             detail={
-              byState && !address.state
+              order.deliveryFeeUnset && fee === 0
+                ? "Seller hasn't set a delivery fee"
+                : byState && !address.state
                 ? `${feeSummary(order)}`
                 : fee > 0
                   ? `+ ${naira(fee)} delivery${byState ? ` to ${address.state}` : ""}`

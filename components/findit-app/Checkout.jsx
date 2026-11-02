@@ -195,7 +195,7 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
               {method === "pickup" || (alreadyPaid && order.deliveryMethod === "pickup")
                 ? "Pickup, free"
                 : method === "delivery" || (alreadyPaid && order.deliveryMethod === "delivery")
-                  ? deliveryFee > 0 ? naira(deliveryFee) : "Free"
+                  ? deliveryFee > 0 ? naira(deliveryFee) : order.deliveryFeeUnset ? "Not set by seller" : "Free"
                   : "Choose below"}
             </span>
           </div>

@@ -8,7 +8,7 @@ import {
   Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
 } from "lucide-react";
 import { categoryGroup, naira } from "./data";
-import { feeSummary } from "@/lib/deliveryShared";
+import { productDeliveryText } from "@/lib/deliveryShared";
 import { ArtBlock, Pill } from "./shared";
 import { IconButton, FavoriteButton } from "./sharedMotion";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
@@ -233,8 +233,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             {product.deliveryOption && (
               <Pill tone="stone">
                 <Truck size={11} /> {product.deliveryOption}
-                {product.deliveryOption !== "Pickup" &&
-                  ` · ${feeSummary({ deliveryFeeQuote: product.deliveryFee, deliveryFeeQuoteOther: product.deliveryFeeOther, deliveryFromState: product.deliveryState })} delivery`}
+                {productDeliveryText(product) ? ` · ${productDeliveryText(product)}` : ""}
               </Pill>
             )}
             {product.color && <Pill tone="stone"><Palette size={11} /> {product.color}</Pill>}

@@ -322,11 +322,12 @@ create table if not exists products (
   -- What delivery costs the buyer, added to the order only if they choose
   -- delivery at checkout (migration 043). 0 = free delivery.
   delivery_fee integer not null default 0 constraint products_delivery_fee_nonneg check (delivery_fee >= 0),
-  -- Migration 045: the state it ships from; delivery_fee is then the fee
-  -- within it and delivery_fee_other the fee to every other state. Null = flat.
-  delivery_state text,
-  delivery_fee_other integer constraint products_delivery_fee_other_nonneg
-    check (delivery_fee_other is null or delivery_fee_other >= 0),
+  -- Migration 046: how delivery is priced. 'free' (included in the price),
+  -- 'fixed' (delivery_fee everywhere) or 'location' (delivery_rates per
+  -- state, delivery_fee for every other state). Null = not chosen yet.
+  delivery_pricing text constraint products_delivery_pricing_valid
+    check (delivery_pricing is null or delivery_pricing in ('free', 'fixed', 'location')),
+  delivery_rates jsonb,
   color text,
   variation text,
   -- ---- Moderation (migration 027) ----
@@ -550,11 +551,11 @@ create table if not exists orders (
   constraint orders_delivery_fee_nonneg check (delivery_fee >= 0 and delivery_fee_quote >= 0),
   constraint orders_price_includes_delivery
     check (item_price is null or price = item_price + delivery_fee),
-  -- Migration 045: fee to other states; delivery_fee_quote is then the fee
-  -- within delivery_from_state (lib/deliveryShared.ts#feeForState).
-  delivery_from_state text,
-  delivery_fee_quote_other integer constraint orders_delivery_fee_quote_other_nonneg
-    check (delivery_fee_quote_other is null or delivery_fee_quote_other >= 0),
+  -- Migration 046: per-state fees (delivery_fee_quote for any other state;
+  -- lib/deliveryShared.ts#feeForState), and whether the listing had no
+  -- delivery pricing chosen.
+  delivery_rates jsonb,
+  delivery_fee_unset boolean not null default false,
   -- ---- Migration 044 ----
   -- The products in the order, [{ productId, name, qty, unitPrice }]: a cart
   -- is one order per seller. Paying takes each line's qty off stock.

@@ -48,8 +48,8 @@ export async function POST(req: NextRequest) {
     location?: string | null;
     deliveryOption?: string;
     deliveryFee?: number | null;
-    deliveryState?: string | null;
-    deliveryFeeOther?: number | null;
+    deliveryPricing?: "free" | "fixed" | "location" | null;
+    deliveryRates?: Record<string, number> | null;
     color?: string | null;
     variation?: string | null;
   };
@@ -118,8 +118,8 @@ export async function POST(req: NextRequest) {
       location: body.location ?? null,
       deliveryOption: body.deliveryOption,
       deliveryFee: body.deliveryFee ?? 0,
-      deliveryState: body.deliveryState ?? null,
-      deliveryFeeOther: body.deliveryFeeOther ?? null,
+      deliveryPricing: body.deliveryPricing ?? null,
+      deliveryRates: body.deliveryRates ?? null,
       color: body.color ?? null,
       variation: body.variation ?? null,
     });

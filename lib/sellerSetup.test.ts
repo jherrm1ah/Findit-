@@ -7,7 +7,7 @@ const done = (steps: ReturnType<typeof setupSteps>) => steps.filter((s) => s.don
 describe("seller setup steps", () => {
   it("start with nothing done for a new seller, in a sensible order", () => {
     const steps = setupSteps(fresh);
-    expect(steps.map((s) => s.key)).toEqual(["photo", "verify", "listing", "payout", "sale"]);
+    expect(steps.map((s) => s.key)).toEqual(["photo", "verify", "listing", "delivery", "payout", "sale"]);
     expect(done(steps)).toEqual([]);
   });
 
@@ -16,11 +16,17 @@ describe("seller setup steps", () => {
       user: { avatarUrl: null },
       storeBranding: { logoUrl: "https://x/logo.png" },
       verification: { status: "approved" },
-      myListings: [{}],
+      myListings: [{ deliveryOption: "Both", deliveryPricing: "free" }, { deliveryOption: "Pickup", deliveryPricing: null }],
       payoutAccount: { hasAccount: true },
       myOrders: [{ paymentStatus: "pending" }, { paymentStatus: "paid" }],
     });
-    expect(done(steps)).toEqual(["photo", "verify", "listing", "payout", "sale"]);
+    expect(done(steps)).toEqual(["photo", "verify", "listing", "delivery", "payout", "sale"]);
+  });
+
+  it("delivery pricing isn't done while a listing still has none", () => {
+    const steps = setupSteps({ ...fresh, myListings: [{ deliveryOption: "Delivery", deliveryPricing: null }] });
+    expect(done(steps)).toContain("listing");
+    expect(done(steps)).not.toContain("delivery");
   });
 
   it("an unpaid order isn't a sale yet", () => {
