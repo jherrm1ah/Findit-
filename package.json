@@ -22,9 +22,11 @@
   },
   "devDependencies": {
     "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
     "@capacitor/assets": "^4.0.0",
     "@capacitor/cli": "^8.6.0",
     "@capacitor/core": "^8.6.0",
+    "@capacitor/share": "^8.0.3",
     "@capacitor/splash-screen": "^8.0.2",
     "@types/node": "^20.14.10",
     "@types/react": "^18.3.3",

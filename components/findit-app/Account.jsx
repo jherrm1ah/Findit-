@@ -1,5 +1,6 @@
 "use client";
 
+import { shareLink } from "./nativeApp";
 import { useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Heart, Star as StarFilled, ShieldCheck, PackageCheck, AlertTriangle, CreditCard } from "lucide-react";
@@ -177,18 +178,10 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                       type="button"
                       onClick={async () => {
                         const url = `${window.location.origin}/verify/${record.code}`;
-                        // The share sheet where the device has one, clipboard
-                        // otherwise. Either way the link is all that travels.
-                        try {
-                          if (navigator.share) {
-                            await navigator.share({ title: "FindIt verified transaction", url });
-                          } else {
-                            await navigator.clipboard.writeText(url);
-                            showToast?.("Verification link copied.");
-                          }
-                        } catch {
-                          // A cancelled share sheet is not an error.
-                        }
+                        // The share sheet where the device has one (the app's
+                        // own on Android), clipboard otherwise. Only the link travels.
+                        const r = await shareLink({ title: "FindIt verified transaction", url });
+                        if (r === "copied") showToast?.("Verification link copied.");
                       }}
                       className="text-[11.5px] font-semibold text-[#7C3AED]"
                     >

@@ -8,7 +8,7 @@ import {
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
-import { hideNativeSplash } from "./nativeApp";
+import { hideNativeSplash, onNativeBack } from "./nativeApp";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { storePendingReferralCode } from "./referral";
@@ -464,6 +464,19 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     const previous = historyRef.current.pop();
     navigateTo(previous || "home");
   };
+
+  // The phone's back button in the Android app. FindIt switches screens without changing the page,
+  // so without this Android's back would close the app. It closes an open item or shop first, then
+  // walks back through the screens visited, and only leaves the app from Home. A ref keeps the
+  // single listener reading the current screen.
+  const nativeBackRef = useRef(null);
+  nativeBackRef.current = () => {
+    if (product) { setProduct(null); return true; }
+    if (viewedSeller) { setViewedSeller(null); return true; }
+    if (historyRef.current.length > 0 || screen !== "home") { goBack(); return true; }
+    return false; // on Home with nothing to go back to: let the app close
+  };
+  useEffect(() => onNativeBack(() => nativeBackRef.current?.()), []);
 
   // A ref, not state — this only needs to gate re-entrancy inside the
   // handler itself, never to trigger a render. Without it, a fast double-tap

@@ -1,5 +1,6 @@
 "use client";
 
+import { shareLink, canShareNatively } from "./nativeApp";
 import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import { Gift, Copy, Check, Share2, Users, Clock, Trophy, Loader2 } from "lucide-react";
@@ -73,11 +74,8 @@ export default function Referrals({ showToast }) {
   };
 
   const shareNative = async () => {
-    try {
-      await navigator.share({ title: "Join me on FindIt", text: shareText, url: link });
-    } catch {
-      // Cancelled or unsupported — no error toast, this is a normal outcome.
-    }
+    const r = await shareLink({ title: "Join me on FindIt", text: shareText, url: link });
+    if (r === "copied") showToast?.("Invite link copied.");
   };
 
   return (
@@ -127,7 +125,7 @@ export default function Referrals({ showToast }) {
           >
             WhatsApp
           </motion.button>
-          {typeof navigator !== "undefined" && navigator.share && (
+          {canShareNatively() && (
             <motion.button
               onClick={shareNative}
               {...press}

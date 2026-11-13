@@ -5,12 +5,13 @@ import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
 import {
   ChevronLeft, ShoppingBag, ShoppingCart, User, BadgeCheck, Star, Check,
-  Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag,
+  Minus, Plus, MapPin, Truck, Package as PackageIcon, Palette, Flag, Share2,
 } from "lucide-react";
 import { categoryGroup, naira } from "./data";
 import { productDeliveryText } from "@/lib/deliveryShared";
 import { ArtBlock, Pill } from "./shared";
 import { IconButton, FavoriteButton } from "./sharedMotion";
+import { shareLink } from "./nativeApp";
 import { haversineKm, formatDistanceKm } from "@/lib/geo";
 import { DURATION, EASE, SPRING_SNAPPY, SPRING_BOUNCY, press, wiggleIn, STAGGER_CONTAINER, STAGGER_ITEM } from "./motion";
 
@@ -105,7 +106,18 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
           <IconButton onClick={onClose} aria-label="Back"><ChevronLeft size={18} className="text-[#1E1B4B]" /></IconButton>
         </motion.div>
         <p className="text-[15px] font-bold text-[#1E1B4B]">Details</p>
-        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.06 }}>
+        <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={{ ...SPRING_BOUNCY, delay: 0.06 }} className="flex items-center gap-2">
+          {/* Opens /?product=<id> for whoever receives it (see MainApp's shared-link handling). */}
+          <IconButton
+            aria-label="Share this item"
+            onClick={async () => {
+              const url = `${window.location.origin}/?product=${encodeURIComponent(product.id)}`;
+              const r = await shareLink({ title: product.name, text: `${product.name} — ${naira(product.price)} on FindIt`, url });
+              if (r === "copied") showToast?.("Link copied.");
+            }}
+          >
+            <Share2 size={16} className="text-[#1E1B4B]" />
+          </IconButton>
           <IconButton onClick={() => go("request")} aria-label="Request an item"><ShoppingBag size={17} className="text-[#1E1B4B]" /></IconButton>
         </motion.div>
       </div>
