@@ -984,6 +984,14 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     await api.updatePassword(currentPassword, newPassword);
   };
 
+  // Deleted on the server (it also signs out every device), then the normal sign-out here so push
+  // is turned off on this phone and the app returns to the signed-out home.
+  const handleDeleteAccount = async (password, confirm) => {
+    await api.deleteAccount(password, confirm);
+    showToast("Your FindIt account has been deleted.");
+    await onLogout();
+  };
+
   const handleUpdateNotificationPref = async (enabled) => {
     const updated = await api.updateNotificationPref(enabled);
     onUserUpdate(updated);
@@ -1952,6 +1960,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onUpdateBusinessName={handleUpdateBusinessName}
             onUpdatePhone={handleUpdatePhone}
             onUpdatePassword={handleUpdatePassword}
+            onDeleteAccount={handleDeleteAccount}
             bio={verification?.description}
             onUpdateBio={handleUpdateSellerDescription}
             savingBio={savingDescription}

@@ -239,6 +239,8 @@ export default function Account({ openProduct, orders, products, onReview, onCon
                   ? `The seller couldn't fulfil this order, so it was cancelled and your ${naira(o.price)} refunded. Refunds to a card or bank can take a few working days.`
                   : o.cancelReason === "expired"
                     ? "Closed because it wasn't paid within 7 days. You can order it again any time."
+                    : o.cancelReason === "account_deleted"
+                    ? "Closed because the seller closed their FindIt account. Nothing was charged."
                     : "You cancelled this order before paying. Nothing was charged."}
               </p>
             )}

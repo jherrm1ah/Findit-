@@ -1,0 +1,101 @@
+name: Play Store bundle
+
+# Builds the signed Android App Bundle (FindIt.aab) that goes to Google Play.
+# Run it from the Actions tab ("Run workflow") once the upload key is saved as repository secrets:
+#   FINDIT_UPLOAD_KEYSTORE_B64   the upload keystore (.jks), base64-encoded
+#   FINDIT_UPLOAD_STORE_PASSWORD the keystore password
+#   FINDIT_UPLOAD_KEY_ALIAS      the key alias
+#   FINDIT_UPLOAD_KEY_PASSWORD   the key password
+# See docs/PLAY_STORE.md. The keystore only exists on the runner for this job and is deleted after.
+# The bundle is kept as a workflow artifact for 14 days (not on a branch or release). It holds no
+# secrets: the key stays in the secrets and only its signature is in the bundle.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  aab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check the upload key secrets
+        env:
+          KS: ${{ secrets.FINDIT_UPLOAD_KEYSTORE_B64 }}
+          SP: ${{ secrets.FINDIT_UPLOAD_STORE_PASSWORD }}
+          KA: ${{ secrets.FINDIT_UPLOAD_KEY_ALIAS }}
+          KP: ${{ secrets.FINDIT_UPLOAD_KEY_PASSWORD }}
+        run: |
+          missing=""
+          [ -n "$KS" ] || missing="$missing FINDIT_UPLOAD_KEYSTORE_B64"
+          [ -n "$SP" ] || missing="$missing FINDIT_UPLOAD_STORE_PASSWORD"
+          [ -n "$KA" ] || missing="$missing FINDIT_UPLOAD_KEY_ALIAS"
+          [ -n "$KP" ] || missing="$missing FINDIT_UPLOAD_KEY_PASSWORD"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (see docs/PLAY_STORE.md)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Android SDK packages
+        run: |
+          SDKM=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | sort -V | tail -1)
+          yes | "$SDKM" --licenses > /dev/null || true
+          "$SDKM" --install "platforms;android-36" "build-tools;36.0.0" "platform-tools" > /dev/null
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Copy the app shell and settings into the Android project
+        run: npx cap sync android
+
+      - name: Build the signed bundle
+        working-directory: android
+        env:
+          KS_B64: ${{ secrets.FINDIT_UPLOAD_KEYSTORE_B64 }}
+          FINDIT_UPLOAD_STORE_PASSWORD: ${{ secrets.FINDIT_UPLOAD_STORE_PASSWORD }}
+          FINDIT_UPLOAD_KEY_ALIAS: ${{ secrets.FINDIT_UPLOAD_KEY_ALIAS }}
+          FINDIT_UPLOAD_KEY_PASSWORD: ${{ secrets.FINDIT_UPLOAD_KEY_PASSWORD }}
+        run: |
+          export FINDIT_UPLOAD_KEYSTORE="$RUNNER_TEMP/upload.jks"
+          printf '%s' "$KS_B64" | base64 -d > "$FINDIT_UPLOAD_KEYSTORE"
+          chmod +x gradlew
+          ./gradlew bundleRelease --no-daemon
+          rm -f "$FINDIT_UPLOAD_KEYSTORE"
+
+      - name: Verify the bundle
+        run: |
+          AAB=android/app/build/outputs/bundle/release/app-release.aab
+          test -s "$AAB"
+          mkdir -p out
+          cp "$AAB" out/FindIt.aab
+          # Must be signed with the upload key, never the public debug key.
+          jarsigner -verify -verbose -certs out/FindIt.aab > verify.txt 2>&1 || { cat verify.txt; exit 1; }
+          grep -q "jar verified" verify.txt
+          if grep -qi "CN=Android Debug" verify.txt; then echo "::error::Signed with a debug key"; exit 1; fi
+          NAME=$(sed -n 's/^VERSION_NAME=//p' android/version.properties)
+          {
+            echo "FindIt Play Store bundle $NAME"
+            echo "commit: ${GITHUB_SHA}"
+            echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "sha256: $(sha256sum out/FindIt.aab | cut -d' ' -f1)"
+          } | tee out/BUILD-INFO.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FindIt-play-bundle
+          path: out/
+          retention-days: 14

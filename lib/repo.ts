@@ -219,7 +219,7 @@ export type Order = {
   // Set when an unpaid order is cancelled by the buyer or closed after
   // UNPAID_ORDER_DAYS (status 'Cancelled').
   cancelledAt: string | null;
-  cancelReason: "buyer" | "expired" | null;
+  cancelReason: "buyer" | "expired" | "account_deleted" | null;
 };
 
 export type OrderLine = { productId: string; name: string; qty: number; unitPrice: number };

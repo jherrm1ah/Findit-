@@ -98,6 +98,26 @@ jobs:
           grep -q "versionCode='$CODE' versionName='$NAME'" out/BUILD-INFO.txt
           grep -q "^Verifies" out/BUILD-INFO.txt
 
+      # Proves the Play Store build works before the real upload key exists: signs a release bundle
+      # with a throwaway key made here and deleted right after (play-release.yml uses the real one).
+      - name: Check the Play Store bundle build
+        working-directory: android
+        run: |
+          export FINDIT_UPLOAD_KEYSTORE="$RUNNER_TEMP/throwaway.jks"
+          export FINDIT_UPLOAD_STORE_PASSWORD="$(openssl rand -hex 16)"
+          export FINDIT_UPLOAD_KEY_PASSWORD="$FINDIT_UPLOAD_STORE_PASSWORD"
+          export FINDIT_UPLOAD_KEY_ALIAS=check
+          keytool -genkeypair -keystore "$FINDIT_UPLOAD_KEYSTORE" -storetype PKCS12 -alias check \
+            -keyalg RSA -keysize 2048 -validity 1 -dname "CN=CI check" \
+            -storepass "$FINDIT_UPLOAD_STORE_PASSWORD" -keypass "$FINDIT_UPLOAD_KEY_PASSWORD" > /dev/null
+          ./gradlew bundleRelease --no-daemon
+          rm -f "$FINDIT_UPLOAD_KEYSTORE"
+          AAB=app/build/outputs/bundle/release/app-release.aab
+          jarsigner -verify -verbose -certs "$AAB" > verify.txt 2>&1 || { cat verify.txt; exit 1; }
+          grep -q "jar verified" verify.txt
+          grep -q "CN=CI check" verify.txt
+          echo "Release bundle builds and is signed with the upload key ($(stat -c %s "$AAB") bytes)"
+
       - uses: actions/upload-artifact@v4
         with:
           name: FindIt-apk
