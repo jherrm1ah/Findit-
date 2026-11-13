@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { motion, AnimatePresence } from "motion/react";
-import { User, Store, FileText, Phone, Lock, Pencil, AlertTriangle } from "lucide-react";
+import { User, Store, FileText, Phone, Lock, Pencil, AlertTriangle, Trash2 } from "lucide-react";
 import { Field } from "./shared";
 import { formatPhoneLocal } from "@/lib/phone";
 import { useBusinessNameTakenWarning } from "./useBusinessNameCheck";
@@ -21,12 +21,99 @@ function SectionHeader({ icon: Icon, label }) {
   );
 }
 
+// Delete account (required by Google Play). Shown last and closed by default; asks for the password
+// and the word DELETE. While orders or payouts are still in progress the server says why it can't
+// be done yet, and those reasons are listed here.
+function DeleteAccountCard({ onDeleteAccount }) {
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [blocked, setBlocked] = useState([]);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    setBlocked([]);
+    try {
+      await onDeleteAccount(password, confirm);
+    } catch (err) {
+      setError(err.message || "Couldn't delete your account.");
+      if (Array.isArray(err.blocked)) setBlocked(err.blocked);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-white border border-[#F6D3E0] rounded-[20px] p-4 mt-4 shadow-sm shadow-[#4C1D95]/5">
+      <div className="flex items-center gap-2 mb-2">
+        <Trash2 size={14} className="text-[#E64980]" />
+        <p className="text-[12px] font-semibold text-[#1E1B4B] uppercase tracking-wide">Delete account</p>
+      </div>
+      {!open ? (
+        <>
+          <p className="text-[12.5px] text-[#514B67] leading-relaxed">
+            Permanently remove your FindIt account, your listings and your personal details.
+          </p>
+          <button
+            onClick={() => setOpen(true)}
+            className="mt-3 text-[12.5px] font-semibold text-[#E64980] px-4 py-2.5 rounded-xl border border-[#F6D3E0]"
+          >
+            Delete my account…
+          </button>
+        </>
+      ) : (
+        <>
+          <ul className="list-disc pl-5 text-[12.5px] text-[#514B67] leading-relaxed space-y-1 mb-3">
+            <li>Your name, phone number, photo, location, saved items and alerts are deleted.</li>
+            <li>If you sell, your shop closes, your listings come down and your bank details are removed.</li>
+            <li>Records of past orders and payments are kept without your details, as the law requires.</li>
+            <li>Unpaid orders are cancelled. Paid orders and payouts must finish first.</li>
+            <li>This can&apos;t be undone. You can sign up again later with the same number.</li>
+          </ul>
+          <div className="space-y-3">
+            <Field label="Your password">
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="input" />
+            </Field>
+            <Field label="Type DELETE to confirm">
+              <input value={confirm} onChange={(e) => setConfirm(e.target.value)} autoCapitalize="characters" className="input" />
+            </Field>
+          </div>
+          {error && <p className="text-[12px] text-[#E64980] mt-3">{error}</p>}
+          {blocked.length > 0 && (
+            <ul className="list-disc pl-5 text-[12px] text-[#E64980] mt-1 space-y-0.5">
+              {blocked.map((b) => <li key={b}>{b}</li>)}
+            </ul>
+          )}
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={submit}
+              disabled={!password || confirm.trim().toUpperCase() !== "DELETE" || busy}
+              className="text-[12.5px] font-semibold text-white px-4 py-2.5 rounded-xl disabled:opacity-40 bg-[#E64980]"
+            >
+              {busy ? "Deleting…" : "Delete my account"}
+            </button>
+            <button
+              onClick={() => { setOpen(false); setPassword(""); setConfirm(""); setError(null); setBlocked([]); }}
+              className="text-[12.5px] font-semibold text-[#514B67] px-4 py-2.5 rounded-xl"
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function AccountDetails({
   user,
   onUpdateName,
   onUpdateBusinessName,
   onUpdatePhone,
   onUpdatePassword,
+  onDeleteAccount,
   bio,
   onUpdateBio,
   savingBio,
@@ -324,6 +411,8 @@ export default function AccountDetails({
           {savingPassword ? "Saving…" : "Update password"}
         </button>
       </div>
+
+      {onDeleteAccount && <DeleteAccountCard onDeleteAccount={onDeleteAccount} />}
 
       <style>{`.input{width:100%;background:white;border:1px solid #ECE9F7;border-radius:10px;padding:11px 13px;font-size:13px;color:#1E1B4B;outline:none} .input:focus{border-color:#7C3AED}`}</style>
     </div>

@@ -459,6 +459,18 @@ export async function changeUserPassword(
   await destroyOtherSessions(userId, currentToken);
 }
 
+// "Delete my account" (migration 048, public.delete_account). The password is checked again first,
+// so a phone left signed in can't be used to wipe someone's account. Returns the reasons it can't
+// be done yet (money still moving) instead of throwing, so the app can show them.
+export async function deleteAccount(userId: string, password: string): Promise<{ ok: true } | { ok: false; blocked: string[] }> {
+  await verifyPasswordForUserId(userId, password);
+  const { data, error } = await getDb().rpc("delete_account", { p_user_id: userId });
+  if (error) throw new Error(`deleting account: ${error.message}`);
+  const r = (data ?? {}) as { ok?: boolean; blocked?: string[] };
+  if (r.ok) return { ok: true };
+  return { ok: false, blocked: Array.isArray(r.blocked) && r.blocked.length ? r.blocked : ["Couldn't delete your account right now."] };
+}
+
 // Only ever called after the caller has proven phone ownership via OTP
 // (see app/api/auth/reset-password/route.ts) — there is no session/current
 // password here by design, since the whole point is recovering an account

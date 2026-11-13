@@ -8,6 +8,7 @@ import {
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
+import { hideNativeSplash, onNativeBack } from "./nativeApp";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { storePendingReferralCode } from "./referral";
@@ -81,6 +82,11 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const [checkingOutCart, setCheckingOutCart] = useState(false);
 
   const [loaded, setLoaded] = useState(false);
+  // In the Android app, the launch screen stays up until this first load is
+  // done, so the app opens straight onto FindIt (see nativeApp.js).
+  useEffect(() => {
+    if (loaded) hideNativeSplash();
+  }, [loaded]);
   const [products, setProducts] = useState([]);
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
@@ -458,6 +464,19 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     const previous = historyRef.current.pop();
     navigateTo(previous || "home");
   };
+
+  // The phone's back button in the Android app. FindIt switches screens without changing the page,
+  // so without this Android's back would close the app. It closes an open item or shop first, then
+  // walks back through the screens visited, and only leaves the app from Home. A ref keeps the
+  // single listener reading the current screen.
+  const nativeBackRef = useRef(null);
+  nativeBackRef.current = () => {
+    if (product) { setProduct(null); return true; }
+    if (viewedSeller) { setViewedSeller(null); return true; }
+    if (historyRef.current.length > 0 || screen !== "home") { goBack(); return true; }
+    return false; // on Home with nothing to go back to: let the app close
+  };
+  useEffect(() => onNativeBack(() => nativeBackRef.current?.()), []);
 
   // A ref, not state — this only needs to gate re-entrancy inside the
   // handler itself, never to trigger a render. Without it, a fast double-tap
@@ -976,6 +995,14 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
 
   const handleUpdatePassword = async (currentPassword, newPassword) => {
     await api.updatePassword(currentPassword, newPassword);
+  };
+
+  // Deleted on the server (it also signs out every device), then the normal sign-out here so push
+  // is turned off on this phone and the app returns to the signed-out home.
+  const handleDeleteAccount = async (password, confirm) => {
+    await api.deleteAccount(password, confirm);
+    showToast("Your FindIt account has been deleted.");
+    await onLogout();
   };
 
   const handleUpdateNotificationPref = async (enabled) => {
@@ -1946,6 +1973,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
             onUpdateBusinessName={handleUpdateBusinessName}
             onUpdatePhone={handleUpdatePhone}
             onUpdatePassword={handleUpdatePassword}
+            onDeleteAccount={handleDeleteAccount}
             bio={verification?.description}
             onUpdateBio={handleUpdateSellerDescription}
             savingBio={savingDescription}

@@ -107,7 +107,8 @@ export default function PrivacyPolicyPage() {
             <p>
               We keep account and order data for as long as your account is active, and as needed to resolve
               disputes, meet legal/accounting obligations, and keep an audit trail for financial transactions.
-              You can ask us to delete your account — see &ldquo;Your choices&rdquo; below.
+              You can delete your account yourself at any time — see{" "}
+              <Link href="/delete-account" className="text-[#7C3AED] underline">Delete your account</Link>.
             </p>
           </section>
 
@@ -116,6 +117,8 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-5 space-y-1.5">
               <li>You can review and update your profile, notification preferences, and location permission at any time in the app.</li>
               <li>You can turn location off at any time in your browser/device settings.</li>
+              <li>You can delete your account in the app (Profile → Personal details → Delete account), or see{" "}
+                <Link href="/delete-account" className="text-[#7C3AED] underline">how to delete it without the app</Link>.</li>
               <li>You can ask us to access, correct, or delete your data by emailing{" "}
                 <a href={`mailto:${SUPPORT_EMAIL}`} className="text-[#7C3AED] underline">{SUPPORT_EMAIL}</a>.
                 We may need to keep certain records (like completed transaction history) where we have a

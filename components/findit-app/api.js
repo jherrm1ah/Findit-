@@ -587,6 +587,12 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
+  deleteAccount: (password, confirm) =>
+    request("/api/auth/delete-account", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, confirm }),
+    }),
   updateAvatar: (avatarUrl) =>
     request("/api/auth/avatar", {
       method: "PATCH",
