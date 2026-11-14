@@ -1,0 +1,125 @@
+name: Nightly backup
+
+# Free stand-in for Supabase's paid backups (the project is on the Free tier,
+# which has none). Every night: dump the whole live database, encrypt it with
+# a passphrase only the owner holds, and keep it as a workflow artifact.
+# Uploaded photos are backed up once a week (they're big and rarely change).
+# How to set it up and how to restore: docs/BACKUPS.md.
+
+on:
+  schedule:
+    - cron: "17 1 * * *" # 01:17 UTC every day
+  workflow_dispatch:
+    inputs:
+      include_storage:
+        description: "Also back up uploaded photos/files"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        run: |
+          missing=""
+          [ -n "$SUPABASE_DB_URL" ] || missing="$missing SUPABASE_DB_URL"
+          [ -n "$BACKUP_PASSPHRASE" ] || missing="$missing BACKUP_PASSPHRASE"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secrets:$missing (see docs/BACKUPS.md)"
+            exit 1
+          fi
+
+      - name: Decide what to back up
+        run: |
+          STAMP=$(date -u +%Y-%m-%d_%H%MZ)
+          echo "STAMP=$STAMP" >> "$GITHUB_ENV"
+          # Photos: Sundays on the schedule, or when asked for on a manual run.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            STORAGE="${{ inputs.include_storage }}"
+          elif [ "$(date -u +%u)" = "7" ]; then
+            STORAGE=true
+          else
+            STORAGE=false
+          fi
+          if [ "$STORAGE" = "true" ] && { [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SERVICE_ROLE_KEY" ]; }; then
+            echo "::warning::SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY not set; skipping the photo backup"
+            STORAGE=false
+          fi
+          echo "STORAGE=$STORAGE" >> "$GITHUB_ENV"
+
+      # pg_dump must be at least as new as the server (Postgres 17).
+      - name: Install pg_dump 17
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list >/dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client-17
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
+      - name: Dump database
+        run: |
+          umask 077
+          mkdir -p backup
+          pg_dump "$SUPABASE_DB_URL" \
+            --schema=public --format=custom --no-owner --no-privileges \
+            --file=backup/findit-db.dump
+          # Sanity check: the dump must actually contain the core tables' data.
+          pg_restore --list backup/findit-db.dump > backup/contents.txt
+          for t in users sellers products orders payments; do
+            grep -Eq "TABLE DATA public $t( |$)" backup/contents.txt \
+              || { echo "::error::Dump is missing data for table '$t'"; exit 1; }
+          done
+          echo "Database dump: $(du -h backup/findit-db.dump | cut -f1), $(grep -c 'TABLE DATA' backup/contents.txt) tables"
+
+      - uses: actions/setup-node@v4
+        if: env.STORAGE == 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Back up uploaded files
+        if: env.STORAGE == 'true'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/backup-storage.mjs backup/storage
+
+      - name: Encrypt
+        run: |
+          umask 077
+          NAME="findit-backup-$STAMP"
+          tar -cf "$NAME.tar" backup
+          gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-file <(printf '%s' "$BACKUP_PASSPHRASE") \
+            --symmetric --cipher-algo AES256 --compress-algo zlib \
+            --output "$NAME.tar.gpg" "$NAME.tar"
+          # Only the encrypted file leaves this machine.
+          rm -rf backup "$NAME.tar"
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Encrypted backup: $(du -h "$NAME.tar.gpg" | cut -f1)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}${{ env.STORAGE == 'true' && '-with-files' || '' }}
+          path: ${{ env.NAME }}.tar.gpg
+          # Photo backups are large, so they're kept for less time.
+          retention-days: ${{ env.STORAGE == 'true' && 30 || 90 }}
+          compression-level: 0
+          if-no-files-found: error

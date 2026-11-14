@@ -6,6 +6,10 @@ NOT" below. No secret values are included.
 
 ---
 
+> **Update:** a free, encrypted nightly backup of the live data now exists — see
+> [`docs/BACKUPS.md`](./docs/BACKUPS.md). The rest of this file is the original 2026-10-01
+> settings snapshot.
+
 ## ⚠️ Most important finding first: this project has no native backup safety net right now
 
 The organization (`virt-technologies`) is on the **Free tier** (`plan: "free"`,
