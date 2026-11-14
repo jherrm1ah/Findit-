@@ -1,4 +1,5 @@
 import { GoogleGenAI, Type } from "@google/genai";
+import { MAX_PRODUCT_DESCRIPTION_LENGTH, clipToLimit } from "./productLimits";
 import { listCategories } from "./categoryCatalog";
 import { ValidationError } from "./repo";
 
@@ -196,7 +197,8 @@ export async function generateProductDescription(input: {
   if (!text) {
     throw new ValidationError("The AI generator didn't return anything usable — try again.");
   }
-  return text;
+  // Always fits the listing's description limit, so saving it can't fail.
+  return clipToLimit(text, MAX_PRODUCT_DESCRIPTION_LENGTH);
 }
 
 // The search bar's camera button (Browse.jsx) — a buyer photographs

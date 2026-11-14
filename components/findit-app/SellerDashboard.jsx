@@ -1,5 +1,6 @@
 "use client";
 
+import { MAX_PRODUCT_DESCRIPTION_LENGTH } from "@/lib/productLimits";
 import { useEffect, useMemo, useState } from "react";
 import NextImage from "next/image";
 import { motion, AnimatePresence } from "motion/react";
@@ -286,11 +287,25 @@ function ListingForm({ initial, onSave, onCancel, saving, onUploadImage, shippin
         </div>
         <textarea
           value={form.description}
-          onChange={(e) => setForm({ ...form, description: e.target.value })}
-          rows={3}
+          onChange={(e) => setForm({ ...form, description: e.target.value.slice(0, MAX_PRODUCT_DESCRIPTION_LENGTH) })}
+          maxLength={MAX_PRODUCT_DESCRIPTION_LENGTH}
+          rows={4}
           placeholder="What is it, what condition, how to use/care for it — anything a buyer should know?"
           className="w-full bg-white border border-[#ECE9F7] rounded-lg px-3 py-2 text-[12.5px] outline-none resize-none"
         />
+        {/* Turns amber near the limit and red at it, so sellers aren't surprised. */}
+        <p
+          className={`text-right text-[10.5px] mt-1 ${
+            form.description.length >= MAX_PRODUCT_DESCRIPTION_LENGTH
+              ? "text-[#E64980] font-semibold"
+              : form.description.length >= MAX_PRODUCT_DESCRIPTION_LENGTH * 0.9
+                ? "text-[#B7791F]"
+                : "text-[#8A8372]"
+          }`}
+          aria-live="polite"
+        >
+          {form.description.length.toLocaleString()} / {MAX_PRODUCT_DESCRIPTION_LENGTH.toLocaleString()}
+        </p>
       </div>
       <Field label="Price (₦)">
         <input
