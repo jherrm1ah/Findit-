@@ -128,7 +128,7 @@ export default function Profile({ go, user, onLogout, unreadCount = 0, messageUn
           className="hidden"
         />
         <div className="flex-1 min-w-0">
-          <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+          <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             {user.name}
           </p>
           <p className="text-[12px] text-[#6B6483]">

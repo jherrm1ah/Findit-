@@ -29,7 +29,7 @@ export default function PrivacyPolicyPage() {
       <main className="max-w-2xl mx-auto px-5 pb-20">
         <h1
           className="text-[24px] font-bold text-[#1E1B4B] mb-2"
-          style={{ fontFamily: "Fraunces, serif" }}
+          style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
         >
           Privacy Policy
         </h1>

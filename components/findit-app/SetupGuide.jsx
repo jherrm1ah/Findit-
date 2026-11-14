@@ -43,7 +43,7 @@ export default function SetupGuide({ steps, sellerKey, onAction }) {
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-4 shadow-sm shadow-[#4C1D95]/5">
       <div className="flex items-start justify-between gap-3 mb-1">
         <div>
-          <p className="text-[14px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+          <p className="text-[14px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             Set up your store
           </p>
           <p className="text-[11.5px] text-[#6B6483]">

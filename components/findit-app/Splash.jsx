@@ -48,7 +48,7 @@ export default function Splash({ onDone }) {
         <div
           aria-hidden
           className="fi-rise text-[64px] leading-none font-bold tracking-[-0.03em] text-[#1E1B4B]"
-          style={{ fontFamily: "Fraunces, serif", animationDelay: ".05s" }}
+          style={{ fontFamily: "var(--font-fraunces), Fraunces, serif", animationDelay: ".05s" }}
         >
           F
           <span className="relative inline-block">
@@ -72,7 +72,7 @@ export default function Splash({ onDone }) {
         <p
           aria-hidden
           className="fi-rise mt-[18px] text-[14.5px] leading-snug text-[#6B6483] max-w-[270px]"
-          style={{ fontFamily: "'Work Sans', sans-serif", animationDelay: ".35s" }}
+          style={{ fontFamily: "var(--font-work-sans), 'Work Sans', sans-serif", animationDelay: ".35s" }}
         >
           Tell us what you need. Verified sellers come to you.
         </p>

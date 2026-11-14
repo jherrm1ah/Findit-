@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -9,6 +10,7 @@ import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
 import { hideNativeSplash, onNativeBack, followOpenedLinks } from "./nativeApp";
+import { readSnapshot, saveSnapshot } from "./snapshot";
 import { RatePrompt, UpdateBanner, shouldAskForRating } from "./AppPrompts";
 import { handleNotificationTaps } from "./push";
 import { DURATION, EASE } from "./motion";
@@ -18,30 +20,43 @@ import { getStoredCart, storeCart } from "./cart";
 import { applyCategoryOverrides } from "./data";
 import Home from "./Home";
 import Browse from "./Browse";
-import RequestForm from "./RequestForm";
-import SellerDashboard from "./SellerDashboard";
-import StorePlans from "./StorePlans";
-import FindItPro from "./FindItPro";
-import SellerOnboarding from "./SellerOnboarding";
-import AdminQueue from "./AdminQueue";
-import AdminLogin from "./AdminLogin";
-import BecomeSeller from "./BecomeSeller";
-import Profile from "./Profile";
-import AccountDetails from "./AccountDetails";
-import NotificationPreferences from "./NotificationPreferences";
-import HelpSupport from "./HelpSupport";
-import About from "./About";
-import Account from "./Account";
-import Notifications from "./Notifications";
-import Checkout from "./Checkout";
 import ProductDetail from "./ProductDetail";
-import Cart from "./Cart";
-import Messages from "./Messages";
-import Thread from "./Thread";
-import SellerProfile from "./SellerProfile";
-import SellerDirectory from "./SellerDirectory";
-import MyRequests from "./MyRequests";
-import Referrals from "./Referrals";
+
+// Screens most people don't open on a visit load only when they're opened (next/dynamic), so the
+// first load is just Home, Browse and item pages. A short skeleton shows on the very first open of
+// each; after that it's cached. Admin, the seller dashboard and checkout alone were most of the
+// code every buyer used to download up front.
+const ScreenLoading = () => (
+  <div className="px-5 pt-6 space-y-3" aria-busy="true" aria-label="Loading">
+    <div className="h-5 w-40 rounded-lg bg-[#ECE9F7] animate-pulse" />
+    <div className="h-24 rounded-2xl bg-[#F1EEFA] animate-pulse" />
+    <div className="h-24 rounded-2xl bg-[#F1EEFA] animate-pulse" />
+  </div>
+);
+const lazyScreen = (load) => dynamic(load, { ssr: false, loading: ScreenLoading });
+const RequestForm = lazyScreen(() => import("./RequestForm"));
+const SellerDashboard = lazyScreen(() => import("./SellerDashboard"));
+const StorePlans = lazyScreen(() => import("./StorePlans"));
+const FindItPro = lazyScreen(() => import("./FindItPro"));
+const SellerOnboarding = lazyScreen(() => import("./SellerOnboarding"));
+const AdminQueue = lazyScreen(() => import("./AdminQueue"));
+const AdminLogin = lazyScreen(() => import("./AdminLogin"));
+const BecomeSeller = lazyScreen(() => import("./BecomeSeller"));
+const Profile = lazyScreen(() => import("./Profile"));
+const AccountDetails = lazyScreen(() => import("./AccountDetails"));
+const NotificationPreferences = lazyScreen(() => import("./NotificationPreferences"));
+const HelpSupport = lazyScreen(() => import("./HelpSupport"));
+const About = lazyScreen(() => import("./About"));
+const Account = lazyScreen(() => import("./Account"));
+const Notifications = lazyScreen(() => import("./Notifications"));
+const Checkout = lazyScreen(() => import("./Checkout"));
+const Cart = lazyScreen(() => import("./Cart"));
+const Messages = lazyScreen(() => import("./Messages"));
+const Thread = lazyScreen(() => import("./Thread"));
+const SellerProfile = lazyScreen(() => import("./SellerProfile"));
+const SellerDirectory = lazyScreen(() => import("./SellerDirectory"));
+const MyRequests = lazyScreen(() => import("./MyRequests"));
+const Referrals = lazyScreen(() => import("./Referrals"));
 
 function tabsFor(role) {
   const middle =
@@ -294,6 +309,15 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     // one thing every guest actually needs on first paint. Each is now
     // caught independently and defaults to [] rather than ever taking
     // products down with it.
+    // Open instantly: show what this phone saw last time (snapshot.js) while the fresh load runs.
+    const snap = readSnapshot(user?.id);
+    if (snap) {
+      setProducts(snap.products);
+      setOrders(snap.orders);
+      setNotifications(snap.notifications);
+      setLoaded(true);
+    }
+
     const mainData =
       preloadedMainData ??
       Promise.all([
@@ -306,6 +330,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
         setProducts(p);
         setOrders(o);
         setNotifications(n);
+        saveSnapshot(user?.id, { products: p, orders: o, notifications: n });
       })
       .finally(() => setLoaded(true));
 
@@ -1681,7 +1706,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const cartCount = cart.reduce((sum, it) => sum + it.qty, 0);
 
   return (
-    <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
+    <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "var(--font-work-sans), 'Work Sans', sans-serif" }}>
       <UpdateBanner />
       <RatePrompt open={ratePromptOpen} onClose={() => setRatePromptOpen(false)} />
       {screen !== "home" && (

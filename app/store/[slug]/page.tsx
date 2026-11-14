@@ -82,7 +82,7 @@ export default async function StorePage({ params }: { params: { slug: string } }
     return (
       <main className="min-h-screen bg-[#FAFAFF] flex items-center justify-center px-6">
         <div className="max-w-sm text-center">
-          <p className="text-[15px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>
+          <p className="text-[15px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             This store isn&rsquo;t open right now
           </p>
           <p className="text-[13px] text-[#6B6483] mb-6 leading-relaxed">

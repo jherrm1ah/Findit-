@@ -521,7 +521,7 @@ export default function Home({
                   // wrapping, since nothing forces a break by default.
                   className="text-[24px] font-bold leading-[1.15] mb-2 whitespace-pre-line break-words relative"
                   style={{
-                    fontFamily: "Fraunces, serif",
+                    fontFamily: "var(--font-fraunces), Fraunces, serif",
                     textShadow: activeSlide.kind === "campaign" ? "0 1px 8px rgba(0,0,0,0.75), 0 1px 2px rgba(0,0,0,0.9)" : undefined,
                   }}
                 >

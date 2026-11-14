@@ -81,7 +81,7 @@ export default function StorePlans({ storePlan, onChangePlan, onCancelPlan, chan
         <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
           <Store size={17} className="text-[#7C3AED]" />
         </motion.span>
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Store plans</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Store plans</h1>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-1">
         You&apos;re on <span className="font-semibold text-[#1E1B4B]">{currentPlan.name}</span> — {usage.label}.

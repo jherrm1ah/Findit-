@@ -57,7 +57,7 @@ export default function MyRequests({ requests, onAcceptOffer, onCancelRequest })
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center gap-2 mb-1">
         <ListOrdered size={17} className="text-[#7C3AED]" />
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>My requests</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>My requests</h1>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">Real sellers respond here — accept an offer whenever one looks right.</p>
 

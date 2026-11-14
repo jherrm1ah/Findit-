@@ -125,7 +125,7 @@ export default function SellerMenu({ open, onClose, tab, listingFilter, counts, 
             style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
           >
             <div className="flex items-center justify-between px-4 pt-4 pb-3">
-              <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>My store</p>
+              <p className="text-[16px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>My store</p>
               <button onClick={onClose} aria-label="Close menu" className="p-1.5 -m-1.5 text-[#6B6483]">
                 <X size={18} />
               </button>

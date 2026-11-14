@@ -110,7 +110,7 @@ export default function Account({ openProduct, orders, products, onReview, onCon
 
   return (
     <div className="px-5 pt-6 pb-10">
-      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>My orders</h1>
+      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>My orders</h1>
       <p className="text-[12px] text-[#6B6483] mb-5">Track deliveries, view history, and leave a review once an order arrives.</p>
 
       <motion.div className="space-y-3 mb-8" initial="hidden" animate="visible" variants={BOUNCE_CONTAINER}>

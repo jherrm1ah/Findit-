@@ -149,7 +149,7 @@ export default function SellerProfile({ profile, loading, error, onBack, onOpenP
             {logoUrl ? <Image src={logoUrl} alt="" fill sizes="56px" className="object-cover" /> : sellerName?.[0]?.toUpperCase() || "?"}
           </div>
           <div className="min-w-0">
-            <p className="text-[17px] font-bold text-[#1E1B4B] truncate flex items-center gap-1.5" style={{ fontFamily: "Fraunces, serif" }}>
+            <p className="text-[17px] font-bold text-[#1E1B4B] truncate flex items-center gap-1.5" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
               {sellerName}
               {proBadge && (
                 <span className="flex items-center gap-1 text-[9.5px] font-bold text-white px-1.5 py-0.5 rounded-full shrink-0" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>

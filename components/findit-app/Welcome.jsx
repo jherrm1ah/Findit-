@@ -55,7 +55,7 @@ export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE, delay: 0.15 }}>
           <h1
             className="text-[34px] [@media(max-height:700px)]:text-[29px] font-bold leading-[1.08] tracking-[-0.02em]"
-            style={{ color: INK, fontFamily: "'Work Sans', sans-serif" }}
+            style={{ color: INK, fontFamily: "var(--font-work-sans), 'Work Sans', sans-serif" }}
           >
             Let&apos;s get you
             <br />

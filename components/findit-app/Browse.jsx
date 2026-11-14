@@ -74,7 +74,7 @@ export default function Browse({ initialGroup, openProduct, products, savedIds, 
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Browse products</h1>
+        <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Browse products</h1>
         <span className="text-[11px] text-[#8A8372]">{list.length} of {products.length}</span>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-4">Every product from the FindIt idea bank — search, filter by category.</p>

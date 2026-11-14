@@ -224,7 +224,7 @@ export default function AccountDetails({
 
   return (
     <div className="px-5 pt-6 pb-10">
-      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>
+      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
         Personal details
       </h1>
       <p className="text-[12px] text-[#6B6483] mb-5">
