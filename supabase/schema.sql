@@ -1,4 +1,4 @@
--- FindIt Naija — Postgres schema for Supabase.
+-- FindIt — Postgres schema for Supabase.
 --
 -- Run this once against a fresh Supabase project (SQL Editor -> paste -> Run,
 -- or `psql "$SUPABASE_DB_URL" -f supabase/schema.sql`). It only creates

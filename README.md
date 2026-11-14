@@ -1,4 +1,4 @@
-# FindIt Naija
+# FindIt
 
 A request-first marketplace connecting buyers to verified sellers, starting in Nigeria and built
 to scale globally: tell FindIt what you need (or browse the catalogue directly), real sellers near
