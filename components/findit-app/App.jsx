@@ -1,16 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { turnOffPush, reattachPush } from "./push";
 import { MotionConfig, AnimatePresence } from "motion/react";
 import Splash from "./Splash";
 import { inFindItApp } from "./nativeApp";
-import Welcome from "./Welcome";
-import Login from "./Login";
 import MainApp from "./MainApp";
 import ToastHost from "./Toast";
 import { api, setSessionExpiredHandler } from "./api";
 import { mergeGuestCartIntoUser } from "./cart";
+
+// Sign-in screens load only when someone signs in or up; most visits browse first.
+const Welcome = dynamic(() => import("./Welcome"), { ssr: false });
+const Login = dynamic(() => import("./Login"), { ssr: false });
 
 export default function App() {
   // Just the splash → main handoff now — browsing itself was never

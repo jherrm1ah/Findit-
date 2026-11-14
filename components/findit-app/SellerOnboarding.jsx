@@ -316,7 +316,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: DURATION.base, ease: EASE, delay: 0.15 }}
           className="text-[18px] font-bold text-[#1E1B4B] mb-2"
-          style={{ fontFamily: "Fraunces, serif" }}
+          style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
         >
           Submitted for verification
         </motion.h1>
@@ -349,7 +349,7 @@ export default function SellerOnboarding({ go, showToast, userId }) {
         <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
           <ShieldCheck size={17} className="text-[#7C3AED]" />
         </motion.span>
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Seller verification</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Seller verification</h1>
       </div>
       <p className="text-[12px] text-[#6B6483] mb-5">
         Help buyers know who they're buying from. This doesn't stop you from selling now — it unlocks the Verified badge.

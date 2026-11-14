@@ -14,9 +14,9 @@ export default function NotFound() {
         className="w-16 h-16 rounded-[20px] flex items-center justify-center mb-5"
         style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}
       >
-        <span className="text-white text-[19px] font-bold" style={{ fontFamily: "Fraunces, serif" }}>?</span>
+        <span className="text-white text-[19px] font-bold" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>?</span>
       </div>
-      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>
+      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
         We couldn't find that
       </h1>
       <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">

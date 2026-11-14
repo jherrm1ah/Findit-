@@ -179,7 +179,7 @@ export default function ProductDetail({ product, onClose, go, onBuyNow, onAddToC
             className="w-8 h-8 rounded-full bg-white shadow-sm shadow-[#4C1D95]/10 flex items-center justify-center shrink-0 -mt-1"
           />
         </motion.div>
-        <motion.h1 variants={STAGGER_ITEM} className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>{product.name}</motion.h1>
+        <motion.h1 variants={STAGGER_ITEM} className="text-[22px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{product.name}</motion.h1>
 
         <motion.div variants={STAGGER_ITEM} className="flex items-center justify-between mb-5">
           {/* Opens the storefront by seller_id where the listing has one —

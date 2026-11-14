@@ -66,7 +66,7 @@ export default function AdminLogin({ user, onUnlocked, showToast }) {
         <ShieldCheck size={22} className="text-white" />
       </motion.div>
 
-      <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-1.5" style={{ fontFamily: "Fraunces, serif" }}>
+      <h1 className="text-[22px] font-bold text-[#1E1B4B] mb-1.5" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
         Staff sign-in
       </h1>
       <p className="text-[13px] text-[#6B6483] mb-6 leading-relaxed">

@@ -481,7 +481,7 @@ export default function SellerShipping({ showToast, onProfilesChange, orders = [
     <div>
       <div className="flex items-center gap-2 mb-1">
         <Truck size={16} className="text-[#7C3AED]" />
-        <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Shipping & delivery</p>
+        <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Shipping & delivery</p>
       </div>
       <p className="text-[11.5px] text-[#6B6483] mb-3">
         {config.profiles.length === 0

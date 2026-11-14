@@ -84,7 +84,7 @@ export default function RequestForm({ go, showToast, myLocation }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: DURATION.base, ease: EASE, delay: 0.15 }}
           className="text-[19px] font-bold text-[#1E1B4B] mb-2"
-          style={{ fontFamily: "Fraunces, serif" }}
+          style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
         >
           Request sent
         </motion.h1>
@@ -128,7 +128,7 @@ export default function RequestForm({ go, showToast, myLocation }) {
       transition={{ duration: DURATION.base, ease: EASE }}
       className="px-5 pt-6 pb-10"
     >
-      <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>Request an item</h1>
+      <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Request an item</h1>
       <p className="text-[13px] text-[#514B67] mb-5">Don't know the exact name? Just describe the problem — real sellers will respond with offers.</p>
       <AnimatePresence>
         {error && (

@@ -46,7 +46,7 @@ export default function BecomeSeller({ user, onBecomeSeller, go }) {
     <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: DURATION.base, ease: EASE }} className="px-5 pt-6 pb-10">
       <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex items-center gap-2 mb-1">
         <Store size={18} className="text-[#7C3AED]" />
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
           Start selling on FindIt
         </h1>
       </motion.div>

@@ -23,7 +23,7 @@ export default function DeleteAccountPage() {
       </header>
 
       <main className="max-w-2xl mx-auto px-5 pb-20">
-        <h1 className="text-[24px] font-bold text-[#1E1B4B] mb-6" style={{ fontFamily: "Fraunces, serif" }}>
+        <h1 className="text-[24px] font-bold text-[#1E1B4B] mb-6" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
           Delete your FindIt account
         </h1>
 

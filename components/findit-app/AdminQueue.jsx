@@ -769,7 +769,7 @@ function StatCard({ label, value, onClick }) {
       className={`bg-white border border-[#ECE9F7] rounded-xl px-3.5 py-3 text-left ${onClick ? "hover:border-[#D8CFF5] cursor-pointer" : ""}`}
     >
       <div className="flex items-center justify-between gap-1">
-        <p className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+        <p className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{value}</p>
         {onClick && <ChevronRight size={14} className="text-[#A79FC7]" />}
       </div>
       <p className="text-[10.5px] text-[#6B6483] mt-0.5">{label}</p>
@@ -1646,7 +1646,7 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
         </p>
         {feeConfig && (
           <>
-            <p className="text-[20px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "Fraunces, serif" }}>
+            <p className="text-[20px] font-bold text-[#1E1B4B] mb-3" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
               {(feeConfig.currentBps / 100).toFixed(2)}%
             </p>
             <form onSubmit={saveFee} className="flex gap-2">
@@ -2702,7 +2702,7 @@ function AnalyticsSection({ title, points, valueKey, color, formatValue }) {
     <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-3">
       <div className="flex items-center justify-between mb-3">
         <p className="text-[12px] font-semibold text-[#1E1B4B]">{title}</p>
-        <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+        <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
           {formatValue ? formatValue(total) : total}
         </p>
       </div>
@@ -3184,7 +3184,7 @@ export default function AdminQueue({
         <motion.span initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex">
           <ClipboardList size={17} className="text-[#7C3AED]" />
         </motion.span>
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Admin dashboard</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Admin dashboard</h1>
         {currentAdminRole && !isSuperAdmin && (
           <span className="text-[10px] font-semibold text-[#7C3AED] bg-[#F5F2FC] px-2 py-1 rounded-full">
             {ADMIN_ROLES.find((r) => r.value === currentAdminRole)?.label}
@@ -3534,7 +3534,7 @@ export default function AdminQueue({
                   ["Signup / Reset", `${otpStats.signupRequests} / ${otpStats.resetRequests}`],
                 ].map(([label, value]) => (
                   <div key={label} className="bg-white border border-[#ECE9F7] rounded-xl px-3 py-2.5">
-                    <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+                    <p className="text-[15px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{value}</p>
                     <p className="text-[10.5px] text-[#6B6483]">{label}</p>
                   </div>
                 ))}

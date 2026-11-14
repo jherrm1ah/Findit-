@@ -183,7 +183,7 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: DURATION.base, ease: EASE, delay: 0.45 }}
             className="text-[20px] font-bold text-[#1E1B4B] mb-1"
-            style={{ fontFamily: "Fraunces, serif" }}
+            style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
           >
             Payment confirmed
           </motion.h1>
@@ -203,7 +203,7 @@ export default function Checkout({ order, product, qty, user, onPay, availableCr
           ) : (
             <CreditCard className="text-[#7C3AED]" size={22} />
           )}
-          <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+          <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             {alreadyPaid ? "Payment held — order placed" : "Pay to place your order"}
           </h1>
         </div>

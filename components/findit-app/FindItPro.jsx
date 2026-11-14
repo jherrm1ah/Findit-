@@ -65,7 +65,7 @@ export default function FindItPro({ findItPro, onSubscribe, onCancel, changing, 
     <div className="px-5 pt-6 pb-10">
       <motion.div initial={wiggleIn.initial} animate={wiggleIn.animate} transition={SPRING_BOUNCY} className="flex items-center gap-2 mb-1">
         <Crown size={17} className="text-[#7C3AED]" />
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>FindIt Pro</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>FindIt Pro</h1>
       </motion.div>
       <p className="text-[12px] text-[#6B6483] mb-5">
         An account-wide membership, separate from a seller&apos;s own Store plan.

@@ -21,7 +21,7 @@ function StatCard({ icon: Icon, label, value }) {
   return (
     <div className="flex-1 bg-white border border-[#ECE9F7] rounded-2xl p-3.5 text-center">
       <Icon size={16} className="text-[#7C3AED] mx-auto mb-1.5" />
-      <p className="text-[18px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>{value}</p>
+      <p className="text-[18px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{value}</p>
       <p className="text-[10.5px] text-[#6B6483] leading-tight mt-0.5">{label}</p>
     </div>
   );
@@ -82,7 +82,7 @@ export default function Referrals({ showToast }) {
     <motion.div className="px-5 pt-6 pb-10" initial="hidden" animate="visible" variants={STAGGER_CONTAINER}>
       <motion.div variants={STAGGER_ITEM} className="flex items-center gap-2 mb-1">
         <Gift size={18} className="text-[#7C3AED]" />
-        <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Refer & earn</h1>
+        <h1 className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Refer & earn</h1>
       </motion.div>
       <motion.p variants={STAGGER_ITEM} className="text-[12px] text-[#6B6483] mb-5">
         Invite friends to FindIt. A referral counts once {QUALIFYING_ACTION_COPY[data.activeQualifyingAction] ?? "they complete a qualifying action"} — not just for signing up. Every {data.milestoneSize} successful referrals earns you real FindIt credit, spendable on your own orders.
@@ -92,7 +92,7 @@ export default function Referrals({ showToast }) {
         <motion.div variants={STAGGER_ITEM} className="rounded-2xl px-4 py-3.5 mb-5 flex items-center gap-3" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
           <Gift size={20} className="text-white shrink-0" />
           <div>
-            <p className="text-[16px] font-bold text-white" style={{ fontFamily: "Fraunces, serif" }}>{naira(data.availableCredit)}</p>
+            <p className="text-[16px] font-bold text-white" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{naira(data.availableCredit)}</p>
             <p className="text-[11px] text-white/80">Available to spend at checkout</p>
           </div>
         </motion.div>

@@ -1,5 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { Fraunces, Work_Sans, IBM_Plex_Mono } from "next/font/google";
+
+// FindIt's fonts are bundled with the site (next/font) instead of loaded from Google on every
+// visit: no extra round trip before text shows, no layout jump when they arrive. Components keep
+// writing "Fraunces, serif" / "'Work Sans', sans-serif"; the CSS variables below come first.
+const fraunces = Fraunces({ subsets: ["latin"], weight: ["500", "700"], display: "swap", variable: "--font-fraunces" });
+const workSans = Work_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], display: "swap", variable: "--font-work-sans" });
+const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["500"], display: "swap", variable: "--font-plex-mono" });
 import { appBaseUrl } from "@/lib/store";
 
 // `new URL(...)` throws on anything that isn't a fully-formed absolute URL
@@ -80,7 +88,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${fraunces.variable} ${workSans.variable} ${plexMono.variable}`}>
       <body className="min-h-screen text-slate-900">{children}</body>
     </html>
   );

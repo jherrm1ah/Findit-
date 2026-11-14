@@ -75,7 +75,7 @@ export default function SellerDirectory({ onViewSeller, initialQuery }) {
           for every screen but "home") already supplies one for this screen,
           the same as Browse/Account/MyRequests and every other inline
           screen. This used to render a second one directly underneath it. */}
-      <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>
+      <h1 className="text-[20px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
         Sellers
       </h1>
       <p className="text-[12px] text-[#6B6483] mb-4">

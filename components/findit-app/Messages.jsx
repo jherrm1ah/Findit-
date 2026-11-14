@@ -26,7 +26,7 @@ function timeAgoShort(iso) {
 export default function Messages({ conversations, onOpenThread }) {
   return (
     <div className="px-5 pt-6 pb-10">
-      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "Fraunces, serif" }}>Messages</h1>
+      <h1 className="text-[19px] font-bold text-[#1E1B4B] mb-1" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Messages</h1>
       <p className="text-[12px] text-[#6B6483] mb-5">Conversations with sellers on FindIt.</p>
 
       {conversations.length === 0 && (

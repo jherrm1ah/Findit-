@@ -202,7 +202,7 @@ function ClassicLayout({ profile, categoryLabels }: LayoutProps) {
             <div className="min-w-0 pt-11">
               <h1
                 className="text-[22px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap"
-                style={{ fontFamily: "Fraunces, serif" }}
+                style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
               >
                 {profile.name}
                 {profile.proBadge && (
@@ -302,7 +302,7 @@ function CompactLayout({ profile, categoryLabels }: LayoutProps) {
           </div>
           <h1
             className="text-[18px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap min-w-0"
-            style={{ fontFamily: "Fraunces, serif" }}
+            style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
           >
             {profile.name}
             {profile.proBadge && (
@@ -383,7 +383,7 @@ function GalleryLayout({ profile, categoryLabels }: LayoutProps) {
         </div>
         <h1
           className="text-[17px] font-bold text-[#1E1B4B] leading-tight flex items-center gap-2 flex-wrap min-w-0"
-          style={{ fontFamily: "Fraunces, serif" }}
+          style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
         >
           {profile.name}
           {profile.proBadge && (
@@ -464,7 +464,7 @@ function ShowcaseLayout({ profile, categoryLabels }: LayoutProps) {
             <div className="min-w-0 pb-1">
               <h1
                 className="text-[22px] sm:text-[27px] font-bold text-white leading-tight flex items-center gap-2 flex-wrap drop-shadow-[0_1px_3px_rgba(0,0,0,0.35)]"
-                style={{ fontFamily: "Fraunces, serif" }}
+                style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}
               >
                 {profile.name}
                 {profile.proBadge && (
@@ -502,14 +502,14 @@ function ShowcaseLayout({ profile, categoryLabels }: LayoutProps) {
 
         <div className="grid grid-cols-2 gap-3 mb-6">
           <div className="rounded-2xl p-4" style={{ background: accent.tint }}>
-            <p className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+            <p className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
               {profile.completedOrderCount}
             </p>
             <p className="text-[11.5px] text-[#6B6483]">Completed order{profile.completedOrderCount === 1 ? "" : "s"}</p>
           </div>
           {profile.memberSince && (
             <div className="rounded-2xl p-4" style={{ background: accent.tint }}>
-              <p className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>
+              <p className="text-[20px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
                 {new Date(profile.memberSince).toLocaleDateString("en-NG", { month: "short", year: "numeric" })}
               </p>
               <p className="text-[11.5px] text-[#6B6483]">On FindIt since</p>

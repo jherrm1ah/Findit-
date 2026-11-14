@@ -21,7 +21,7 @@ export default function Notifications({ notifications, onMarkRead, onMarkAllRead
   return (
     <div className="px-5 pt-6 pb-10">
       <div className="flex items-center justify-between mb-1">
-        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "Fraunces, serif" }}>Notifications</h1>
+        <h1 className="text-[19px] font-bold text-[#1E1B4B]" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>Notifications</h1>
         <AnimatePresence>
           {unreadCount > 0 && (
             <motion.button

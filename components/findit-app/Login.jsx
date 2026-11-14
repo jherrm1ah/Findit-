@@ -217,7 +217,7 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
           <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
             <Logo size={44} />
           </motion.div>
-          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             Reset your password
           </h1>
           <p className="text-[13px] text-[#6B6483] mt-1 text-center">
@@ -287,7 +287,7 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
           <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
             <Logo size={44} />
           </motion.div>
-          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             Choose a new password
           </h1>
           <p className="text-[13px] text-[#6B6483] mt-1 text-center">Your phone number is verified.</p>
@@ -369,7 +369,7 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
           <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
             <Logo size={44} />
           </motion.div>
-          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+          <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
             Verify your phone
           </h1>
           <p className="text-[13px] text-[#6B6483] mt-1 text-center">
@@ -450,7 +450,7 @@ export default function Login({ onDone, showToast, initialMode = "login", onDism
         <motion.div initial={{ opacity: 0, scale: 0.6 }} animate={{ opacity: 1, scale: 1 }} transition={SPRING_BOUNCY}>
           <Logo size={44} />
         </motion.div>
-        <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "Fraunces, serif" }}>
+        <h1 className="text-[22px] font-bold text-[#1E1B4B] mt-4" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
           {mode === "login" ? "Welcome back" : "Create your account"}
         </h1>
         <p className="text-[13px] text-[#6B6483] mt-1 text-center">

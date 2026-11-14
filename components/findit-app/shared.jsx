@@ -55,7 +55,7 @@ export function Logo({ size = 28 }) {
 
 export function Wordmark({ size = "text-[16px]" }) {
   return (
-    <span className={`${size} font-bold`} style={{ fontFamily: "Fraunces, serif" }}>
+    <span className={`${size} font-bold`} style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>
       <span style={{ color: "#1E1B4B" }}>Find</span>
       <span style={{ background: "linear-gradient(90deg,#A855F7,#7C3AED)", WebkitBackgroundClip: "text", color: "transparent" }}>It</span>
     </span>
@@ -77,7 +77,7 @@ export function RoleGate({ title, message, onGoHome, onLogin, onLogout, logoutLa
       <div className="w-16 h-16 rounded-full flex items-center justify-center mb-5" style={{ background: "linear-gradient(135deg,#A855F7,#7C3AED)" }}>
         <Lock size={26} className="text-white" strokeWidth={1.8} />
       </div>
-      <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "Fraunces, serif" }}>{title}</h1>
+      <h1 className="text-[18px] font-bold text-[#1E1B4B] mb-2" style={{ fontFamily: "var(--font-fraunces), Fraunces, serif" }}>{title}</h1>
       <p className="text-[13px] text-[#6B6483] max-w-[280px] mb-6">{message}</p>
       {onLogin && (
         <button
