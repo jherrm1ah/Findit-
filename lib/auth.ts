@@ -967,3 +967,14 @@ export async function getAdminSessionUser(req: NextRequest): Promise<{ user: Use
 
   return { user, unlocked };
 }
+
+// "Delete my account" asked for by email (see /delete-account). Support can't know it's really
+// the owner, so the owner's phone gets a code and the account is only deleted once that code is
+// read back. Same rules as deleting in the app (migration 048): refused while money is moving.
+export async function adminDeleteAccount(userId: string): Promise<{ ok: true } | { ok: false; blocked: string[] }> {
+  const { data, error } = await getDb().rpc("delete_account", { p_user_id: userId });
+  if (error) throw new Error(`deleting account: ${error.message}`);
+  const r = (data ?? {}) as { ok?: boolean; blocked?: string[] };
+  if (r.ok) return { ok: true };
+  return { ok: false, blocked: Array.isArray(r.blocked) && r.blocked.length ? r.blocked : ["Couldn't delete this account right now."] };
+}

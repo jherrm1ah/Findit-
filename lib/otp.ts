@@ -3,7 +3,7 @@ import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
 import { checkRateLimit } from "./rateLimit";
 
-export type OtpPurpose = "signup" | "reset";
+export type OtpPurpose = "signup" | "reset" | "delete_account";
 
 export type OtpConfig = {
   expiryMinutes: number;
