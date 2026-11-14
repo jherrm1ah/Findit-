@@ -80,3 +80,45 @@ export function onNativeBack(handler) {
     sub?.remove?.();
   };
 }
+
+// FindIt's Play Store page. The rating and update prompts only appear once the listing is live,
+// which is switched on by setting NEXT_PUBLIC_PLAY_STORE_LIVE=1 in Vercel (before that the link
+// would go nowhere).
+export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.shopwithfindit.app";
+export function playStoreLive() {
+  return process.env.NEXT_PUBLIC_PLAY_STORE_LIVE === "1";
+}
+
+// The installed app's version ("1.0.4"), or null on the website or if it can't be read.
+export async function appVersion() {
+  try {
+    const App = inFindItApp() ? window.Capacitor?.Plugins?.App : null;
+    const info = App?.getInfo ? await App.getInfo() : null;
+    return info?.version || null;
+  } catch {
+    return null;
+  }
+}
+
+// "1.0.10" vs "1.0.9" compared as numbers. Negative when a < b.
+export function compareVersions(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+// Small remembered flags (rating asked, update dismissed). Private windows can refuse storage,
+// so every read and write is allowed to fail quietly.
+export function remember(key, value) {
+  try {
+    if (value === undefined) return window.localStorage.getItem(`findit:${key}`);
+    window.localStorage.setItem(`findit:${key}`, String(value));
+  } catch {
+    // nothing to do
+  }
+  return null;
+}
