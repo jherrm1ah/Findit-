@@ -18,6 +18,18 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- FindIt links open the app (Android App Links). Android checks
+                 https://www.shopwithfindit.com/.well-known/assetlinks.json, which lists the
+                 app's signing key (ANDROID_APP_CERT_SHA256 in Vercel). Until that's set, links
+                 keep opening in the browser as before. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="www.shopwithfindit.com" />
+                <data android:host="shopwithfindit.com" />
+            </intent-filter>
         </activity>
 
         <provider

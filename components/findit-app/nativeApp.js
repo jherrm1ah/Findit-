@@ -122,3 +122,49 @@ export function remember(key, value) {
   }
   return null;
 }
+
+// A FindIt link tapped in another app (WhatsApp, SMS...) opens the Android app, which starts on
+// the home page. This sends the app to the link's page instead (an item, a store, a referral).
+// Only FindIt's own addresses are followed.
+const OWN_HOSTS = ["www.shopwithfindit.com", "shopwithfindit.com"];
+function goToOpenedLink(url) {
+  try {
+    const u = new URL(url);
+    if (!OWN_HOSTS.includes(u.hostname)) return;
+    const target = `${u.pathname}${u.search}${u.hash}`;
+    if (target !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.location.href = target;
+    }
+  } catch {
+    // not a link we can follow
+  }
+}
+export function followOpenedLinks() {
+  const App = typeof window !== "undefined" && inFindItApp() ? window.Capacitor?.Plugins?.App : null;
+  if (!App?.addListener) return () => {};
+  // A link that started the app. Followed once per app launch: the page reload it causes would
+  // otherwise read the same launch link again.
+  Promise.resolve(App.getLaunchUrl?.())
+    .then((r) => {
+      if (!r?.url) return;
+      try {
+        if (window.sessionStorage.getItem("findit:launchUrl") === r.url) return;
+        window.sessionStorage.setItem("findit:launchUrl", r.url);
+      } catch {
+        // storage refused: following it once more is harmless (the page check stops a loop)
+      }
+      goToOpenedLink(r.url);
+    })
+    .catch(() => {});
+  // A link tapped while the app was already open.
+  let sub = null;
+  let removed = false;
+  Promise.resolve(App.addListener("appUrlOpen", (e) => goToOpenedLink(e?.url))).then((s) => {
+    sub = s;
+    if (removed) s?.remove?.();
+  });
+  return () => {
+    removed = true;
+    sub?.remove?.();
+  };
+}

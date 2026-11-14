@@ -8,7 +8,7 @@ import {
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
-import { hideNativeSplash, onNativeBack } from "./nativeApp";
+import { hideNativeSplash, onNativeBack, followOpenedLinks } from "./nativeApp";
 import { RatePrompt, UpdateBanner, shouldAskForRating } from "./AppPrompts";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
@@ -479,6 +479,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     return false; // on Home with nothing to go back to: let the app close
   };
   useEffect(() => onNativeBack(() => nativeBackRef.current?.()), []);
+  // FindIt links tapped elsewhere open the right page in the app.
+  useEffect(() => followOpenedLinks(), []);
 
   // A ref, not state — this only needs to gate re-entrancy inside the
   // handler itself, never to trigger a render. Without it, a fast double-tap
