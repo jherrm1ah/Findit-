@@ -8,7 +8,9 @@ import {
 import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
-import { hideNativeSplash, onNativeBack } from "./nativeApp";
+import { hideNativeSplash, onNativeBack, followOpenedLinks } from "./nativeApp";
+import { RatePrompt, UpdateBanner, shouldAskForRating } from "./AppPrompts";
+import { handleNotificationTaps } from "./push";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { storePendingReferralCode } from "./referral";
@@ -64,6 +66,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   const [browseGroup, setBrowseGroup] = useState("all");
   const [sellerQuery, setSellerQuery] = useState("");
   const [product, setProduct] = useState(null);
+  const [ratePromptOpen, setRatePromptOpen] = useState(false);
   // The seller storefront being viewed. `key` is what the profile was opened
   // by (a seller id where the listing has one, otherwise the business name);
   // `profile` is what the server returned for it. The screen renders from the
@@ -477,6 +480,10 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     return false; // on Home with nothing to go back to: let the app close
   };
   useEffect(() => onNativeBack(() => nativeBackRef.current?.()), []);
+  // FindIt links tapped elsewhere open the right page in the app.
+  useEffect(() => followOpenedLinks(), []);
+  // Tapping a FindIt notification in the app opens what it's about.
+  useEffect(() => handleNotificationTaps(), []);
 
   // A ref, not state — this only needs to gate re-entrancy inside the
   // handler itself, never to trigger a render. Without it, a fast double-tap
@@ -704,6 +711,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
       const order = await api.confirmDelivery(orderId);
       setOrders((os) => os.map((o) => (o.id === orderId ? order : o)));
       showToast("Delivery confirmed — the payment has been released to the seller.");
+      // A good moment to ask for a Play Store rating (app only, at most once a month).
+      if (shouldAskForRating()) setTimeout(() => setRatePromptOpen(true), 1200);
     } catch (err) {
       showToast(err.message || "Couldn't confirm that order — try again.", "error");
       throw err;
@@ -1673,6 +1682,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
 
   return (
     <div className="min-h-screen bg-[#FAFAFF]" style={{ fontFamily: "'Work Sans', sans-serif" }}>
+      <UpdateBanner />
+      <RatePrompt open={ratePromptOpen} onClose={() => setRatePromptOpen(false)} />
       {screen !== "home" && (
         <header className="sticky top-0 z-30 bg-[#FAFAFF]/95 backdrop-blur border-b border-[#ECE9F7] px-5 py-3 flex items-center gap-2">
           <IconButton onClick={goBack} aria-label="Back">

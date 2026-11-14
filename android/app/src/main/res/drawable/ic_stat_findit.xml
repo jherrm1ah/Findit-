@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FindIt's status-bar icon: a shopping bag with an F, in one solid colour (Android tints it). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M8,7V6a4,4 0,0 1,8 0v1h2.2a1,1 0,0 1,1 0.9l1,12a1,1 0,0 1,-1 1.1H4.8a1,1 0,0 1,-1 -1.1l1,-12A1,1 0,0 1,5.8 7zM10,7h4V6a2,2 0,0 0,-4 0zM9.5,10v8h2v-3h3v-1.8h-3V11.8h3.5V10z" />
+</vector>

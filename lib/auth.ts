@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { assertPasswordAllowed } from "./passwordCheck";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
@@ -443,10 +444,8 @@ export async function changeUserPassword(
   newPassword: string,
   currentToken?: string
 ): Promise<void> {
-  if (!newPassword || newPassword.length < 8) {
-    throw new ValidationError("New password must be at least 8 characters.");
-  }
   await verifyPasswordForUserId(userId, currentPassword);
+  await assertPasswordAllowed(newPassword, "New password");
 
   const salt = crypto.randomBytes(16).toString("hex");
   const passwordHash = hashPassword(newPassword, salt);
@@ -476,9 +475,7 @@ export async function deleteAccount(userId: string, password: string): Promise<{
 // password here by design, since the whole point is recovering an account
 // whose password was forgotten.
 export async function resetPasswordForPhone(phone: string, newPassword: string): Promise<void> {
-  if (!newPassword || newPassword.length < 8) {
-    throw new ValidationError("New password must be at least 8 characters.");
-  }
+  await assertPasswordAllowed(newPassword, "New password");
   const db = getDb();
   const result = await db
     .from("users")
@@ -966,4 +963,15 @@ export async function getAdminSessionUser(req: NextRequest): Promise<{ user: Use
   }
 
   return { user, unlocked };
+}
+
+// "Delete my account" asked for by email (see /delete-account). Support can't know it's really
+// the owner, so the owner's phone gets a code and the account is only deleted once that code is
+// read back. Same rules as deleting in the app (migration 048): refused while money is moving.
+export async function adminDeleteAccount(userId: string): Promise<{ ok: true } | { ok: false; blocked: string[] }> {
+  const { data, error } = await getDb().rpc("delete_account", { p_user_id: userId });
+  if (error) throw new Error(`deleting account: ${error.message}`);
+  const r = (data ?? {}) as { ok?: boolean; blocked?: string[] };
+  if (r.ok) return { ok: true };
+  return { ok: false, blocked: Array.isArray(r.blocked) && r.blocked.length ? r.blocked : ["Couldn't delete this account right now."] };
 }

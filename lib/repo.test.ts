@@ -87,9 +87,9 @@ describe("validateProductInput", () => {
     expect(() => validateProductInput({ qty: 5 })).not.toThrow();
   });
 
-  it("rejects a description over the length cap", () => {
-    expect(() => validateProductInput({ description: "x".repeat(2001) })).toThrow(ValidationError);
-    expect(() => validateProductInput({ description: "x".repeat(2000) })).not.toThrow();
+  it("rejects a product description over the 1,000-character limit", () => {
+    expect(() => validateProductInput({ description: "x".repeat(1001) })).toThrow(ValidationError);
+    expect(() => validateProductInput({ description: "x".repeat(1000) })).not.toThrow();
   });
 
   it("rejects more than MAX_PRODUCT_IMAGES photos", () => {

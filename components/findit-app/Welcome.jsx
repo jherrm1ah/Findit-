@@ -1,96 +1,29 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
-import { DURATION, EASE } from "./motion";
+import { DURATION, EASE, SPRING_SNAPPY } from "./motion";
 import { IconButton } from "./sharedMotion";
+import { FindItLogo, WelcomeIllustration } from "./WelcomeArt";
 
-// welcome-get-started.png's own pixel dimensions — fixed, not measured, since
-// this is one specific static asset.
-const IMG_W = 852;
-const IMG_H = 1846;
+// The "Let's get you started" screen, built entirely in code: the FindIt logo and the
+// illustration are drawn in SVG (WelcomeArt.jsx), and the heading, text and buttons are real, so
+// everything is sharp on every screen, light to load, readable by screen readers, and the buttons
+// always sit exactly where they look, on any phone shape.
+//
+// onDismiss is optional: it's passed when this screen interrupts someone browsing as a guest
+// (a gated action, see App.jsx's requireAuth), so they can back out without an account.
+const INK = "#1E1265";
+const PURPLE = "#5B21F5";
 
-// The two buttons baked into the artwork, as pixel rects WITHIN THE SOURCE
-// IMAGE (not the viewport). object-fit: contain never crops the image —
-// unlike object-cover, which on a viewport whose aspect ratio differs from
-// the image's own (852:1846) would crop part of it away, most dangerously
-// the bottom edge where these buttons are drawn, leaving them invisible
-// and/or unreachable on a short/wide screen (confirmed: both buttons land
-// off-screen or over the wrong text at 414x600). Because contain instead
-// letterboxes, the buttons' real on-screen rect has to be computed from
-// the image's actual rendered box, not assumed to equal the container's —
-// see useContainedImageRect below.
-const GET_STARTED_RECT = { x: 85, y: 1458, w: 682, h: 120 };
-const HAVE_ACCOUNT_RECT = { x: 85, y: 1597, w: 682, h: 120 };
-
-// The rect (in viewport pixels) that an `object-fit: contain` image
-// actually occupies inside `el` — the same box-fitting math the CSS
-// property itself runs, duplicated here so a real DOM button can be
-// positioned against it (CSS alone can't query where object-fit put the
-// image). Re-measured on resize/orientation change via ResizeObserver.
-function useContainedImageRect(containerRef) {
-  const [rect, setRect] = useState(null);
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const compute = () => {
-      const { width: cw, height: ch } = el.getBoundingClientRect();
-      if (!cw || !ch) return;
-      const containerRatio = cw / ch;
-      const imageRatio = IMG_W / IMG_H;
-      const width = containerRatio > imageRatio ? ch * imageRatio : cw;
-      const height = containerRatio > imageRatio ? ch : cw / imageRatio;
-      setRect({ width, height, left: (cw - width) / 2, top: (ch - height) / 2 });
-    };
-    compute();
-    const ro = new ResizeObserver(compute);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [containerRef]);
-  return rect;
-}
-
-function HitTarget({ containerRect, source, onClick, label }) {
-  if (!containerRect) return null;
-  const scale = containerRect.width / IMG_W;
-  return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      className="absolute"
-      style={{
-        left: containerRect.left + source.x * scale,
-        top: containerRect.top + source.y * scale,
-        width: source.w * scale,
-        height: source.h * scale,
-      }}
-    />
-  );
-}
-
-// onDismiss is optional: it's only passed when this screen appears as an
-// interruption to someone already browsing as a guest (triggered by a
-// gated action — see App.jsx's requireAuth), so they can back out and keep
-// browsing without an account. It's omitted nowhere anymore — Welcome no
-// longer appears as a mandatory first-run gate — but the prop stays
-// optional so a bare render never crashes for want of a handler.
 export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
-  const containerRef = useRef(null);
-  const rect = useContainedImageRect(containerRef);
-
   return (
     <motion.div
-      ref={containerRef}
       exit={{ opacity: 0 }}
       transition={{ duration: DURATION.base, ease: EASE }}
-      className="fixed inset-0 z-50"
-      style={{ background: "#FAFAFF" }}
+      className="fixed inset-0 z-50 overflow-y-auto"
+      style={{ background: "radial-gradient(120% 70% at 50% 35%, #FFFFFF 0%, #F9F8FE 55%, #F4F1FC 100%)" }}
     >
-      <Image src="/welcome-get-started.png" alt="Let's get you started" fill priority sizes="100vw" className="object-contain" />
-      <HitTarget containerRect={rect} source={GET_STARTED_RECT} onClick={onGetStarted} label="Get Started" />
-      <HitTarget containerRect={rect} source={HAVE_ACCOUNT_RECT} onClick={onHaveAccount} label="I already have an account" />
       {onDismiss && (
         <div className="absolute top-4 right-4 z-10">
           <IconButton onClick={onDismiss} aria-label="Continue browsing without an account">
@@ -98,6 +31,64 @@ export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
           </IconButton>
         </div>
       )}
+
+      <div className="mx-auto flex min-h-full max-w-md flex-col px-6 pb-[max(24px,env(safe-area-inset-bottom))] pt-[max(40px,env(safe-area-inset-top))] [@media(max-height:700px)]:pt-[max(20px,env(safe-area-inset-top))]">
+        <motion.div
+          initial={{ opacity: 0, y: -8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: EASE }}
+          className="mt-10 flex justify-center [@media(max-height:700px)]:mt-5"
+        >
+          <FindItLogo className="text-[52px] [@media(max-height:700px)]:text-[40px]" />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, scale: 0.96 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6, ease: EASE, delay: 0.08 }}
+          className="my-auto flex justify-center py-4"
+        >
+          {/* Shrinks on short screens so both buttons always fit without scrolling. */}
+          <WelcomeIllustration className="h-auto max-h-[32vh] w-full max-w-[380px] [@media(max-height:700px)]:max-h-[26vh]" />
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE, delay: 0.15 }}>
+          <h1
+            className="text-[34px] [@media(max-height:700px)]:text-[29px] font-bold leading-[1.08] tracking-[-0.02em]"
+            style={{ color: INK, fontFamily: "'Work Sans', sans-serif" }}
+          >
+            Let&apos;s get you
+            <br />
+            started
+          </h1>
+          <p className="mt-3 text-[15px] leading-[1.45] text-[#7A6FB0]">
+            Create your account and start exploring amazing products, deals and more.
+          </p>
+
+          <div className="mt-7 space-y-3 [@media(max-height:700px)]:mt-5">
+            <motion.button
+              type="button"
+              onClick={onGetStarted}
+              whileTap={{ scale: 0.97 }}
+              transition={SPRING_SNAPPY}
+              className="w-full rounded-full py-4 text-[16px] font-semibold text-white shadow-lg shadow-[#5B21F5]/25 outline-none focus-visible:ring-4 focus-visible:ring-[#5B21F5]/30"
+              style={{ background: `linear-gradient(135deg, #6D34FF 0%, ${PURPLE} 100%)` }}
+            >
+              Get Started
+            </motion.button>
+            <motion.button
+              type="button"
+              onClick={onHaveAccount}
+              whileTap={{ scale: 0.97 }}
+              transition={SPRING_SNAPPY}
+              className="w-full rounded-full border-[1.5px] border-[#C9B8F7] bg-white/60 py-4 text-[16px] font-semibold outline-none focus-visible:ring-4 focus-visible:ring-[#5B21F5]/20"
+              style={{ color: PURPLE }}
+            >
+              I already have an account
+            </motion.button>
+          </div>
+        </motion.div>
+      </div>
     </motion.div>
   );
 }

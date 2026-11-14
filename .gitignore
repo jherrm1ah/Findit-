@@ -147,3 +147,6 @@ data/*.db
 data/*.db-journal
 data/*.db-wal
 data/*.db-shm
+
+# Firebase settings are added at build time from a GitHub secret, never committed.
+android/app/google-services.json

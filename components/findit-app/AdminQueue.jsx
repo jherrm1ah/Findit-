@@ -1057,6 +1057,88 @@ const ROLE_LABEL = { buyer: "Buyer", seller: "Seller", admin: "Admin" };
 // promoting it). Suspension here is platform-wide and independent of a
 // seller's own approve/reject/suspend status: this can restrict a buyer
 // who has never touched the seller flow at all.
+// "Delete on request" for someone who asked by email (see /delete-account). A code goes to the
+// account's own phone; the account is deleted only once the owner reads that code back.
+function DeleteOnRequest({ user, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [sentTo, setSentTo] = useState(null);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [blocked, setBlocked] = useState([]);
+
+  const run = async (fn) => {
+    setBusy(true);
+    setError(null);
+    setBlocked([]);
+    try {
+      await fn();
+    } catch (err) {
+      setError(err.message || "Something went wrong.");
+      if (Array.isArray(err.blocked)) setBlocked(err.blocked);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="mt-2 text-[11.5px] font-semibold text-[#E64980]">
+        Delete on request…
+      </button>
+    );
+  }
+  return (
+    <div className="mt-3 border-t border-[#F6D3E0] pt-3 space-y-2">
+      <p className="text-[11.5px] text-[#514B67] leading-relaxed">
+        Only when the owner asked for their account to be deleted. A code is texted to their phone; enter the code
+        they read back to you. Paid orders and payouts must be finished first.
+      </p>
+      {!sentTo ? (
+        <button
+          onClick={() => run(async () => setSentTo((await api.adminDeleteUserSendCode(user.id)).to))}
+          disabled={busy}
+          className="w-full text-[12px] font-semibold py-2 rounded-xl border border-[#F6D3E0] text-[#E64980] disabled:opacity-50"
+        >
+          {busy ? "Sending…" : "Text a code to the owner"}
+        </button>
+      ) : (
+        <>
+          <p className="text-[11.5px] text-[#1E1B4B]">Code sent to the number ending {sentTo}.</p>
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+            inputMode="numeric"
+            placeholder="Code from the owner"
+            className="w-full border border-[#ECE9F7] rounded-lg px-2.5 py-2 text-[13px] outline-none"
+          />
+          <button
+            onClick={() =>
+              run(async () => {
+                await api.adminDeleteUserConfirm(user.id, code);
+                onDone?.();
+              })
+            }
+            disabled={busy || code.length < 4}
+            className="w-full text-[12px] font-semibold py-2 rounded-xl text-white bg-[#E64980] disabled:opacity-40"
+          >
+            {busy ? "Deleting…" : "Delete this account"}
+          </button>
+        </>
+      )}
+      {error && <p className="text-[11.5px] text-[#E64980]">{error}</p>}
+      {blocked.length > 0 && (
+        <ul className="list-disc pl-5 text-[11px] text-[#E64980]">
+          {blocked.map((b) => <li key={b}>{b}</li>)}
+        </ul>
+      )}
+      <button onClick={() => { setOpen(false); setSentTo(null); setCode(""); setError(null); setBlocked([]); }} className="text-[11.5px] font-semibold text-[#6B6483]">
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
   const [role, setRole] = useState("");
   const [searchInput, setSearchInput] = useState("");
@@ -1225,6 +1307,14 @@ function UsersManagement({ onLoadUsers, onSetSuspended, currentAdminId }) {
                     <p className="text-[11px] text-[#8A8372]">This is your own account.</p>
                   )}
                 </div>
+              )}
+              {u.id !== currentAdminId && u.role !== "admin" && u.suspendedReason !== "Account deleted" && (
+                <DeleteOnRequest
+                  user={u}
+                  onDone={async () => {
+                    setData(await onLoadUsers({ role: role || undefined, search: search || undefined, page }));
+                  }}
+                />
               )}
             </motion.div>
           ))}
@@ -1552,7 +1642,7 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
         <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Platform commission</p>
         <p className="text-[11px] text-[#6B6483] mb-3">
-          Applies to every order paid from now on — an already-paid order keeps whatever fee it was actually charged (see order.platformFeeBps), never recalculated.
+          Never less than Paystack's charge on the payment (so a small item with a big delivery fee can't cost FindIt money). Applies to every order paid from now on — an already-paid order keeps whatever fee it was actually charged (see order.platformFeeBps), never recalculated.
         </p>
         {feeConfig && (
           <>

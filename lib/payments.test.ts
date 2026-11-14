@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeFeeSplit } from "./payments";
+import { computeFeeSplit, paystackLocalFee } from "./payments";
 
 // NOTE ON SCOPE: same as lib/subscriptions.test.ts — the DB/Paystack-touching
 // functions in lib/payments.ts (confirmOrderPayment, initiateSellerPayout,
@@ -12,6 +12,32 @@ describe("computeFeeSplit", () => {
     expect(computeFeeSplit(10000, 500)).toEqual({ feeAmount: 500, payoutAmount: 9500 });
   });
 
+  it("never takes less than Paystack's charge on the whole payment", () => {
+    // ₦1,000 item + ₦3,000 delivery: 5% of the item is ₦50, Paystack takes 1.5% of ₦4,000 + ₦100 = ₦160.
+    expect(computeFeeSplit(4000, 500, 3000)).toEqual({ feeAmount: 160, payoutAmount: 3840 });
+    // When 5% is already more than Paystack's charge, the 5% applies: ₦999 → 5% = ₦49, Paystack ≈ ₦15.
+    expect(computeFeeSplit(999, 500)).toEqual({ feeAmount: 49, payoutAmount: 950 });
+  });
+
+  it("bases the floor on what actually went through Paystack (after referral credit)", () => {
+    // ₦4,000 order, ₦3,000 of it covered by FindIt credit: Paystack only charges on ₦1,000 (₦15),
+    // so the 5% of the ₦1,000 item (₦50) applies.
+    expect(computeFeeSplit(4000, 500, 3000, 1000)).toEqual({ feeAmount: 50, payoutAmount: 3950 });
+    // Fully covered by credit: nothing goes through Paystack, no floor.
+    expect(computeFeeSplit(4000, 500, 3000, 0)).toEqual({ feeAmount: 50, payoutAmount: 3950 });
+    // No credit: the floor applies as before.
+    expect(computeFeeSplit(4000, 500, 3000, 4000)).toEqual({ feeAmount: 160, payoutAmount: 3840 });
+  });
+
+  it("estimates Paystack's local charge (1.5% + ₦100, waived under ₦2,500, capped at ₦2,000)", () => {
+    expect(paystackLocalFee(1000)).toBe(15);
+    expect(paystackLocalFee(2499)).toBe(38);
+    expect(paystackLocalFee(2500)).toBe(138);
+    expect(paystackLocalFee(12000)).toBe(280);
+    expect(paystackLocalFee(1_000_000)).toBe(2000);
+    expect(paystackLocalFee(0)).toBe(0);
+  });
+
   it("charges nothing at 0 bps", () => {
     expect(computeFeeSplit(10000, 0)).toEqual({ feeAmount: 0, payoutAmount: 10000 });
   });
@@ -20,13 +46,13 @@ describe("computeFeeSplit", () => {
     expect(computeFeeSplit(10000, 10000)).toEqual({ feeAmount: 10000, payoutAmount: 0 });
   });
 
-  it("floors the fee so fee + payout never exceeds the price", () => {
-    // 999 * 500 / 10000 = 49.95 -> floors to 49, so the seller gets the
-    // fractional kobo rather than the platform overcharging by rounding up.
-    const { feeAmount, payoutAmount } = computeFeeSplit(999, 500);
-    expect(feeAmount).toBe(49);
-    expect(payoutAmount).toBe(950);
-    expect(feeAmount + payoutAmount).toBe(999);
+  it("floors the percentage fee so fee + payout never exceeds the price", () => {
+    // 99,999 * 500 / 10000 = 4999.95 -> floors to 4999 (well above Paystack's
+    // charge here), so the seller gets the fractional naira.
+    const { feeAmount, payoutAmount } = computeFeeSplit(99999, 500);
+    expect(feeAmount).toBe(4999);
+    expect(payoutAmount).toBe(95000);
+    expect(feeAmount + payoutAmount).toBe(99999);
   });
 
   it("never produces a negative payout for any bps in range", () => {

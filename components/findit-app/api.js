@@ -442,6 +442,18 @@ export const api = {
     const qs = params.toString();
     return request(`/api/admin/users${qs ? `?${qs}` : ""}`);
   },
+  adminDeleteUserSendCode: (id) =>
+    request(`/api/admin/users/${id}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "send_code" }),
+    }),
+  adminDeleteUserConfirm: (id, code) =>
+    request(`/api/admin/users/${id}/delete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm", code }),
+    }),
   setUserSuspended: (id, suspended, reason) =>
     request(`/api/admin/users/${id}`, {
       method: "PATCH",

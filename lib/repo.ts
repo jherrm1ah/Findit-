@@ -1,4 +1,5 @@
 import { getDb, assertNoError } from "./db";
+import { MAX_PRODUCT_DESCRIPTION_LENGTH } from "./productLimits";
 import {
   recordCompletedTransaction,
   markTransactionDisputed,
@@ -722,8 +723,8 @@ export function validateProductInput(input: {
   if (input.price !== undefined && (!Number.isFinite(input.price) || input.price <= 0)) {
     throw new ValidationError("Price must be a positive number.");
   }
-  if (input.description != null && input.description.length > MAX_DESCRIPTION_LENGTH) {
-    throw new ValidationError(`Description must be under ${MAX_DESCRIPTION_LENGTH} characters.`);
+  if (input.description != null && input.description.length > MAX_PRODUCT_DESCRIPTION_LENGTH) {
+    throw new ValidationError(`Description can be at most ${MAX_PRODUCT_DESCRIPTION_LENGTH} characters (yours is ${input.description.length}).`);
   }
   if (input.condition != null && !(PRODUCT_CONDITIONS as readonly string[]).includes(input.condition)) {
     throw new ValidationError("Condition must be New or Used.");

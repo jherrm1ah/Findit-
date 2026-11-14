@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import webpush from "web-push";
 import { getDb, assertNoError } from "./db";
 import { isSmsConfigured, sendSms, type SmsChannel } from "./sms";
@@ -99,14 +100,131 @@ export async function removePushSubscription(userId: string, endpoint: string): 
   );
 }
 
+// ---- The Android app (Firebase Cloud Messaging) ---------------------------------------------
+// On when FCM_SERVICE_ACCOUNT (Vercel env) holds the Firebase service-account JSON (Firebase →
+// Project settings → Service accounts → Generate new private key). The app only registers a
+// device when its build includes google-services.json (see .github/workflows/android.yml).
+
+type ServiceAccount = { project_id: string; client_email: string; private_key: string };
+let serviceAccount: ServiceAccount | null | undefined;
+function fcmAccount(): ServiceAccount | null {
+  if (serviceAccount !== undefined) return serviceAccount;
+  try {
+    const raw = process.env.FCM_SERVICE_ACCOUNT;
+    const sa = raw ? (JSON.parse(raw) as ServiceAccount) : null;
+    serviceAccount = sa?.project_id && sa.client_email && sa.private_key ? sa : null;
+  } catch {
+    console.error("[push] FCM_SERVICE_ACCOUNT isn't valid JSON");
+    serviceAccount = null;
+  }
+  return serviceAccount;
+}
+export function appPushConfigured(): boolean {
+  return fcmAccount() !== null;
+}
+
+let fcmToken: { value: string; exp: number } | null = null;
+async function fcmAccessToken(sa: ServiceAccount): Promise<string> {
+  if (fcmToken && fcmToken.exp > Date.now() + 60_000) return fcmToken.value;
+  const now = Math.floor(Date.now() / 1000);
+  const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  const unsigned = `${b64({ alg: "RS256", typ: "JWT" })}.${b64({
+    iss: sa.client_email,
+    scope: "https://www.googleapis.com/auth/firebase.messaging",
+    aud: "https://oauth2.googleapis.com/token",
+    iat: now,
+    exp: now + 3600,
+  })}`;
+  const signature = crypto.createSign("RSA-SHA256").update(unsigned).sign(sa.private_key, "base64url");
+  const res = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion: `${unsigned}.${signature}` }),
+  });
+  const j = (await res.json().catch(() => ({}))) as { access_token?: string; expires_in?: number; error?: string };
+  if (!res.ok || !j.access_token) throw new Error(`FCM auth failed: ${res.status} ${j.error ?? ""}`);
+  fcmToken = { value: j.access_token, exp: Date.now() + (j.expires_in ?? 3600) * 1000 };
+  return fcmToken.value;
+}
+
+// Firebase device tokens are long base64-ish strings.
+export function isValidDeviceToken(t: unknown): t is string {
+  return typeof t === "string" && /^[A-Za-z0-9_:\-]{20,4096}$/.test(t);
+}
+
+// This phone's FindIt app now gets this user's alerts (one row per device token).
+export async function saveDeviceToken(userId: string, token: string): Promise<void> {
+  const db = getDb();
+  const existing = assertNoError(
+    await db.from("push_subscriptions").select("id").eq("endpoint", token).maybeSingle(),
+    "looking up app device"
+  ) as Row | null;
+  if (existing) {
+    assertNoError(await db.from("push_subscriptions").update({ user_id: userId, kind: "fcm" }).eq("id", existing.id as string), "updating app device");
+    return;
+  }
+  assertNoError(
+    await db.from("push_subscriptions").insert({
+      id: "push_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+      user_id: userId,
+      endpoint: token,
+      p256dh: "",
+      auth: "",
+      kind: "fcm",
+    }),
+    "saving app device"
+  );
+}
+
+async function sendFcm(sa: ServiceAccount, token: string, payload: { title: string; body: string; tag?: string; url?: string }): Promise<"sent" | "gone" | "failed"> {
+  const access = await fcmAccessToken(sa);
+  const res = await fetch(`https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${access}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message: {
+        token,
+        notification: { title: payload.title, body: payload.body },
+        data: { url: payload.url ?? "/", tag: payload.tag ?? "" },
+        android: {
+          priority: "HIGH",
+          ttl: "86400s",
+          notification: { channel_id: "findit_alerts", icon: "ic_stat_findit", color: "#6002CF", ...(payload.tag ? { tag: payload.tag } : {}) },
+        },
+      },
+    }),
+  });
+  if (res.ok) return "sent";
+  const err = (await res.json().catch(() => ({}))) as { error?: { status?: string } };
+  // The app was uninstalled or the token expired.
+  if (res.status === 404 || err.error?.status === "NOT_FOUND" || err.error?.status === "UNREGISTERED") return "gone";
+  console.error("[push] FCM send failed", res.status, err.error?.status);
+  return "failed";
+}
+
 export async function sendPushToUser(userId: string, payload: { title: string; body: string; tag?: string; url?: string }): Promise<void> {
-  if (!pushConfigured()) return;
+  const webOn = pushConfigured();
+  const sa = fcmAccount();
+  if (!webOn && !sa) return;
   try {
     const db = getDb();
-    const subs = assertNoError(
-      await db.from("push_subscriptions").select("id, endpoint, p256dh, auth").eq("user_id", userId),
+    const all = assertNoError(
+      await db.from("push_subscriptions").select("id, endpoint, p256dh, auth, kind").eq("user_id", userId),
       "loading push subscriptions"
     ) as Row[];
+    const apps = sa ? all.filter((s) => s.kind === "fcm") : [];
+    const subs = webOn ? all.filter((s) => s.kind !== "fcm") : [];
+    await Promise.allSettled(
+      apps.map(async (s) => {
+        try {
+          if ((await sendFcm(sa as ServiceAccount, s.endpoint as string, payload)) === "gone") {
+            await db.from("push_subscriptions").delete().eq("id", s.id as string);
+          }
+        } catch (err) {
+          console.error("[push] app alert failed", err);
+        }
+      })
+    );
     const message = JSON.stringify({ title: payload.title, body: payload.body, tag: payload.tag, url: payload.url ?? "/" });
     await Promise.allSettled(
       subs.map(async (s) => {

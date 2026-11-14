@@ -80,3 +80,91 @@ export function onNativeBack(handler) {
     sub?.remove?.();
   };
 }
+
+// FindIt's Play Store page. The rating and update prompts only appear once the listing is live,
+// which is switched on by setting NEXT_PUBLIC_PLAY_STORE_LIVE=1 in Vercel (before that the link
+// would go nowhere).
+export const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.shopwithfindit.app";
+export function playStoreLive() {
+  return process.env.NEXT_PUBLIC_PLAY_STORE_LIVE === "1";
+}
+
+// The installed app's version ("1.0.4"), or null on the website or if it can't be read.
+export async function appVersion() {
+  try {
+    const App = inFindItApp() ? window.Capacitor?.Plugins?.App : null;
+    const info = App?.getInfo ? await App.getInfo() : null;
+    return info?.version || null;
+  } catch {
+    return null;
+  }
+}
+
+// "1.0.10" vs "1.0.9" compared as numbers. Negative when a < b.
+export function compareVersions(a, b) {
+  const pa = String(a).split(".").map((n) => parseInt(n, 10) || 0);
+  const pb = String(b).split(".").map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
+// Small remembered flags (rating asked, update dismissed). Private windows can refuse storage,
+// so every read and write is allowed to fail quietly.
+export function remember(key, value) {
+  try {
+    if (value === undefined) return window.localStorage.getItem(`findit:${key}`);
+    window.localStorage.setItem(`findit:${key}`, String(value));
+  } catch {
+    // nothing to do
+  }
+  return null;
+}
+
+// A FindIt link tapped in another app (WhatsApp, SMS...) opens the Android app, which starts on
+// the home page. This sends the app to the link's page instead (an item, a store, a referral).
+// Only FindIt's own addresses are followed.
+const OWN_HOSTS = ["www.shopwithfindit.com", "shopwithfindit.com"];
+function goToOpenedLink(url) {
+  try {
+    const u = new URL(url);
+    if (!OWN_HOSTS.includes(u.hostname)) return;
+    const target = `${u.pathname}${u.search}${u.hash}`;
+    if (target !== `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.location.href = target;
+    }
+  } catch {
+    // not a link we can follow
+  }
+}
+export function followOpenedLinks() {
+  const App = typeof window !== "undefined" && inFindItApp() ? window.Capacitor?.Plugins?.App : null;
+  if (!App?.addListener) return () => {};
+  // A link that started the app. Followed once per app launch: the page reload it causes would
+  // otherwise read the same launch link again.
+  Promise.resolve(App.getLaunchUrl?.())
+    .then((r) => {
+      if (!r?.url) return;
+      try {
+        if (window.sessionStorage.getItem("findit:launchUrl") === r.url) return;
+        window.sessionStorage.setItem("findit:launchUrl", r.url);
+      } catch {
+        // storage refused: following it once more is harmless (the page check stops a loop)
+      }
+      goToOpenedLink(r.url);
+    })
+    .catch(() => {});
+  // A link tapped while the app was already open.
+  let sub = null;
+  let removed = false;
+  Promise.resolve(App.addListener("appUrlOpen", (e) => goToOpenedLink(e?.url))).then((s) => {
+    sub = s;
+    if (removed) s?.remove?.();
+  });
+  return () => {
+    removed = true;
+    sub?.remove?.();
+  };
+}
