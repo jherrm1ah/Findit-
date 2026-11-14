@@ -10,6 +10,7 @@ import { Logo, Wordmark, RoleGate } from "./shared";
 import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
 import { hideNativeSplash, onNativeBack, followOpenedLinks } from "./nativeApp";
+import { readSnapshot, saveSnapshot } from "./snapshot";
 import { RatePrompt, UpdateBanner, shouldAskForRating } from "./AppPrompts";
 import { handleNotificationTaps } from "./push";
 import { DURATION, EASE } from "./motion";
@@ -308,6 +309,15 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
     // one thing every guest actually needs on first paint. Each is now
     // caught independently and defaults to [] rather than ever taking
     // products down with it.
+    // Open instantly: show what this phone saw last time (snapshot.js) while the fresh load runs.
+    const snap = readSnapshot(user?.id);
+    if (snap) {
+      setProducts(snap.products);
+      setOrders(snap.orders);
+      setNotifications(snap.notifications);
+      setLoaded(true);
+    }
+
     const mainData =
       preloadedMainData ??
       Promise.all([
@@ -320,6 +330,7 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
         setProducts(p);
         setOrders(o);
         setNotifications(n);
+        saveSnapshot(user?.id, { products: p, orders: o, notifications: n });
       })
       .finally(() => setLoaded(true));
 

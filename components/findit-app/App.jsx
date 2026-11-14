@@ -10,6 +10,7 @@ import MainApp from "./MainApp";
 import ToastHost from "./Toast";
 import { api, setSessionExpiredHandler } from "./api";
 import { mergeGuestCartIntoUser } from "./cart";
+import { clearSnapshot } from "./snapshot";
 
 // Sign-in screens load only when someone signs in or up; most visits browse first.
 const Welcome = dynamic(() => import("./Welcome"), { ssr: false });
@@ -83,6 +84,7 @@ export default function App() {
       // Several in-flight requests can each come back 401 at once — react to
       // the first and ignore the rest, so this only fires once.
       if (!userRef.current) return;
+      clearSnapshot(userRef.current?.id);
       userRef.current = null;
       sessionRef.current = Promise.resolve(null);
       // Same reasoning as handleLogout — this is a separate logout path
@@ -143,6 +145,8 @@ export default function App() {
   };
 
   const handleLogout = async () => {
+    // This account's saved orders and notifications leave the phone with it.
+    clearSnapshot(user?.id);
     // This phone stops getting the signed-out account's alerts.
     await turnOffPush();
     try {
