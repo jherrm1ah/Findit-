@@ -1,14 +1,14 @@
 "use client";
 
-import Image from "next/image";
 import { motion } from "motion/react";
 import { X } from "lucide-react";
 import { DURATION, EASE, SPRING_SNAPPY } from "./motion";
 import { IconButton } from "./sharedMotion";
+import { FindItLogo, WelcomeIllustration } from "./WelcomeArt";
 
-// The "Let's get you started" screen. The FindIt logo and the 3D illustration are images (cut
-// from the original artwork, a few KB each); the heading, text and both buttons are real text and
-// real buttons, so they're sharp on every screen, show a press, are read by screen readers and
+// The "Let's get you started" screen, built entirely in code: the FindIt logo and the
+// illustration are drawn in SVG (WelcomeArt.jsx), and the heading, text and buttons are real, so
+// everything is sharp on every screen, light to load, readable by screen readers, and the buttons
 // always sit exactly where they look, on any phone shape.
 //
 // onDismiss is optional: it's passed when this screen interrupts someone browsing as a guest
@@ -37,9 +37,9 @@ export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
           initial={{ opacity: 0, y: -8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.45, ease: EASE }}
-          className="mt-6 flex justify-center [@media(max-height:700px)]:mt-1"
+          className="mt-10 flex justify-center [@media(max-height:700px)]:mt-5"
         >
-          <Image src="/welcome-logo.webp" alt="FindIt" width={420} height={190} priority className="h-auto w-[52%] max-w-[230px] [@media(max-height:700px)]:max-w-[170px]" />
+          <FindItLogo className="text-[52px] [@media(max-height:700px)]:text-[40px]" />
         </motion.div>
 
         <motion.div
@@ -48,18 +48,8 @@ export default function Welcome({ onGetStarted, onHaveAccount, onDismiss }) {
           transition={{ duration: 0.6, ease: EASE, delay: 0.08 }}
           className="my-auto flex justify-center py-4"
         >
-          {/* The artwork's edges fade to transparent in the file itself, so no box shows around
-              it. It shrinks on short screens so both buttons always fit without scrolling. */}
-          <Image
-            src="/welcome-art.webp"
-            alt=""
-            aria-hidden
-            width={730}
-            height={520}
-            priority
-            draggable={false}
-            className="h-auto max-h-[32vh] [@media(max-height:700px)]:max-h-[26vh] w-auto max-w-full select-none sm:max-w-[380px]"
-          />
+          {/* Shrinks on short screens so both buttons always fit without scrolling. */}
+          <WelcomeIllustration className="h-auto max-h-[32vh] w-full max-w-[380px] [@media(max-height:700px)]:max-h-[26vh]" />
         </motion.div>
 
         <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: EASE, delay: 0.15 }}>
