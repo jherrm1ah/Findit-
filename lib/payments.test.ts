@@ -19,6 +19,16 @@ describe("computeFeeSplit", () => {
     expect(computeFeeSplit(999, 500)).toEqual({ feeAmount: 49, payoutAmount: 950 });
   });
 
+  it("bases the floor on what actually went through Paystack (after referral credit)", () => {
+    // ₦4,000 order, ₦3,000 of it covered by FindIt credit: Paystack only charges on ₦1,000 (₦15),
+    // so the 5% of the ₦1,000 item (₦50) applies.
+    expect(computeFeeSplit(4000, 500, 3000, 1000)).toEqual({ feeAmount: 50, payoutAmount: 3950 });
+    // Fully covered by credit: nothing goes through Paystack, no floor.
+    expect(computeFeeSplit(4000, 500, 3000, 0)).toEqual({ feeAmount: 50, payoutAmount: 3950 });
+    // No credit: the floor applies as before.
+    expect(computeFeeSplit(4000, 500, 3000, 4000)).toEqual({ feeAmount: 160, payoutAmount: 3840 });
+  });
+
   it("estimates Paystack's local charge (1.5% + ₦100, waived under ₦2,500, capped at ₦2,000)", () => {
     expect(paystackLocalFee(1000)).toBe(15);
     expect(paystackLocalFee(2499)).toBe(38);

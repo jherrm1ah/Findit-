@@ -50,14 +50,17 @@ export async function getCurrentPlatformFeeBps(): Promise<number> {
 // The fee is charged on the item only: a delivery fee included in the price
 // (migration 043) goes to the seller in full, since they pay for delivery.
 // fee + payout still always equals the whole price.
-export function computeFeeSplit(priceNaira: number, feeBps: number, deliveryFee = 0): { feeAmount: number; payoutAmount: number } {
+// chargedNaira: what actually went through Paystack for this order: the price minus any referral
+// credit FindIt covered (lib/referrals.ts). Paystack only charges on that, so the floor below uses
+// it; a fully credit-covered order costs nothing to process and gets no floor.
+export function computeFeeSplit(priceNaira: number, feeBps: number, deliveryFee = 0, chargedNaira = priceNaira): { feeAmount: number; payoutAmount: number } {
   const delivery = Math.min(Math.max(0, deliveryFee), priceNaira);
   const percentFee = Math.floor(((priceNaira - delivery) * feeBps) / 10000);
   // Paystack's charge on the whole payment comes out of FindIt's fee, so on a small item with a
   // big delivery fee the percentage alone could be less than Paystack takes (₦1,000 item + ₦3,000
   // delivery: 5% = ₦50, Paystack ≈ ₦160). The fee is never less than that charge, so FindIt never
   // pays to process an order. With the fee at 0 (a free promotion) there is no floor.
-  const floor = feeBps > 0 ? paystackLocalFee(priceNaira) : 0;
+  const floor = feeBps > 0 ? paystackLocalFee(Math.min(priceNaira, Math.max(0, chargedNaira))) : 0;
   const feeAmount = Math.min(priceNaira, Math.max(percentFee, floor));
   return { feeAmount, payoutAmount: priceNaira - feeAmount };
 }
@@ -126,7 +129,7 @@ export async function confirmOrderPayment(orderId: string, creditApplied = 0): P
   if (order.paymentStatus === "paid") return; // already applied — nothing to do
 
   const feeBps = await getCurrentPlatformFeeBps();
-  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps, order.deliveryFee);
+  const { feeAmount, payoutAmount } = computeFeeSplit(order.price, feeBps, order.deliveryFee, order.price - creditApplied);
 
   const db = getDb();
   const result = await db

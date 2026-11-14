@@ -2151,6 +2151,15 @@ export default function SellerDashboard({
                 {o.deliveryFee > 0 ? ` (incl. ${naira(o.deliveryFee)} delivery)` : ""}
                 {o.buyerName ? ` · Buyer: ${o.buyerName}` : ""}
               </p>
+              {/* What the seller actually receives, fixed when the buyer paid (the fee never
+                  changes afterwards). Shown on paid orders only. */}
+              {o.paymentStatus === "paid" && o.sellerPayoutAmount != null && o.status !== "Cancelled" && (
+                <p className="text-[11px] text-[#1E1B4B] -mt-2 mb-3">
+                  You get <span className="font-semibold">{naira(o.sellerPayoutAmount)}</span>
+                  {o.platformFeeAmount > 0 ? ` · FindIt fee ${naira(o.platformFeeAmount)}` : ""}
+                  {o.escrowStatus === "released" ? " · released to you" : " · released to you after delivery"}
+                </p>
+              )}
               <DeliveryDetails order={o} forSeller showToast={showToast} />
               {/* The verified record for this sale, once it exists. Only
                   rendered when the server actually created one — never
