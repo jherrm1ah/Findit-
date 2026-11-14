@@ -690,8 +690,8 @@ it was confirmed by reading the actual code:
 - `GET /api/products` is unauthenticated with only a safety-ceiling limit (2,000 rows, not
   real pagination) — fine today, but still worth real server-side pagination eventually (§8/§9).
 - No explicit CSRF token backstop beyond `SameSite=Lax` + CSP.
-- No database backups/PITR (Supabase Free tier) — the single largest standing operational
-  risk; see §8 and `FINDIT_FULL_AUDIT.md`.
+- No Supabase-native backups/PITR (Free tier). Covered for now by an encrypted nightly
+  backup workflow — see [`docs/BACKUPS.md`](./docs/BACKUPS.md) and §8.
 - `CRON_SECRET` is optional by design (fine for local dev) but should be treated as
   **required** in any public production deployment — it already is set in this project's
   production environment.
@@ -728,10 +728,12 @@ see `FINDIT_FULL_AUDIT.md` §2 for the full list now that they're fixed.
 5. **No CSRF token mechanism** — relies entirely on `SameSite=Lax` + CSP. Adequate for
    current, modern-browser-only usage; worth an explicit decision (document it as sufficient,
    or add a token) rather than leaving it implicit.
-6. **No database backups or point-in-time recovery** — the Supabase project is on the Free
-   tier, which has neither. This is now the single largest standing operational risk to the
-   platform (a bad migration or a stray `DELETE` has no restore path) and is a billing
-   decision, not a code fix — see `FINDIT_FULL_AUDIT.md` §4/§10.
+6. **No Supabase-native backups or point-in-time recovery** — the project is on the Free
+   tier, which has neither. **Stopgap in place:** the `Nightly backup` GitHub workflow dumps
+   the whole database every night (90-day retention) and all Storage files weekly (30-day),
+   encrypted with a passphrase only the owner holds — setup and restore steps in
+   [`docs/BACKUPS.md`](./docs/BACKUPS.md). It only runs once its repo secrets are set. Up to a
+   day of data can still be lost; Supabase Pro (PITR) is the real fix when affordable.
 
 ### Optional (nice-to-have, not urgent, don't add scope for its own sake)
 6. **No image resizing/thumbnailing pipeline** — uploads are stored and served at original
@@ -756,8 +758,8 @@ see `FINDIT_FULL_AUDIT.md` §2 for the full list now that they're fixed.
 
 Prioritized, and deliberately **not** padded with features nobody asked for:
 
-1. **Decide on the Supabase billing tier** (Known Issues #6) — backups/PITR. The one item on
-   this whole list that money, not code, fixes, and the highest-priority one standing.
+1. **Set up the nightly backup's secrets and test a restore** (`docs/BACKUPS.md`), then
+   upgrade the Supabase billing tier for PITR when affordable (Known Issues #6).
 2. **Add real pagination to `GET /api/products`**, and move basic filtering (category, price
    range, search text) server-side. The 2,000-row safety ceiling (already in place) prevents
    a resource-exhaustion vector but isn't real pagination — this is the most consequential
