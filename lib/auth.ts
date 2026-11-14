@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { assertPasswordAllowed } from "./passwordCheck";
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, assertNoError } from "./db";
 import { ValidationError } from "./repo";
@@ -443,10 +444,8 @@ export async function changeUserPassword(
   newPassword: string,
   currentToken?: string
 ): Promise<void> {
-  if (!newPassword || newPassword.length < 8) {
-    throw new ValidationError("New password must be at least 8 characters.");
-  }
   await verifyPasswordForUserId(userId, currentPassword);
+  await assertPasswordAllowed(newPassword, "New password");
 
   const salt = crypto.randomBytes(16).toString("hex");
   const passwordHash = hashPassword(newPassword, salt);
@@ -476,9 +475,7 @@ export async function deleteAccount(userId: string, password: string): Promise<{
 // password here by design, since the whole point is recovering an account
 // whose password was forgotten.
 export async function resetPasswordForPhone(phone: string, newPassword: string): Promise<void> {
-  if (!newPassword || newPassword.length < 8) {
-    throw new ValidationError("New password must be at least 8 characters.");
-  }
+  await assertPasswordAllowed(newPassword, "New password");
   const db = getDb();
   const result = await db
     .from("users")

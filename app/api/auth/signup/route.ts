@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { assertPasswordAllowed } from "@/lib/passwordCheck";
 import { createUser, createSession, setSessionCookie, normalizePhone } from "@/lib/auth";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { errorResponse } from "@/lib/errors";
@@ -37,11 +38,13 @@ export async function POST(req: NextRequest) {
   if (!phone || phone.trim().length < 10) {
     return NextResponse.json({ error: "Enter a valid phone number." }, { status: 400 });
   }
-  if (!password || password.length < 8) {
-    return NextResponse.json(
-      { error: "Password must be at least 8 characters." },
-      { status: 400 }
-    );
+  if (!password) {
+    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
+  }
+  try {
+    await assertPasswordAllowed(password);
+  } catch (err) {
+    return NextResponse.json({ error: (err as Error).message }, { status: 400 });
   }
   if (!name || !name.trim()) {
     return NextResponse.json({ error: "Enter your name." }, { status: 400 });
