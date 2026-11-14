@@ -62,6 +62,22 @@ jobs:
       - name: Copy the app shell and settings into the Android project
         run: npx cap sync android
 
+      # Phone notifications need Firebase. If the GOOGLE_SERVICES_JSON secret is set (Firebase →
+      # Project settings → your Android app → google-services.json), it's added to this build;
+      # without it the app builds the same and simply keeps notifications off.
+      - name: Add Firebase settings (if set up)
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > android/app/google-services.json
+            grep -q '"package_name": *"com.shopwithfindit.app"' android/app/google-services.json \
+              || { echo "::error::google-services.json is not for com.shopwithfindit.app"; exit 1; }
+            echo "Firebase settings added: phone notifications on"
+          else
+            echo "No GOOGLE_SERVICES_JSON secret: phone notifications stay off in this build"
+          fi
+
       - name: Build the signed bundle
         working-directory: android
         env:

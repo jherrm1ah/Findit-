@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- FindIt purple, used to tint the notification icon. -->
+    <color name="findit_purple">#6002CF</color>
+</resources>

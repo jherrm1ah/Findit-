@@ -4,7 +4,9 @@ import { assertPasswordAllowed, timesPasswordBreached } from "./passwordCheck";
 
 const suffixOf = (pw: string) => crypto.createHash("sha1").update(pw).digest("hex").toUpperCase().slice(5);
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("breached-password check", () => {
   it("sends only the first 5 characters of the hash and finds a match", async () => {

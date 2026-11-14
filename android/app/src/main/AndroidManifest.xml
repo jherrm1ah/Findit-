@@ -39,6 +39,11 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Phone notifications (Firebase): FindIt's icon and colour, and FindIt's own channel. -->
+        <meta-data android:name="com.google.firebase.messaging.default_notification_icon" android:resource="@drawable/ic_stat_findit" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_color" android:resource="@color/findit_purple" />
+        <meta-data android:name="com.google.firebase.messaging.default_notification_channel_id" android:value="findit_alerts" />
     </application>
 
     <!-- Permissions -->

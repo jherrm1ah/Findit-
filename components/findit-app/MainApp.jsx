@@ -10,6 +10,7 @@ import { IconButton } from "./sharedMotion";
 import { api, setAdminLockedHandler } from "./api";
 import { hideNativeSplash, onNativeBack, followOpenedLinks } from "./nativeApp";
 import { RatePrompt, UpdateBanner, shouldAskForRating } from "./AppPrompts";
+import { handleNotificationTaps } from "./push";
 import { DURATION, EASE } from "./motion";
 import { getStoredLocation, requestBrowserLocation } from "./location";
 import { storePendingReferralCode } from "./referral";
@@ -481,6 +482,8 @@ export default function MainApp({ user, onLogout, onRequireAuth, showToast, onUs
   useEffect(() => onNativeBack(() => nativeBackRef.current?.()), []);
   // FindIt links tapped elsewhere open the right page in the app.
   useEffect(() => followOpenedLinks(), []);
+  // Tapping a FindIt notification in the app opens what it's about.
+  useEffect(() => handleNotificationTaps(), []);
 
   // A ref, not state — this only needs to gate re-entrancy inside the
   // handler itself, never to trigger a render. Without it, a fast double-tap
