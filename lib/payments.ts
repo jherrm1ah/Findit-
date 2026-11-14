@@ -52,8 +52,26 @@ export async function getCurrentPlatformFeeBps(): Promise<number> {
 // fee + payout still always equals the whole price.
 export function computeFeeSplit(priceNaira: number, feeBps: number, deliveryFee = 0): { feeAmount: number; payoutAmount: number } {
   const delivery = Math.min(Math.max(0, deliveryFee), priceNaira);
-  const feeAmount = Math.floor(((priceNaira - delivery) * feeBps) / 10000);
+  const percentFee = Math.floor(((priceNaira - delivery) * feeBps) / 10000);
+  // Paystack's charge on the whole payment comes out of FindIt's fee, so on a small item with a
+  // big delivery fee the percentage alone could be less than Paystack takes (₦1,000 item + ₦3,000
+  // delivery: 5% = ₦50, Paystack ≈ ₦160). The fee is never less than that charge, so FindIt never
+  // pays to process an order. With the fee at 0 (a free promotion) there is no floor.
+  const floor = feeBps > 0 ? paystackLocalFee(priceNaira) : 0;
+  const feeAmount = Math.min(priceNaira, Math.max(percentFee, floor));
   return { feeAmount, payoutAmount: priceNaira - feeAmount };
+}
+
+// Paystack's standard local-card charge in naira: 1.5% + ₦100, the ₦100 waived under ₦2,500,
+// capped at ₦2,000. Rounded up so the estimate is never below what Paystack actually takes.
+export const PAYSTACK_PERCENT_BPS = 150;
+export const PAYSTACK_FLAT_NAIRA = 100;
+export const PAYSTACK_FLAT_WAIVED_UNDER = 2500;
+export const PAYSTACK_CAP_NAIRA = 2000;
+export function paystackLocalFee(amountNaira: number): number {
+  if (!(amountNaira > 0)) return 0;
+  const flat = amountNaira < PAYSTACK_FLAT_WAIVED_UNDER ? 0 : PAYSTACK_FLAT_NAIRA;
+  return Math.min(PAYSTACK_CAP_NAIRA, Math.ceil((amountNaira * PAYSTACK_PERCENT_BPS) / 10000) + flat);
 }
 
 export async function setPlatformFeeBps(feeBps: number, adminId: string): Promise<void> {

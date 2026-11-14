@@ -1552,7 +1552,7 @@ function PaymentsAdmin({ onLoadFeeConfig, onSetFeeConfig, onLoadPayouts, onMarkP
       <div className="bg-white border border-[#ECE9F7] rounded-[20px] p-4 mb-7">
         <p className="text-[12px] font-semibold text-[#1E1B4B] mb-1">Platform commission</p>
         <p className="text-[11px] text-[#6B6483] mb-3">
-          Applies to every order paid from now on — an already-paid order keeps whatever fee it was actually charged (see order.platformFeeBps), never recalculated.
+          Never less than Paystack's charge on the payment (so a small item with a big delivery fee can't cost FindIt money). Applies to every order paid from now on — an already-paid order keeps whatever fee it was actually charged (see order.platformFeeBps), never recalculated.
         </p>
         {feeConfig && (
           <>

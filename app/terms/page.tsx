@@ -92,7 +92,8 @@ export default function TermsPage() {
           <section>
             <h2 className="text-[15px] font-semibold text-[#1E1B4B] mb-2">Fees</h2>
             <p>
-              FindIt charges a platform fee on completed orders, and offers optional paid features for
+              FindIt charges a platform fee on completed orders: a percentage of the item price (not the
+              delivery fee), and never less than the card-processing cost of the payment. It also offers optional paid features for
               sellers (Store plans, listing boosts, FindIt Pro). Current pricing is shown in the app before
               you pay for anything — nothing is charged without your action.
             </p>
